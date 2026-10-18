@@ -7,6 +7,10 @@ ros_ws/log/
 firmware/**/build/
 firmware/**/build-*/
 
+# dashboard build output and recordings
+dashboard/build/
+dashboard/records/
+
 # harness source clone (installed copy lives in harness/)
 dev.harness/
 
