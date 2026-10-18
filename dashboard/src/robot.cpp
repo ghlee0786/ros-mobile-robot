@@ -115,6 +115,7 @@ Robot::Robot(QObject *parent) : QObject(parent)
     m_bridge.advertise("/teleop/cmd_vel", "geometry_msgs/Twist");
     m_bridge.advertise("/straight_drive/goal", "geometry_msgs/Vector3");
     m_bridge.advertise("/straight_drive/cancel", "std_msgs/Empty");
+    m_bridge.advertise("/goal_pose", "geometry_msgs/PoseStamped");
     m_recordTopics = {"/odom", "/scan", "/imu/data_raw", "/wheel_states"};
 
     m_ui.setInterval(33);
@@ -553,7 +554,7 @@ void Robot::setMode(const QString &m)
     for (int i = 0; i < 3; ++i)
         sendTwist(0, 0);
     if (m == "정지")
-        m_bridge.publish("/straight_drive/cancel", {});
+        m_bridge.publish("/straight_drive/cancel", {}), cancelGoal();
     addEvent("모드 " + m);
     emit modeChanged();
 }
@@ -572,12 +573,45 @@ void Robot::straight(double distance)
     m_bridge.publish("/straight_drive/goal", {{"x", distance}, {"y", qMin(m_maxSpeed, kMaxLinear)}, {"z", 0}});
 }
 
+void Robot::sendGoal(double x, double y, double yaw)
+{
+    // Nav2 bt_navigator 가 듣는 /goal_pose 로 보낸다. map 프레임이 있으면 map 으로 바꿔 보낸다: p_map = (map->odom) * p_odom
+    QString frame = "odom";
+    if (m_haveMapOdom) {
+        const double c = std::cos(m_moYaw), s = std::sin(m_moYaw), ox = x;
+        x = m_moX + c * ox - s * y;
+        y = m_moY + s * ox + c * y;
+        yaw += m_moYaw;
+        frame = "map";
+    }
+    // Nav2 속도도 /teleop/cmd_vel 로 나오므로 키보드 조종의 10 Hz 0 속도와 겹치지 않게 자율주행으로 바꾼다.
+    setMode("자율주행");
+    m_bridge.publish("/goal_pose", {
+        {"header", QJsonObject{{"frame_id", frame}, {"stamp", QJsonObject{{"sec", 0}, {"nanosec", 0}}}}},
+        {"pose", QJsonObject{{"position", QJsonObject{{"x", x}, {"y", y}, {"z", 0}}},
+                             {"orientation", QJsonObject{{"x", 0}, {"y", 0}, {"z", std::sin(yaw / 2)}, {"w", std::cos(yaw / 2)}}}}}});
+    addEvent(QString("이동 목표 %1 (%2, %3) %4°").arg(frame).arg(x, 0, 'f', 2).arg(y, 0, 'f', 2).arg(qRadiansToDegrees(yaw), 0, 'f', 0));
+}
+
+// 0 uuid · 0 stamp = 모든 Nav2 목표 취소 (rosbridge 가 액션을 몰라 액션의 숨은 서비스를 직접 부른다)
+void Robot::cancelGoal()
+{
+    QJsonArray uuid;
+    for (int i = 0; i < 16; ++i)
+        uuid.append(0);
+    m_bridge.call("/navigate_to_pose/_action/cancel_goal",
+                  {{"goal_info", QJsonObject{{"goal_id", QJsonObject{{"uuid", uuid}}},
+                                             {"stamp", QJsonObject{{"sec", 0}, {"nanosec", 0}}}}}},
+                  [](const QJsonObject &) {});
+}
+
 void Robot::estop()
 {
     m_lin = m_ang = 0;
     for (int i = 0; i < 3; ++i)
         sendTwist(0, 0);
     m_bridge.publish("/straight_drive/cancel", {});
+    cancelGoal();
     setMode("정지");
     addEvent("비상 정지");
 }

@@ -34,6 +34,22 @@ foreach ($c in ($Clicks -split ';' | Where-Object { $_ })) {   # "x,y,대기s" �
     for ($k = 0; $k -lt 10; $k++) { [W]::PostMessage($h, 0x020A, [IntPtr](($wd -shl 16)), [IntPtr](($sy -shl 16) -bor $sx)) | Out-Null; Start-Sleep -Milliseconds 50 }
     Start-Sleep -Seconds ([double]$d); continue
   }
+  if ($c -match '^(d|m):') {   # d: 왼쪽 끌기 · m: 가운데 끌기  "d:x1,y1,x2,y2,대기s"
+    $dn, $up, $mk = if ($c.StartsWith('m:')) { 0x0207, 0x0208, 0x10 } else { 0x0201, 0x0202, 1 }
+    $x1, $y1, $x2, $y2, $d = $c.Substring(2) -split ','
+    [W]::PostMessage($h, $dn, [IntPtr]$mk, [IntPtr](([int]$y1 -shl 16) -bor [int]$x1)) | Out-Null
+    for ($k = 1; $k -le 10; $k++) {
+      $mx = [int]$x1 + ([int]$x2 - [int]$x1) * $k / 10; $my = [int]$y1 + ([int]$y2 - [int]$y1) * $k / 10
+      [W]::PostMessage($h, 0x0200, [IntPtr]$mk, [IntPtr](([int]$my -shl 16) -bor [int]$mx)) | Out-Null; Start-Sleep -Milliseconds 40 }
+    [W]::PostMessage($h, $up, [IntPtr]0, [IntPtr](([int]$y2 -shl 16) -bor [int]$x2)) | Out-Null
+    Start-Sleep -Seconds ([double]$d); continue
+  }
+  if ($c.StartsWith('r:')) {   # 오른쪽 클릭
+    $x, $y, $d = $c.Substring(2) -split ','
+    $lp = [IntPtr](([int]$y -shl 16) -bor [int]$x)
+    [W]::PostMessage($h, 0x0204, [IntPtr]2, $lp) | Out-Null; [W]::PostMessage($h, 0x0205, [IntPtr]0, $lp) | Out-Null
+    Start-Sleep -Seconds ([double]$d); continue
+  }
   $x, $y, $d = $c -split ','
   $lp = [IntPtr](([int]$y -shl 16) -bor [int]$x)
   [W]::PostMessage($h, 0x0201, [IntPtr]1, $lp) | Out-Null

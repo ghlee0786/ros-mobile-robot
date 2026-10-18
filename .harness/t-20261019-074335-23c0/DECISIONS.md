@@ -23,3 +23,39 @@
 - chosen: 카메라 모드 · 4개 레이어 체크 · 창 크기 (QtCore `Settings`, 기존 주소 저장과 같은 QSettings)
 - why: 화면에서 사용자가 바꾸는 표시 항목이 이것들이다. 창 위치는 모니터 구성이 바뀌면 화면 밖에 뜰 수 있어 뺐다. 센서 구독은 연결 시험 성격이라 매번 기본(카메라 외 전부 켬)으로 시작한다.
 - effect: 항목을 더하려면 `Settings { property alias … }` 한 줄씩 추가한다.
+
+## 5. Nav2 목표를 보내는 방법
+- options: rosbridge 액션(send_action_goal) · `/goal_pose` 토픽 발행
+- chosen: `/goal_pose` (geometry_msgs/PoseStamped) 발행, 취소는 `/navigate_to_pose/_action/cancel_goal` 서비스(0 uuid = 전체)
+- why: Pi 의 rosbridge 는 Foxy 판이라 액션 op 가 없다. bt_navigator 는 `goal_pose` 를 듣고 받으면 NavigateToPose 를 시작한다(RViz 2D Goal Pose 와 같은 경로).
+- effect: 진행 상황 · 결과는 받지 않는다(계획 경로 `/plan` 은 이미 그린다). 액션을 쓰려면 `Robot::sendGoal` 한 곳만 바꾼다.
+
+## 6. 목표 좌표 프레임과 모드
+- options: odom 그대로 · map→odom TF 가 있으면 map 으로 변환 / 모드 유지 · 자율주행으로 전환
+- chosen: map→odom 이 있으면 map 프레임으로 변환, 없으면 odom. 보낼 때 모드를 `자율주행` 으로 바꾼다
+- why: Nav2 global_frame 이 map 이다. Nav2 속도 출력이 `/teleop/cmd_vel`(tooling/nav/nav2_params_robot.yaml)이라 키보드 조종의 10 Hz 0 속도가 Nav2 를 덮어쓴다.
+- effect: `Robot::sendGoal`. 키보드 조종으로 돌아오면 Nav2 와 겹치므로 `정지` 를 누르면 목표가 취소된다.
+
+## 7. 이동 목표 화살표 조작
+- options: 클릭 두 번(위치 · 방향) · 누른 채 끌기(RViz)
+- chosen: 누른 곳 = 위치, 끄는 쪽 = 바라볼 방향, 놓으면 전송 후 도구 꺼짐(RViz 와 같음). 끌지 않으면 로봇의 지금 방향
+- why: 사용자가 "rviz 방식" 을 지정했다.
+- effect: `SceneView.qml` MouseArea 의 goalDragging 처리.
+
+## 8. Ctrl · Shift · Alt 조작 배치
+- options: Fusion 360 기본(가운데 이동 · Shift+가운데 회전 · 휠 확대)만 · 가운데 버튼 없는 마우스/터치패드용 왼쪽 버튼 조합 추가
+- chosen: Fusion 기본 + 왼쪽 끌기 회전(Shift 도 같음) · Ctrl+왼쪽 이동 · Alt+왼쪽 확대
+- why: 사용자가 Fusion 방식과 Ctrl · Shift · Alt 를 함께 말했다. Fusion 은 Shift 만 쓰므로 나머지 둘을 이동 · 확대에 붙였다. 기존 자유 시점의 왼쪽 끌기 회전도 그대로 둔다.
+- effect: `SceneView.qml` MouseArea `onPressed` 의 mode 결정 한 줄.
+
+## 9. 추적 · 위에서 시점에서 조작했을 때
+- options: 추적 · 위에서는 조작 무시 · 지금 각도 그대로 자유 시점으로 넘어감
+- chosen: 지금 각도 그대로 자유 시점으로 넘어감(뷰 큐브 · 메뉴도 같음)
+- why: 3D 화면 어디서나 조작이 먹어야 한다는 요청. 화면이 튀지 않게 각도를 이어받는다.
+- effect: `enterFree()`. 다시 추적하려면 `추적` 버튼.
+
+## 10. 뷰 큐브의 기준
+- options: 로봇 기준(앞 = 로봇이 보는 쪽) · 세계(odom) 기준
+- chosen: odom 기준(앞 = +x, 왼쪽 = +y), 위 뷰는 Fusion 처럼 `앞` 이 화면 아래. 자유 시점 각도(camYaw/Pitch/Dist)도 저장
+- why: Fusion 의 ViewCube 처럼 장면 좌표에 붙어 있어야 회전해도 의미가 같다. 출발 때는 로봇 앞 = odom +x 라 처음엔 같다.
+- effect: `SceneView.qml` 의 `views` 표와 Face 배치.

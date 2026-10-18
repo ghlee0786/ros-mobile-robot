@@ -1,0 +1,30 @@
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_1", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_2", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_3", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_4", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_1", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_2", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_3", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_4", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_5", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_6", "op": "call_service", "service": "/rosapi/topics"}
+{"msg": {"header": {"frame_id": "odom", "stamp": {"nanosec": 0, "sec": 0}}, "pose": {"orientation": {"w": 0.9443174484408245, "x": 0, "y": 0, "z": -0.3290357983110813}, "position": {"x": -0.4479634761810303, "y": 0.4744451940059662, "z": 0}}}, "op": "publish", "topic": "/goal_pose"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_1", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_2", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_3", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_4", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_5", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_6", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_1", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_2", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_3", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_4", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_5", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_6", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_7", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_1", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_2", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_3", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_4", "op": "call_service", "service": "/rosapi/topics"}
+{"args": {"topic": "/teleop/cmd_vel"}, "id": "call_5", "op": "call_service", "service": "/rosapi/subscribers"}
+{"args": {}, "id": "call_6", "op": "call_service", "service": "/rosapi/topics"}

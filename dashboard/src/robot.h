@@ -95,6 +95,7 @@ public:
     Q_INVOKABLE void probe();
     Q_INVOKABLE void drive(double linear, double angular);   // -1..1 (최대 속도 비율)
     Q_INVOKABLE void straight(double distance);
+    Q_INVOKABLE void sendGoal(double x, double y, double yaw);   // Nav2 이동 목표 (odom 프레임 m · rad)
     Q_INVOKABLE void estop();
     Q_INVOKABLE void setRecordTopic(const QString &topic, bool on);
     Q_INVOKABLE void toggleRecording();
@@ -131,6 +132,7 @@ private:
     void updateStatus();
     void addEvent(const QString &text);
     void sendTwist(double v, double w);
+    void cancelGoal();
     void record(const QString &topic, const QJsonObject &msg);
     void stopRecording();
 
