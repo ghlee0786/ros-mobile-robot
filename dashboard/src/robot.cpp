@@ -11,12 +11,15 @@
 namespace {
 
 struct SensorDef { const char *key, *label, *topic, *type; bool on; int throttle; };
+// throttle (ms) is applied by rosbridge on the Pi. Its Python server tops out at one core, and at
+// full rate (/imu 100 Hz, /tf 33 Hz on top of /scan, /odom, wheels) every topic dropped to ~22 Hz;
+// the IMU graph and the TF list do not need more than this, so the pose and wheel data stay full rate.
 const SensorDef kSensors[] = {
     {"scan", "LiDAR", "/scan", "sensor_msgs/LaserScan", true, 0},
-    {"imu", "IMU", "/imu/data_raw", "sensor_msgs/Imu", true, 0},
+    {"imu", "IMU", "/imu/data_raw", "sensor_msgs/Imu", true, 50},
     {"odom", "오도메트리 (Pico 엔코더)", "/odom", "nav_msgs/Odometry", true, 0},
     {"wheel", "바퀴 속도", "/wheel_states", "sensor_msgs/JointState", true, 0},
-    {"tf", "좌표 변환", "/tf", "tf2_msgs/TFMessage", true, 0},
+    {"tf", "좌표 변환", "/tf", "tf2_msgs/TFMessage", true, 200},
     {"beat", "링크 하트비트", "/link/heartbeat", "std_msgs/String", true, 0},
     {"cam", "카메라", "/camera/image_raw", "sensor_msgs/Image", false, 1000},
 };

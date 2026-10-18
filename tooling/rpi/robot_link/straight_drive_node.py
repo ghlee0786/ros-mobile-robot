@@ -59,7 +59,8 @@ class StraightDrive(Node):
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.status_pub = self.create_publisher(String, '/straight_drive/status', 10)
         self.create_subscription(Odometry, '/odom', self.on_odom, 10)
-        self.create_subscription(Imu, '/imu/data_raw', self.on_imu, 50)
+        # /imu/data_raw (100 Hz) is only subscribed while a goal runs: idle, it cost ~35% of a Pi core.
+        self.imu_sub = None
         self.create_subscription(Vector3, '/straight_drive/goal', self.on_goal, 10)
         self.create_subscription(Empty, '/straight_drive/cancel', lambda _: self.finish('canceled'), 10)
         self.create_timer(1.0 / self.rate_hz, self.step)
@@ -88,18 +89,22 @@ class StraightDrive(Node):
         if self.odom is None or time.monotonic() - self.odom_t > self.sensor_timeout:
             self.report({'state': 'rejected', 'reason': 'no /odom'})
             return
-        imu_ok = self.use_imu and self.imu_yaw is not None and time.monotonic() - self.imu_t < self.sensor_timeout
         speed = min(abs(msg.y) or self.default_speed, self.max_speed)
         x0, y0, th0 = self.odom
+        if self.use_imu and self.imu_sub is None:
+            self.imu_yaw = None
+            self.imu_sub = self.create_subscription(Imu, '/imu/data_raw', self.on_imu, 50)
         self.goal = {
             'distance': abs(msg.x), 'dir': 1.0 if msg.x >= 0 else -1.0, 'speed': speed,
-            'x0': x0, 'y0': y0, 'th0': th0, 'imu0': self.imu_yaw if imu_ok else None,
+            'x0': x0, 'y0': y0, 'th0': th0, 'imu0': None,
+            # Wait briefly for the first IMU sample (the subscription was just created).
+            'imu_wait_until': time.monotonic() + 0.6 if self.use_imu else None,
             't0': time.monotonic(), 'v': 0.0,
             'px': x0, 'py': y0, 'along': 0.0, 'cross': 0.0,
             'timeout': abs(msg.x) / speed * 2.0 + 5.0,
         }
         self.open_log()
-        self.report({'state': 'started', 'distance': msg.x, 'speed': speed, 'imu': imu_ok})
+        self.report({'state': 'started', 'distance': msg.x, 'speed': speed, 'imu': self.use_imu})
 
     # ---- control loop -------------------------------------------------------------------
     def heading_error(self, g):
@@ -116,6 +121,16 @@ class StraightDrive(Node):
         if g is None:
             return
         now = time.monotonic()
+        if g['imu_wait_until'] is not None:
+            if self.imu_yaw is not None and now - self.imu_t < self.sensor_pause:
+                g['imu0'], g['imu_wait_until'] = self.imu_yaw, None
+                x0, y0, th0 = self.odom            # start the run from this instant
+                g.update(x0=x0, y0=y0, th0=th0, px=x0, py=y0, t0=now)
+            elif now < g['imu_wait_until']:
+                self.cmd_pub.publish(Twist())
+                return
+            else:
+                g['imu_wait_until'] = None         # no IMU: encoder heading only
         if now - self.odom_t > self.sensor_timeout:
             return self.finish('odom_timeout')
         if now - g['t0'] > g['timeout']:
@@ -174,6 +189,9 @@ class StraightDrive(Node):
         if along is None:
             along, cross = g['along'], g['cross']
         e_head = self.heading_error(g)[0] if self.odom is not None else None
+        if self.imu_sub is not None:
+            self.destroy_subscription(self.imu_sub)
+            self.imu_sub = None
         self.close_log()
         self.report({'state': 'finished', 'reason': reason, 'along': round(along or 0.0, 3),
                      'cross': round(cross or 0.0, 4),
