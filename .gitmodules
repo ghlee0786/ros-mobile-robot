@@ -1,0 +1,15 @@
+[submodule "ros_ws/src/cmp10a_imu"]
+	path = ros_ws/src/cmp10a_imu
+	url = https://github.com/lsirikh/cmp10a_imu.git
+[submodule "ros_ws/src/integrated_robot_control"]
+	path = ros_ws/src/integrated_robot_control
+	url = https://github.com/lsirikh/integrated_robot_control.git
+[submodule "ros_ws/src/ekf_robot_control"]
+	path = ros_ws/src/ekf_robot_control
+	url = https://github.com/lsirikh/ekf_robot_control.git
+[submodule "ros_ws/src/integrated_robot_slam"]
+	path = ros_ws/src/integrated_robot_slam
+	url = https://github.com/lsirikh/integrated_robot_slam.git
+[submodule "firmware/pwm-pico"]
+	path = firmware/pwm-pico
+	url = https://github.com/lsirikh/pwm-pico.git

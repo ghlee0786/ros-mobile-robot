@@ -1,0 +1,53 @@
+{
+  "mcpServers": {
+    "git": {
+      "command": "uvx",
+      "args": ["mcp-server-git"]
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer ${GITHUB_PAT:-}"
+      }
+    },
+    "ros": {
+      "command": "uvx",
+      "args": ["ros-mcp", "--transport=stdio"]
+    },
+    "rpi-ssh": {
+      "command": "cmd",
+      "args": [
+        "/c", "C:\\Users\\Sensorway_GH\\AppData\\Local\\Programs\\nodejs\\npx.cmd", "-y", "ssh-mcp@2.19.1",
+        "--host=${RPI_HOST:-raspberrypi.local}",
+        "--user=${RPI_USER:-pi}",
+        "--port=${RPI_PORT:-22}",
+        "--key=C:/Users/Sensorway_GH/.ssh/id_ed25519_rpi",
+        "--group=dev",
+        "--timeout=120000"
+      ],
+      "env": {
+        "PATH": "C:\\Users\\Sensorway_GH\\AppData\\Local\\Programs\\nodejs;${PATH}"
+      }
+    },
+    "gazebo": {
+      "command": "wsl",
+      "args": [
+        "-d", "Ubuntu-ROS", "--",
+        "bash", "-lc",
+        "source /opt/ros/jazzy/setup.bash && cd ~/mcp/gazebo-mcp && GAZEBO_BACKEND=modern GAZEBO_WORLD_NAME=default PYTHONPATH=src exec .venv/bin/python -m gazebo_mcp.server"
+      ]
+    },
+    "chrome-devtools": {
+      "command": "cmd",
+      "args": ["/c", "C:\\Users\\Sensorway_GH\\AppData\\Local\\Programs\\nodejs\\npx.cmd", "-y", "chrome-devtools-mcp@latest"],
+      "env": {
+        "PATH": "C:\\Users\\Sensorway_GH\\AppData\\Local\\Programs\\nodejs;${PATH}"
+      }
+    },
+    "windows-computer-use": {
+      "command": "uvx",
+      "args": ["windows-mcp", "serve"]
+    }
+  }
+}

@@ -1,0 +1,16 @@
+# colcon
+ros_ws/build/
+ros_ws/install/
+ros_ws/log/
+
+# firmware build output
+firmware/**/build/
+firmware/**/build-*/
+
+# harness source clone (installed copy lives in harness/)
+dev.harness/
+
+# local tooling state
+.claude/settings.local.json
+__pycache__/
+*.pyc
