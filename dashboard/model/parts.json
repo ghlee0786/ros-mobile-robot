@@ -1,0 +1,40 @@
+{
+  "frame": "files: glTF convention (m, +Y up); RobotModel.qml rotates +90 deg about X into base_link",
+  "robot_front": "Fusion +Z (caster side)",
+  "lidar_head_position_base_link_m": [
+    0.0128,
+    0.0,
+    0.3178
+  ],
+  "lidar_head_axis_base_link": [
+    0,
+    0,
+    1
+  ],
+  "wheel_separation_m": 0.34,
+  "wheel_radius_m": 0.05,
+  "wheel_separation_cad_m": 0.3135,
+  "source": "Fusion world, millimetres, +Y up; wheel axles along X; robot front/back along Z",
+  "meshes": {
+    "body": {
+      "vertices": 362693,
+      "faces": 723134,
+      "height_m": 0.308
+    },
+    "wheel_left": {
+      "vertices": 8749,
+      "faces": 17514,
+      "height_m": 0.1
+    },
+    "wheel_right": {
+      "vertices": 8749,
+      "faces": 17514,
+      "height_m": 0.1
+    },
+    "lidar_head": {
+      "vertices": 63079,
+      "faces": 126218,
+      "height_m": 0.025
+    }
+  }
+}

@@ -1,0 +1,4 @@
+# Ignored files copied into harness worktrees (gitignore patterns).
+# Robot meshes generated from the Fusion 360 design; too large for git.
+dashboard/model/*.obj
+dashboard/model/*.mtl

@@ -21,3 +21,7 @@ __pycache__/
 backup/
 tooling/fusion/fusion360-mcp-server/
 tooling/fusion/exports/
+
+# dashboard robot meshes (generated from Fusion by tooling/fusion/prepare_dashboard_model.py, ~110 MB)
+dashboard/model/*.obj
+dashboard/model/*.mtl

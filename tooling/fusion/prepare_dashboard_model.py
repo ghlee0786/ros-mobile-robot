@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Turn the Fusion OBJ export (export_robot_parts.py) into the dashboard's model files.
+
+    python tooling/fusion/prepare_dashboard_model.py [export_dir] [dashboard/model]
+
+The dashboard (qml/RobotModel.qml) wants each file in the glTF convention — metres, +Y up — and
+rotates it +90 deg about X into base_link (x forward, y left, z up). Fusion's export is millimetres,
++Y up, axles along X, front/back along Z, all in one world frame, so every part is re-centred on its
+pivot and its axes permuted:  base_link (x_r, y_r, z_r) = (FWD*dZ, FWD*dX, dY)  and the file gets
+(x_r, z_r, -y_r).  FWD = +1 assumes the caster side (+Z in Fusion) is the robot's front; set
+ROBOT_FRONT=-1 to flip.
+
+Per-occurrence exports (wheels, LiDAR head) come out in component-local coordinates, so they are
+first mapped to world with the occurrence matrices from get_part_transforms.py (transforms.json).
+
+Outputs body.obj (origin base_link: mid-axle on the ground), wheel_left.obj / wheel_right.obj
+(origin: own axle centre), lidar_head.obj (origin: on its spin axis) plus parts.json with where the
+LiDAR head sits in base_link.  Each wheel's sub-meshes (rim, tyre, axle) are merged into one file.
+"""
+import json
+import os
+import sys
+
+EXPORT = sys.argv[1] if len(sys.argv) > 1 else "tooling/fusion/exports/MobileRobot"
+OUT = sys.argv[2] if len(sys.argv) > 2 else "dashboard/model"
+FWD = float(os.environ.get("ROBOT_FRONT", "1"))
+MM = 0.001
+# Occurrence behind each per-part OBJ, in the order export_robot_parts.py wrote them.
+OCCURRENCES = {
+    "wheel_a": ["Wheel:1", "Wheel_Tire:1", "Wheel_Axis:1"],
+    "wheel_b": ["Wheel:2", "Wheel_Tire:2", "Wheel_Axis:2"],
+    "lidar_head": ["KINETIC_ASM:1"],
+}
+IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+
+
+def local_to_world(m, x, y, z, point=True):
+    """Apply a Fusion row-major 4x4 matrix (translation in cm) to a mm point or a direction."""
+    w = 1.0 if point else 0.0
+    return (m[0] * x + m[1] * y + m[2] * z + m[3] * 10.0 * w,
+            m[4] * x + m[5] * y + m[6] * z + m[7] * 10.0 * w,
+            m[8] * x + m[9] * y + m[10] * z + m[11] * 10.0 * w)
+
+
+def to_file_frame(dx, dy, dz):
+    """Fusion offset from the pivot (mm) -> dashboard file frame (m)."""
+    xr, yr, zr = FWD * dz, FWD * dx, dy
+    return xr * MM, zr * MM, -yr * MM
+
+
+def to_file_dir(nx, ny, nz):
+    xr, yr, zr = FWD * nz, FWD * nx, ny
+    return xr, zr, -yr
+
+
+def read_mtl(path):
+    mats, cur = {}, None
+    if not os.path.exists(path):
+        return mats
+    for line in open(path, encoding="utf-8", errors="replace"):
+        parts = line.strip().split(None, 1)
+        if not parts:
+            continue
+        if parts[0] == "newmtl":
+            cur = parts[1]
+            mats[cur] = []
+        elif cur is not None:
+            mats[cur].append(line.rstrip("\n"))
+    return mats
+
+
+def convert(sources, pivot, out_name, tag, matrices=None):
+    """Merge OBJ files, map each to world (matrices), re-centre on pivot (Fusion mm), write .obj/.mtl."""
+    v_out, vn_out, vt_out, f_out, mats = [], [], [], [], {}
+    for si, src in enumerate(sources):
+        m = matrices[si] if matrices else IDENTITY
+        base_v, base_vn, base_vt = len(v_out), len(vn_out), len(vt_out)
+        prefix = f"{tag}{si}_"
+        for name, lines in read_mtl(os.path.splitext(src)[0] + ".mtl").items():
+            mats[prefix + name] = lines
+        for line in open(src, encoding="utf-8", errors="replace"):
+            if line.startswith("v "):
+                x, y, z = local_to_world(m, *(float(t) for t in line.split()[1:4]))
+                v_out.append(to_file_frame(x - pivot[0], y - pivot[1], z - pivot[2]))
+            elif line.startswith("vn "):
+                vn_out.append(to_file_dir(*local_to_world(m, *(float(t) for t in line.split()[1:4]), point=False)))
+            elif line.startswith("vt "):
+                vt_out.append(line.split()[1:3])
+            elif line.startswith("f "):
+                idx = []
+                for tok in line.split()[1:]:
+                    p = tok.split("/")
+                    v = str(int(p[0]) + base_v)
+                    t = str(int(p[1]) + base_vt) if len(p) > 1 and p[1] else ""
+                    n = str(int(p[2]) + base_vn) if len(p) > 2 and p[2] else ""
+                    idx.append("/".join([v, t, n]).rstrip("/") if not n else f"{v}/{t}/{n}")
+                f_out.append("f " + " ".join(idx))
+            elif line.startswith("usemtl "):
+                f_out.append("usemtl " + prefix + line.split(None, 1)[1].strip())
+            elif line.startswith(("o ", "g ")):
+                f_out.append(line.rstrip("\n"))
+    os.makedirs(OUT, exist_ok=True)
+    with open(os.path.join(OUT, out_name + ".mtl"), "w", encoding="utf-8") as m:
+        for name, lines in mats.items():
+            m.write(f"newmtl {name}\n" + "".join(l + "\n" for l in lines) + "\n")
+    with open(os.path.join(OUT, out_name + ".obj"), "w", encoding="utf-8") as o:
+        o.write(f"# {out_name}: generated by tooling/fusion/prepare_dashboard_model.py\nmtllib {out_name}.mtl\n")
+        o.writelines(f"v {x:.6f} {y:.6f} {z:.6f}\n" for x, y, z in v_out)
+        o.writelines(f"vt {u} {w}\n" for u, w in vt_out)
+        o.writelines(f"vn {x:.5f} {y:.5f} {z:.5f}\n" for x, y, z in vn_out)
+        o.writelines(l + "\n" for l in f_out)
+    ys = [p[1] for p in v_out]
+    return {"vertices": len(v_out), "faces": sum(1 for l in f_out if l.startswith("f ")),
+            "height_m": round(max(ys) - min(ys), 3) if ys else 0}
+
+
+def main():
+    meta = json.load(open(os.path.join(EXPORT, "parts.json"), encoding="utf-8"))
+    parts, base = meta["parts"], meta["base_link_mm"]
+    files = {k: [os.path.join(EXPORT, os.path.basename(p.replace("\\", "/"))) for p in v]
+             for k, v in meta["files"].items()}
+    # Robot left = +y_r = FWD * Fusion +X.
+    a_is_left = (parts["wheel_a"]["pivot_mm"][0] - base[0]) * FWD > 0
+    left, right = ("wheel_a", "wheel_b") if a_is_left else ("wheel_b", "wheel_a")
+    lp = parts["lidar_head"]["pivot_mm"]
+    lidar_pos = [FWD * (lp[2] - base[2]) * MM, FWD * (lp[0] - base[0]) * MM, (lp[1] - base[1]) * MM]
+    tf = json.load(open(os.path.join(EXPORT, "transforms.json"), encoding="utf-8"))
+    mats = {k: [tf[n]["matrix_cm"] for n in names] for k, names in OCCURRENCES.items()}
+
+    report = {
+        "body": convert(files["body"], base, "body", "b"),
+        "wheel_left": convert(files[left], parts[left]["pivot_mm"], "wheel_left", "l", mats[left]),
+        "wheel_right": convert(files[right], parts[right]["pivot_mm"], "wheel_right", "r", mats[right]),
+        "lidar_head": convert(files["lidar_head"], lp, "lidar_head", "h", mats["lidar_head"]),
+    }
+    info = {
+        "frame": "files: glTF convention (m, +Y up); RobotModel.qml rotates +90 deg about X into base_link",
+        "robot_front": "Fusion +Z (caster side)" if FWD > 0 else "Fusion -Z",
+        "lidar_head_position_base_link_m": [round(c, 4) for c in lidar_pos],
+        "lidar_head_axis_base_link": [0, 0, 1],
+        "wheel_separation_m": 0.34, "wheel_radius_m": 0.05,
+        "wheel_separation_cad_m": round(meta["wheel_separation"]["cad_mm"] * MM, 4),
+        "source": meta["frame"], "meshes": report,
+    }
+    json.dump(info, open(os.path.join(OUT, "parts.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    print(json.dumps(info, ensure_ascii=False, indent=1))
+
+
+if __name__ == "__main__":
+    main()
