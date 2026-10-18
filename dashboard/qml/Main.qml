@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -16,6 +17,13 @@ ApplicationWindow {
     readonly property string mono: "Consolas"
 
     Robot { id: robot }
+
+    // 창 크기는 다음 실행에도 그대로 (위치는 모니터 구성이 바뀌면 화면 밖에 뜰 수 있어 저장하지 않는다)
+    Settings {
+        category: "window"
+        property alias width: win.width
+        property alias height: win.height
+    }
 
     // 켜면 마지막 주소로 자동 연결하고, 4 s 안에 붙지 않으면 연결 화면을 띄운다.
     Component.onCompleted: robot.connectTo(robot.lastHost, robot.lastPort)
