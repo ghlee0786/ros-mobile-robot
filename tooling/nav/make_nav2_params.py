@@ -16,6 +16,9 @@ SRC = os.path.join(get_package_share_directory('nav2_bringup'), 'params', 'nav2_
 DST = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nav2_params_robot.yaml')
 
 V_MAX, W_MAX, RADIUS = 0.1, 0.25, 0.25
+# The RPLIDAR sees the robot's own frame/posts at 0.14-0.19 m (nothing real within 0.25-0.45 m);
+# returns closer than this are ignored so the robot is not an obstacle to itself.
+SELF_HIT_RANGE = 0.3
 RPP = {
     'plugin': 'nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController',
     'desired_linear_vel': 0.08,
@@ -48,7 +51,8 @@ def main():
     a = ros('amcl', p)
     a.update(base_frame_id='base_link', odom_frame_id='odom', global_frame_id='map',
              robot_model_type='nav2_amcl::DifferentialMotionModel', scan_topic='scan',
-             laser_max_range=12.0, transform_tolerance=1.0, set_initial_pose=False)
+             laser_max_range=12.0, laser_min_range=SELF_HIT_RANGE, transform_tolerance=1.0,
+             set_initial_pose=False)
 
     ros('bt_navigator', p).update(robot_base_frame='base_link', odom_topic='/odom', transform_tolerance=0.5)
 
@@ -65,7 +69,8 @@ def main():
         cm.pop('footprint', None)
         for layer in ('obstacle_layer', 'voxel_layer'):
             if layer in cm and 'scan' in cm[layer]:
-                cm[layer]['scan'].update(topic='/scan', raytrace_max_range=6.0, obstacle_max_range=5.0)
+                cm[layer]['scan'].update(topic='/scan', raytrace_max_range=6.0, obstacle_max_range=5.0,
+                                         obstacle_min_range=SELF_HIT_RANGE)
         if 'inflation_layer' in cm:
             cm['inflation_layer'].update(inflation_radius=0.45, cost_scaling_factor=3.0)
 
@@ -81,6 +86,10 @@ def main():
                 source_timeout=1.0, cmd_vel_out_topic='/teleop/cmd_vel')
     if 'scan' in cmon:
         cmon['scan']['topic'] = '/scan'
+    # Its scan source has no minimum range, so the self-hits sit inside the footprint polygon and
+    # would hold the robot still; obstacle avoidance stays with the costmaps + RPP collision check.
+    for poly in cmon.get('polygons', []):
+        cmon[poly]['enabled'] = False
 
     if 'docking_server' in p:
         ros('docking_server', p)['base_frame'] = 'base_link'

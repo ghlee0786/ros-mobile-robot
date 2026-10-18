@@ -12,6 +12,7 @@ from launch.actions import DeclareLaunchArgument, ExecuteProcess, GroupAction, I
 from launch.conditions import IfCondition, LaunchConfigurationEquals
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAV2 = get_package_share_directory('nav2_bringup')
@@ -23,6 +24,13 @@ def generate_launch_description():
     params = LaunchConfiguration('params_file')
     common = {'use_sim_time': 'false', 'autostart': 'true', 'use_composition': 'False',
               'params_file': params}.items()
+
+    # /scan -> /scan_filtered (robot self-hits removed) for slam_toolbox, which has no min-range option.
+    scan_filter = Node(
+        package='laser_filters', executable='scan_to_scan_filter_chain', name='scan_to_scan_filter_chain',
+        parameters=[os.path.join(HERE, 'scan_filter.yaml')],
+        remappings=[('scan', '/scan'), ('scan_filtered', '/scan_filtered')], output='log',
+        condition=LaunchConfigurationEquals('mode', 'slam'))
 
     slam = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(SLAM, 'launch', 'online_async_launch.py')),
@@ -49,5 +57,5 @@ def generate_launch_description():
         DeclareLaunchArgument('params_file', default_value=os.path.join(HERE, 'nav2_params_robot.yaml')),
         DeclareLaunchArgument('slam_params_file', default_value=os.path.join(HERE, 'slam_params.yaml')),
         DeclareLaunchArgument('rviz', default_value='true'),
-        GroupAction([slam, localization, navigation, rviz]),
+        GroupAction([scan_filter, slam, localization, navigation, rviz]),
     ])

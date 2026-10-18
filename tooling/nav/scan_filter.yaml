@@ -1,0 +1,14 @@
+# laser_filters for SLAM: drop LiDAR returns from the robot's own frame/posts (all at 0.14-0.19 m;
+# nothing real lies within 0.25-0.8 m). slam_toolbox has no minimum-range parameter, and without
+# this the robot paints its own posts into the map and boxes itself in. Output: /scan_filtered.
+scan_to_scan_filter_chain:
+  ros__parameters:
+    filter1:
+      name: self_range
+      type: laser_filters/LaserScanRangeFilter
+      params:
+        use_message_range_limits: false
+        lower_threshold: 0.30
+        upper_threshold: 25.0
+        lower_replacement_value: .inf
+        upper_replacement_value: .inf

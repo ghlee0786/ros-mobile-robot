@@ -1,0 +1,10 @@
+# Scripts and configs run inside WSL / on the Pi (Linux): always LF, even with core.autocrlf=true.
+*.sh      text eol=lf
+*.py      text eol=lf
+*.yaml    text eol=lf
+*.rviz    text eol=lf
+*.service text eol=lf
+tooling/rpi/robot_link/50-robot-link-relink text eol=lf
+# Windows launchers
+*.cmd     text eol=crlf
+*.ps1     text eol=crlf
