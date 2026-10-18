@@ -39,6 +39,7 @@ class Robot : public QObject
     Q_PROPERTY(int scanCount MEMBER m_scanCount NOTIFY telemetryChanged)
     Q_PROPERTY(double nearestRange MEMBER m_nearR NOTIFY telemetryChanged)
     Q_PROPERTY(double nearestAngle MEMBER m_nearA NOTIFY telemetryChanged)
+    Q_PROPERTY(double lidarHz MEMBER m_lidarHz NOTIFY statusChanged)   // 헤드 회전수, /scan 이 끊기면 0
     Q_PROPERTY(QList<QVector3D> trail MEMBER m_trail NOTIFY trailChanged)
     Q_PROPERTY(QList<QVector3D> plan MEMBER m_plan NOTIFY planChanged)
     Q_PROPERTY(int frameCount MEMBER m_frameCount NOTIFY statusChanged)
@@ -100,6 +101,7 @@ public:
     Q_INVOKABLE void openRecords();
     Q_INVOKABLE void clearTrail();
     Q_INVOKABLE QUrl modelFile(const QString &name) const;
+    Q_INVOKABLE QVariantMap modelParts() const;   // model/parts.json (LiDAR 헤드 위치 등)
 
 signals:
     void telemetryChanged();
@@ -144,7 +146,7 @@ private:
     double m_roll = 0, m_pitch = 0, m_yaw = 0, m_gyroZ = 0, m_accelX = 0;
     QList<QVector3D> m_scan;
     int m_scanCount = 0;
-    double m_nearR = 0, m_nearA = 0;
+    double m_nearR = 0, m_nearA = 0, m_scanTime = 0, m_lidarHz = 0;
     QList<QVector3D> m_trail, m_plan, m_targetLine;
     QList<QPointF> m_straightTrack;
     QSet<QString> m_frames;

@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
@@ -6,22 +7,46 @@ import QtQuick3D
 import QtQuick3D.Helpers
 import RobotDashboard
 
-// 3D 뷰: 바닥 격자 · 로봇 모델 · LiDAR 점 · 이동 경로 · 목표/계획 경로 · 좌표축 · 지도
+// 3D 뷰: 바닥 격자 · 로봇 모델 · LiDAR 점 · 이동 경로 · 목표/계획 경로 · 좌표축 · 지도 · 거리 측정
 ColumnLayout {
     id: root
     required property Robot robot
     property string cam: "추적"
+    property bool measuring: false
+    property var measureA: null   // 측정 점 (odom 프레임, m)
+    property var measureB: null
+    readonly property real measureLen: measureA && measureB ? measureB.minus(measureA).length() : 0
     readonly property string mono: "Consolas"
     signal clickedView()
     spacing: 10
 
     // ROS(x 앞, y 왼쪽, z 위, m) → Qt Quick 3D 장면(y 위, 1 m = 100)
     function scenePos(x, y, z) { return Qt.vector3d(x * 100, z * 100, -y * 100) }
+    // 두 점 사이를 2 cm 간격 점으로 채운다(선처럼 보이게)
+    function dense(a, b) {
+        const n = Math.max(1, Math.floor(b.minus(a).length() / 0.02)), out = []
+        for (let i = 0; i <= n; ++i) out.push(a.plus(b.minus(a).times(i / n)))
+        return out
+    }
+
+    // 카메라 · 표시 레이어는 다음 실행에도 그대로
+    Settings {
+        category: "view"
+        property alias cam: root.cam
+        property alias scanLayer: scanLayer.checked
+        property alias pathLayer: pathLayer.checked
+        property alias axesLayer: axesLayer.checked
+        property alias mapLayer: mapLayer.checked
+    }
 
     RowLayout {
         Layout.fillWidth: true
         Text { text: "3D 뷰"; color: "#E6E9EE"; font.pixelSize: 16; font.weight: Font.DemiBold }
         Item { Layout.fillWidth: true }
+        Btn {
+            text: "거리 측정"; kind: root.measuring ? "accent" : "normal"; implicitHeight: 36; font.pixelSize: 13
+            onClicked: { root.measuring = !root.measuring; root.measureA = root.measureB = null }
+        }
         Seg { options: ["추적", "위에서", "자유"]; current: root.cam; onPicked: (v) => root.cam = v }
     }
 
@@ -71,8 +96,10 @@ ColumnLayout {
                 eulerRotation.x: -90
                 scale: Qt.vector3d(100, 100, 100)
 
-                Model {   // 그림자를 받는 바닥 (격자 바로 아래)
+                Model {   // 그림자를 받는 바닥 (격자 바로 아래), 거리 측정 때 클릭 위치를 찾는다
+                    id: floor
                     source: "#Rectangle"
+                    pickable: true
                     position.z: -0.002
                     scale: Qt.vector3d(1, 1, 1)
                     materials: PrincipledMaterial { baseColor: "#121820"; roughness: 0.95; metalness: 0 }
@@ -109,6 +136,8 @@ ColumnLayout {
                 Dots { visible: pathLayer.checked && robot.sensorOn.odom && points.length > 0; points: robot.trail; size: 0.02; color: "#4CC3E8" }
                 Dots { visible: pathLayer.checked && points.length > 0; points: robot.plan; size: 0.02; color: "#F2A33A" }
                 Dots { visible: pathLayer.checked && points.length > 0; points: robot.targetLine; size: 0.018; color: "#F2A33A" }
+                Dots { points: root.measureA && root.measureB ? root.dense(root.measureA, root.measureB) : []; size: 0.015; color: "#F5D27A" }
+                Dots { points: [root.measureA, root.measureB].filter(p => p); size: 0.04; color: "#F5D27A" }
 
                 Node {
                     id: base
@@ -122,11 +151,14 @@ ColumnLayout {
                         bodyUrl: robot.modelFile("body")
                         wheelLUrl: robot.modelFile("wheel_left")
                         wheelRUrl: robot.modelFile("wheel_right")
+                        lidarUrl: robot.modelFile("lidar_head")
+                        parts: robot.modelParts()
+                        lidarHz: robot.lidarHz
                     }
 
-                    Dots {   // LiDAR 점 (scan 프레임 = base_link, 라이다 높이에 그림)
+                    Dots {   // LiDAR 점 (scan 프레임 = base_link, 라이다 헤드 높이에 그림)
                         visible: scanLayer.checked && robot.sensorOn.scan && points.length > 0
-                        position.z: model.lidarHeight
+                        position.z: model.lidarPos.z
                         points: robot.scanPoints
                         size: 0.018
                         color: "#E0457B"
@@ -177,7 +209,19 @@ ColumnLayout {
             anchors.fill: view
             acceptedButtons: Qt.LeftButton
             propagateComposedEvents: true
-            onPressed: (m) => { root.clickedView(); m.accepted = root.cam !== "자유" ? true : false }
+            onPressed: (m) => { root.clickedView(); m.accepted = root.measuring || root.cam !== "자유" }
+            onClicked: (m) => {
+                if (!root.measuring)
+                    return
+                const r = view.pick(m.x, m.y)
+                if (r.objectHit !== floor)
+                    return
+                const p = Qt.vector3d(r.scenePosition.x / 100, -r.scenePosition.z / 100, 0.015)
+                if (!root.measureA || root.measureB)
+                    root.measureA = p, root.measureB = null
+                else
+                    root.measureB = p
+            }
         }
 
         // ---- 표시 레이어 ----
@@ -227,6 +271,25 @@ ColumnLayout {
                 readonly property real pxPerM: view.height / (2 * 4 * Math.tan(topCam.fieldOfView * Math.PI / 360))
                 Rectangle { id: bar; x: 14; anchors.verticalCenter: parent.verticalCenter; width: parent.pxPerM * 0.5; height: 4; color: "#E6E9EE" }
                 Text { anchors.left: bar.right; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: "0.5 m"; color: "#C5CBD3"; font.pixelSize: 12 }
+            }
+        }
+
+        // ---- 거리 측정 ----
+        Rectangle {
+            visible: root.measuring
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: 14
+            radius: 10; color: "#E6161A21"; border.color: "#5A4A20"
+            width: mt.implicitWidth + 28; height: mt.implicitHeight + 20
+            Text {
+                id: mt
+                anchors.centerIn: parent
+                color: "#F5D27A"; font.family: root.mono; font.pixelSize: 13; textFormat: Text.StyledText
+                text: !root.measureA ? "바닥을 클릭해 시작점을 찍으세요"
+                    : !root.measureB ? "끝점을 클릭하세요"
+                    : "거리 <b>" + root.measureLen.toFixed(3) + "</b> m · Δx " + (root.measureB.x - root.measureA.x).toFixed(3)
+                      + " · Δy " + (root.measureB.y - root.measureA.y).toFixed(3) + "<br>다시 클릭하면 새로 잽니다"
             }
         }
 

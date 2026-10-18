@@ -202,6 +202,12 @@ QUrl Robot::modelFile(const QString &name) const
     return {};
 }
 
+QVariantMap Robot::modelParts() const
+{
+    QFile f(QDir::current().absoluteFilePath("model/parts.json"));
+    return f.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(f.readAll()).object().toVariantMap() : QVariantMap{};
+}
+
 void Robot::setMapWanted(bool on)
 {
     m_mapWanted = on;
@@ -314,6 +320,7 @@ void Robot::onScan(const QJsonObject &m)
             m_nearR = r, m_nearA = qRadiansToDegrees(a);
     }
     m_scanCount = int(m_scan.size());
+    m_scanTime = m["scan_time"].toDouble();   // 한 바퀴 시간(s)
     m_dirty = true;
 }
 
@@ -462,6 +469,8 @@ void Robot::updateStatus()
                      : (m_bridge.topicListReceived() && !types.contains(d.topic)) ? "발행자 없음"
                      : s.age < 0 ? "1 s 동안 메시지 없음" : QString("마지막 수신 %1 s 전").arg(s.age, 0, 'f', 1);
         }
+        if (QString(d.key) == "scan")   // LiDAR 헤드는 /scan 이 들어오는 동안 실제 회전수로 돈다
+            m_lidarHz = on && fresh ? (m_scanTime > 0 ? 1 / m_scanTime : s.hz) : 0;
         m_sensorRows.append(QVariantMap{{"key", d.key}, {"label", d.label}, {"topic", d.topic}, {"on", on},
                                         {"state", state}, {"detail", detail}});
     }

@@ -15,12 +15,14 @@ Qt 를 다른 곳에 깔았으면 `set QT_ROOT=<Qt 폴더>` 뒤에 실행한다.
 
 ## 화면
 
-- **대시보드** — 3D 뷰(카메라 추적 · 위에서 · 자유, 레이어 LiDAR 점 · 이동 경로 · 좌표축 · 지도), 센서 연결 체크(끄면
+- **대시보드** — 3D 뷰(카메라 추적 · 위에서 · 자유, 레이어 LiDAR 점 · 이동 경로 · 좌표축 · 지도, `거리 측정` 을 켜고 바닥을
+  두 번 클릭하면 두 점 사이 거리 · Δx · Δy), 센서 연결 체크(끄면
   unsubscribe, 켜고 1 s 안에 메시지가 없으면 `데이터 없음`), 바퀴 목표/실측 그래프, 오도메트리, IMU, LiDAR 극좌표,
   조종(↑↓←→/WASD 누르는 동안 이동 · K/스페이스 정지 · 최대 속도 · 1 m 직진/후진 시험 · 기록 · 비상 정지).
 - **데이터 점검** — 모든 토픽의 주기 · 지연(수신 시각 − header.stamp) · 상태, 기록할 토픽 체크, CSV 기록,
   직진 시험 결과(목표 직선 대 실제 궤적, 옆 오차 · 방향 오차 · 소요), 이벤트.
 - **연결** — 주소 · 포트, 저장된 로봇(Wi-Fi .201 / 유선 .200 + 연결했던 주소), 네트워크에서 :9090 찾기, 연결 단계 확인.
+- 카메라 · 표시 레이어 · 창 크기는 다음 실행에도 그대로다(QSettings, `HKCU\Software\RobotDashboard`).
 - 연결이나 `/link/heartbeat` 가 3 s 넘게 끊기면 테두리가 빨갛고 3D 가 회색으로 멈춘다. 3 s 마다 다시 연결한다.
 
 조종은 `/teleop/cmd_vel` 로 10 Hz(0 포함)를 보내고 파이의 `cmd_watchdog` 이 `/cmd_vel` 로 넘긴다 — 앱이 죽거나
@@ -39,6 +41,12 @@ Qt 를 다른 곳에 깔았으면 `set QT_ROOT=<Qt 폴더>` 뒤에 실행한다.
 | --- | --- | --- |
 | `body.*` | 몸체 전체(바퀴 제외) | base_link (두 바퀴 차축 중심 바닥) |
 | `wheel_left.*` · `wheel_right.*` | 바퀴 하나씩 | 차축 중심 — 실측 바퀴 속도로 회전한다 |
+| `lidar_head.*` | LiDAR 의 도는 부분 | 회전축 위 — `/scan` 이 들어오는 동안 `scan_time` 의 회전수로 돈다 |
+| `parts.json` | LiDAR 헤드 위치(`lidar_head_position_base_link_m`) | — LiDAR 점도 이 높이에 그린다 |
+
+지금 `model/` 의 파일은 Fusion 360 "MobileRobot" 설계를 `tooling/fusion/prepare_dashboard_model.py` 로 바꾼 것이다
+(메시는 ~110 MB 라 git 밖, `.worktreeinclude`). 바퀴는 CAD 간격(0.3135 m)이 아니라 펌웨어 실측값 0.34 m 에 놓는다 —
+이때 바퀴 안쪽 면(0.144 m)이 몸체 바깥(0.1437 m)과 맞닿아 틈 · 겹침이 없다.
 
 Fusion 360 에서 컴포넌트별로 *내보내기 → FBX 또는 OBJ*(재질 포함)로 내보낸다. 기본은 glTF 규약(Y 위 · m)으로 보고
 x 축 90° 회전을 준다. 축 · 단위가 다르면 `qml/RobotModel.qml` 의 `modelRotation` · `modelScale` 을 고친 뒤 다시 빌드한다
