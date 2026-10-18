@@ -2,7 +2,9 @@
   "mcpServers": {
     "git": {
       "command": "uvx",
-      "args": ["mcp-server-git"]
+      "args": [
+        "mcp-server-git"
+      ]
     },
     "github": {
       "type": "http",
@@ -13,12 +15,18 @@
     },
     "ros": {
       "command": "uvx",
-      "args": ["ros-mcp", "--transport=stdio"]
+      "args": [
+        "ros-mcp",
+        "--transport=stdio"
+      ]
     },
     "rpi-ssh": {
       "command": "cmd",
       "args": [
-        "/c", "C:\\Users\\Sensorway_GH\\AppData\\Local\\Programs\\nodejs\\npx.cmd", "-y", "ssh-mcp@2.19.1",
+        "/c",
+        "C:\\Users\\Sensorway_GH\\AppData\\Local\\Programs\\nodejs\\npx.cmd",
+        "-y",
+        "ssh-mcp@2.19.1",
         "--host=${RPI_HOST:-raspberrypi.local}",
         "--user=${RPI_USER:-ubuntu}",
         "--port=${RPI_PORT:-22}",
@@ -33,21 +41,40 @@
     "gazebo": {
       "command": "wsl",
       "args": [
-        "-d", "Ubuntu-ROS", "--",
-        "bash", "-lc",
+        "-d",
+        "Ubuntu-ROS",
+        "--",
+        "bash",
+        "-lc",
         "source /opt/ros/jazzy/setup.bash && cd ~/mcp/gazebo-mcp && GAZEBO_BACKEND=modern GAZEBO_WORLD_NAME=default PYTHONPATH=src exec .venv/bin/python -m gazebo_mcp.fastmcp_server"
       ]
     },
     "chrome-devtools": {
       "command": "cmd",
-      "args": ["/c", "C:\\Users\\Sensorway_GH\\AppData\\Local\\Programs\\nodejs\\npx.cmd", "-y", "chrome-devtools-mcp@latest"],
+      "args": [
+        "/c",
+        "C:\\Users\\Sensorway_GH\\AppData\\Local\\Programs\\nodejs\\npx.cmd",
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ],
       "env": {
         "PATH": "C:\\Users\\Sensorway_GH\\AppData\\Local\\Programs\\nodejs;${PATH}"
       }
     },
     "windows-computer-use": {
       "command": "uvx",
-      "args": ["windows-mcp", "serve"]
+      "args": [
+        "windows-mcp",
+        "serve"
+      ]
+    },
+    "fusion360": {
+      "command": "uvx",
+      "args": [
+        "fusion360-mcp-server",
+        "--mode",
+        "socket"
+      ]
     }
   }
 }

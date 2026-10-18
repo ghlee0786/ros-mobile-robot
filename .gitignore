@@ -15,3 +15,5 @@ dev.harness/
 __pycache__/
 *.pyc
 backup/
+tooling/fusion/fusion360-mcp-server/
+tooling/fusion/exports/
