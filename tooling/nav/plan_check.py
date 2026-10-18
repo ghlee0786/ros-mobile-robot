@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Ask Nav2's planner for a path without driving (ComputePathToPose only).
 
-    source tooling/wsl/ros_link_env.sh && python3 tooling/nav/plan_check.py [ahead_m]
+    source tooling/wsl/ros_local_env.sh && python3 tooling/nav/plan_check.py [ahead_m]
 Plans from the robot's current map pose to a point `ahead_m` metres straight ahead.
 """
 import math

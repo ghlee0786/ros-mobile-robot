@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Send the robot to a map position with Nav2 and report progress (PC, WSL, Jazzy).
 
-    source tooling/wsl/ros_link_env.sh && python3 tooling/nav/go_to.py X Y [YAW_DEG]
+    source tooling/wsl/ros_local_env.sh && python3 tooling/nav/go_to.py X Y [YAW_DEG]
 Coordinates are in the map frame (metres). Ctrl+C cancels the goal.
 """
 import math
