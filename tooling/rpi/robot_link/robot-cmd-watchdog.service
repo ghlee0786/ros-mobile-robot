@@ -1,0 +1,15 @@
+[Unit]
+Description=Teleop safety relay (/teleop/cmd_vel -> /cmd_vel, stops after 0.5 s without input)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+ExecStart=/bin/bash -c 'source /home/ubuntu/robot_link/ros_env.sh && exec python3 /home/ubuntu/robot_link/cmd_watchdog_node.py'
+KillSignal=SIGINT
+TimeoutStopSec=5
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
