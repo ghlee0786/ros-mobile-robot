@@ -20,7 +20,7 @@
       "args": [
         "/c", "C:\\Users\\Sensorway_GH\\AppData\\Local\\Programs\\nodejs\\npx.cmd", "-y", "ssh-mcp@2.19.1",
         "--host=${RPI_HOST:-raspberrypi.local}",
-        "--user=${RPI_USER:-pi}",
+        "--user=${RPI_USER:-ubuntu}",
         "--port=${RPI_PORT:-22}",
         "--key=C:/Users/Sensorway_GH/.ssh/id_ed25519_rpi",
         "--group=dev",
@@ -35,7 +35,7 @@
       "args": [
         "-d", "Ubuntu-ROS", "--",
         "bash", "-lc",
-        "source /opt/ros/jazzy/setup.bash && cd ~/mcp/gazebo-mcp && GAZEBO_BACKEND=modern GAZEBO_WORLD_NAME=default PYTHONPATH=src exec .venv/bin/python -m gazebo_mcp.server"
+        "source /opt/ros/jazzy/setup.bash && cd ~/mcp/gazebo-mcp && GAZEBO_BACKEND=modern GAZEBO_WORLD_NAME=default PYTHONPATH=src exec .venv/bin/python -m gazebo_mcp.fastmcp_server"
       ]
     },
     "chrome-devtools": {

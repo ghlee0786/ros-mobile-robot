@@ -1,0 +1,15 @@
+[Unit]
+Description=Straight-line drive controller (idle until /straight_drive/goal)
+After=network-online.target robot-bringup.service
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+ExecStart=/bin/bash -c 'source /home/ubuntu/robot_link/ros_env.sh && exec python3 /home/ubuntu/robot_link/straight_drive_node.py'
+KillSignal=SIGINT
+TimeoutStopSec=5
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

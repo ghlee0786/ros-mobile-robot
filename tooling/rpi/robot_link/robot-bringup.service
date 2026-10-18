@@ -1,0 +1,16 @@
+[Unit]
+Description=Robot bring-up: integrated_robot_control.launch.py (LiDAR, IMU, Pico control, sensor sync, TF)
+After=network-online.target dev-ttyACM0.device dev-rplidar.device dev-imu_usb.device
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/robot_ws
+ExecStart=/bin/bash -c 'source /home/ubuntu/robot_link/ros_env.sh && exec ros2 launch integrated_robot_control integrated_robot_control.launch.py'
+KillSignal=SIGINT
+TimeoutStopSec=15
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

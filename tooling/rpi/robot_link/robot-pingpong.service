@@ -1,0 +1,14 @@
+[Unit]
+Description=ROS 2 link check responder (/link/ping -> /link/pong, /link/heartbeat)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+ExecStart=/bin/bash -c 'source /home/ubuntu/robot_link/ros_env.sh && exec python3 /home/ubuntu/robot_link/pingpong_node.py'
+TimeoutStopSec=5
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+#!/bin/sh
+# networkd-dispatcher hook: when the wired link comes up or goes away, restart the ROS services so
+# CycloneDDS (which binds one interface at start, see ros_env.sh) moves between eth0 and wlan0.
+[ "$IFACE" = "eth0" ] || exit 0
+logger -t robot-link "eth0 is $STATE: restarting ROS services to rebind DDS"
+systemctl restart --no-block robot-rosbridge robot-pingpong robot-cmd-watchdog robot-odom-tf robot-straight-drive robot-bringup

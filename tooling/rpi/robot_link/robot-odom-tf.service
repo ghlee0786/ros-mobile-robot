@@ -1,0 +1,15 @@
+[Unit]
+Description=odom -> base_link TF from /odom (needed by SLAM / AMCL / Nav2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+ExecStart=/bin/bash -c 'source /home/ubuntu/robot_link/ros_env.sh && exec python3 /home/ubuntu/robot_link/odom_tf_node.py'
+KillSignal=SIGINT
+TimeoutStopSec=5
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

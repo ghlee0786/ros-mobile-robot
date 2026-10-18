@@ -1,0 +1,14 @@
+[Unit]
+Description=ROS 2 rosbridge websocket (port 9090) for PC/MCP access
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+ExecStart=/bin/bash -c 'source /home/ubuntu/robot_link/ros_env.sh && exec ros2 launch rosbridge_server rosbridge_websocket_launch.xml port:=9090'
+TimeoutStopSec=5
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
