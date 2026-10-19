@@ -1,0 +1,22 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  mockbridge:
+    name: 모의 rosbridge 시험 · mockbridge tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "websockets>=12,<14" websocket-client pytest pillow
+      - run: python -m pytest tooling/mockbridge/tests -q
+  assets:
+    name: README 그림 검사 · README asset check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -I docs/assets/check_assets.py

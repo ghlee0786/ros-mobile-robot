@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 질문 · 토론 · Questions & discussion
+    url: https://github.com/ghlee0786/ros-mobile-robot/discussions
+    about: 사용법 질문과 아이디어는 Discussions 에 · Usage questions and ideas
