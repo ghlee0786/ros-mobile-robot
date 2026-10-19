@@ -67,6 +67,15 @@ private slots:
         QVERIFY(qAbs(c.yaw() + 90) < 1e-9);
     }
 
+    void mapOdomTopicAlsoUsed()
+    {
+        // PC 내비 스택은 map→odom 을 /map_odom 으로도 보낸다
+        CostmapLayer c;
+        c.feed("/map_odom", mapOdom(1, 0, M_PI / 2));
+        c.feed("/global_costmap/costmap", grid("map", 2, 2, 1, QJsonArray{0, 0, 0, 0}));
+        QVERIFY(qAbs(c.center().x() - 1) < 1e-5f && qAbs(c.center().y()) < 1e-5f);
+    }
+
     void ignoresOtherTopicsAndBadData()
     {
         CostmapLayer c;

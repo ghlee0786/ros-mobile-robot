@@ -10,8 +10,19 @@ TfTree::TfTree(QObject *parent) : SceneSource(parent)
     connect(this, &SceneSource::activeChanged, this, [this] {
         if (active())
             m_tick.start();
-        else
-            m_tick.stop(), m_frames.clear(), update(now());
+        else {
+            m_tick.stop();
+            m_frames.removeIf([](const QHash<QString, Frame>::iterator &it) { return !it->isStatic; });
+            update(now());
+        }
+    });
+    connect(this, &SceneSource::bridgeChanged, this, [this] {
+        disconnect(m_staticConn);
+        if (bridge())
+            m_staticConn = connect(bridge(), &RosBridge::message, this, [this](const QString &t, const QJsonObject &m) {
+                if (!active() && t == "/tf_static")   // 켜져 있으면 feed 가 받는다
+                    ingest(m, true, now());
+            });
     });
 }
 
@@ -59,7 +70,7 @@ void TfTree::ingest(const QJsonObject &msg, bool isStatic, qint64 nowMs)
         f.recv = nowMs;
         f.isStatic = isStatic;
     }
-    setReceived(!m_frames.isEmpty());
+    setReceived(active() && !m_frames.isEmpty());
 }
 
 TfTree::Tf TfTree::mul(const Tf &a, const Tf &b)

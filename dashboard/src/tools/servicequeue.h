@@ -10,8 +10,7 @@
 #include "rosbridge.h"
 
 // 서비스 호출을 한 번에 하나씩 직렬로 보내고, timeoutMs 안에 응답이 없으면 실패로 돌린다.
-// 지금 RosBridge::call() 은 result=false 응답을 콜백하지 않으므로 그런 호출도 시간 초과로 끝난다.
-// P4 병합 뒤: call() 의 실패 콜백이 생기면 그 이유(result=false 값)를 fail 로 바로 넘긴다.
+// RosBridge::call() 의 실패 콜백(result=false · 연결 끊김)은 그 이유를 fail 로 바로 넘긴다.
 class ServiceQueue : public QObject
 {
     Q_OBJECT

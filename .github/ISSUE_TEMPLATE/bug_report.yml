@@ -1,0 +1,34 @@
+name: 버그 신고 · Bug report
+description: 무언가 기대와 다르게 동작할 때 · Something does not work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        고마워요! 로봇이 움직이는 문제라면 먼저 **비상 정지**하고 모터 전원을 끈 뒤 적어 주세요.
+        Thanks! If the robot moved unexpectedly, hit **E-STOP** and cut motor power first.
+  - type: dropdown
+    id: area
+    attributes:
+      label: 어디에서 · Area
+      options: [대시보드 dashboard, 모의 서버 mockbridge, 내비 nav (SLAM/Nav2/relay), 로봇 robot_link (Pi), 펌웨어 firmware, 기타 other]
+    validations: { required: true }
+  - type: textarea
+    id: what
+    attributes:
+      label: 무슨 일이 · What happened
+      description: 재현 순서와 기대한 결과 · Steps to reproduce and what you expected
+    validations: { required: true }
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 로그 · 캡처 · Logs / screenshots
+      description: |
+        대시보드는 `--log log.txt --state state.json --screenshot shot.png` 로 띄우면 그대로 붙일 수 있어요.
+        The dashboard can produce these with `--log log.txt --state state.json --screenshot shot.png`.
+      render: text
+  - type: input
+    id: env
+    attributes:
+      label: 환경 · Environment
+      placeholder: Windows 11 · Qt 6.8.3 · Pi 4 Foxy · 모의 서버/실기

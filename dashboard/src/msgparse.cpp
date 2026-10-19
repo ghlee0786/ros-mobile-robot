@@ -114,6 +114,36 @@ QImage occupancyToImage(const QJsonArray &data, int w, int h, const QString &sch
     return img;
 }
 
+namespace {
+Pose2D gridOrigin(const QJsonObject &info)
+{
+    const QJsonObject o = info["origin"].toObject(), pos = o["position"].toObject();
+    return {pos["x"].toDouble(), pos["y"].toDouble(), yawOf(o["orientation"].toObject())};
+}
+}
+
+GridPlane gridPlane(const QJsonObject &info)
+{
+    const double res = info["resolution"].toDouble();
+    const double w = info["width"].toInt() * res, h = info["height"].toInt() * res;
+    // 판 중심 = origin 에서 (폭/2, 높이/2) 만큼(origin 회전 적용)
+    return {transform2D(gridOrigin(info), {w / 2, h / 2, 0}), w, h};
+}
+
+Pose2D gridCellCenter(const QJsonObject &info, int i, int j)
+{
+    const double res = info["resolution"].toDouble();
+    return transform2D(gridOrigin(info), {(i + 0.5) * res, (j + 0.5) * res, 0});
+}
+
+QPointF planeUv(const GridPlane &plane, double x, double y)
+{
+    const double dx = x - plane.center.x, dy = y - plane.center.y;
+    const double c = std::cos(plane.center.yaw), s = std::sin(plane.center.yaw);
+    const double lx = c * dx + s * dy, ly = -s * dx + c * dy;   // 판 좌표(판 중심 기준, origin 축)
+    return {lx / plane.width + 0.5, 0.5 - ly / plane.height};   // 이미지 위 = 판의 +y
+}
+
 QJsonArray initialPoseCovariance()
 {
     QJsonArray a;

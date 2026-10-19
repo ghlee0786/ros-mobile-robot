@@ -1,214 +1,137 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import QtGraphs
 import RobotDashboard
 
-// 데이터 점검: 토픽별 주기 · 지연 · 상태, CSV 기록, 직진 시험 결과, 이벤트
+// 데이터 점검: 토픽 · 로그 · 진단 · 노드 · 서비스 · 파라미터 · 기록 · 시험 탭과 경보 목록.
+// 안 보이는 탭은 구독 · 조회를 켜지 않는다. 시험 훅 state 덤프용으로 objectName "inspector" 와 읽기 전용 요약 속성을 둔다.
 Item {
     id: page
+    objectName: "inspector"
     required property Robot robot
-    readonly property string mono: Theme.monoFamily
+    property string tab: "토픽"   // 시험 actions 에서 {"set": "inspector.tab", "value": "로그"} 로 바꾼다
+    readonly property var tabs: ["토픽", "로그", "진단", "노드", "서비스", "파라미터", "기록·시험"]
 
-    RowLayout {
+    // 요약(읽기 전용)
+    readonly property int logCount: logModel.count
+    readonly property int logShownCount: logFilter.count
+    readonly property int diagCount: diagModel.count
+    readonly property int diagStaleCount: diagModel.staleCount
+    readonly property int diagErrorCount: diagModel.errorCount
+    readonly property bool diagSynthetic: diagModel.synthetic
+    readonly property bool diagStreamLost: diagModel.streamLost
+    readonly property int alertCount: Alerts.count
+    readonly property string inspectTopic: msgTree.topic
+    readonly property int nodeCount: rosApi.nodes.length
+    readonly property int serviceCount: rosApi.services.length
+    readonly property string rosapiError: rosApi.error
+    readonly property string serviceCallError: rosApi.callError
+    readonly property int paramCount: paramClient.count
+    readonly property bool paramLastSuccessful: paramClient.lastSuccessful
+    readonly property int callsPending: rosApi.callsPending
+
+    function shows(name) { return page.visible && page.tab === name }
+
+    LogModel { id: logModel; objectName: "logModel"; bridge: page.robot.bridge; active: page.shows("로그") }
+    LogFilterModel { id: logFilter; objectName: "logFilter"; sourceModel: logModel }
+    DiagnosticsModel { id: diagModel; objectName: "diagModel"; bridge: page.robot.bridge; active: page.shows("진단") }
+    MessageTreeModel { id: msgTree; objectName: "msgTree"; bridge: page.robot.bridge }
+    MessageTreeModel { id: responseTree; objectName: "responseTree" }
+    RosApiClient { id: rosApi; objectName: "rosApi"; bridge: page.robot.bridge }
+    ParamClient {
+        id: paramClient
+        objectName: "paramClient"
+        bridge: page.robot.bridge
+        active: page.shows("파라미터")
+        writable: !page.robot.bridge.noPublish
+    }
+
+    // ---- 경보: 조건은 1 s 마다 다시 본다. bridgeError 는 30 s 동안 남긴다. ----
+    property double bridgeErrorAt: 0
+    Connections {
+        target: page.robot.bridge
+        function onBridgeError(text) {
+            page.bridgeErrorAt = Date.now()
+            Alerts.set("bridgeError", "warn", "rosbridge: " + text, "서비스 이름 · 요청 형식을 확인한다. 30 s 뒤 사라진다.")
+        }
+    }
+    function refreshAlerts() {
+        const r = page.robot
+        const connected = r.bridge.connected
+        Alerts.update("linkLost", r.linkLost, "error", "로봇 연결 끊김",
+                      "파이 전원 · Wi-Fi · rosbridge(9090)를 확인한다.")
+        Alerts.update("missingRequired", connected && r.missingRequired.length > 0, "error",
+                      "필수 토픽 없음: " + r.missingRequired.join(", "),
+                      "노드 탭에서 그 토픽을 내는 노드가 떠 있는지 본다.")
+        Alerts.update("watchdog", connected && !r.watchdogOk, "warn", "워치독 확인 안 됨",
+                      "펌웨어 워치독(/link 하트비트)이 오는지 진단 탭에서 본다.")
+        Alerts.update("diagError", diagModel.errorCount > 0 && !diagModel.synthetic, "error",
+                      "진단 ERROR " + diagModel.errorCount + "개", "진단 탭의 Error 그룹을 연다.")
+        Alerts.update("rosapiSlow", rosApi.rosapiSlow, "warn", "rosapi 응답 지연: " + rosApi.error,
+                      "파이에서 rosapi 노드가 떠 있는지 본다(rosbridge launch).")
+        if (page.bridgeErrorAt > 0 && Date.now() - page.bridgeErrorAt > 30000) {
+            Alerts.remove("bridgeError")
+            page.bridgeErrorAt = 0
+        }
+    }
+    Timer { interval: 1000; running: true; repeat: true; triggeredOnStart: true; onTriggered: page.refreshAlerts() }
+
+    ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 16
-        anchors.leftMargin: 20
-        anchors.rightMargin: 20
-        spacing: 16
+        anchors.margins: Theme.sp4
+        anchors.leftMargin: Theme.sp5
+        anchors.rightMargin: Theme.sp5
+        spacing: Theme.sp3
 
+        // 경보 목록(tip 포함)
         Panel {
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.alignment: Qt.AlignTop
-            title: "토픽 상태"
-            headerExtra: Column {
-                spacing: 4
-                Text { text: "토픽 찾기"; color: Theme.text2; font.pixelSize: Theme.fsSmall }
-                TextField {
-                    id: filter
-                    width: 220; height: 36
-                    placeholderText: "/odom"
-                    color: Theme.text1; placeholderTextColor: Theme.text3
-                    font.family: page.mono
-                    background: Rectangle { radius: Theme.rMd; color: Theme.base; border.color: Theme.borderDefault }
-                }
-            }
-            ScrollView {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                contentWidth: availableWidth
-                clip: true
-                GridLayout {
-                    id: table
-                    width: parent.width
-                    columns: 6
-                    columnSpacing: 0
-                    rowSpacing: 0
-                    component Cell: Text {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 34
-                        leftPadding: 8
-                        verticalAlignment: Text.AlignVCenter
-                        color: Theme.text1
-                        font.pixelSize: Theme.fsBody
-                        elide: Text.ElideRight
+            visible: Alerts.count > 0
+            title: "경보"
+            subtitle: Alerts.count + "개"
+            Repeater {
+                model: Alerts.items
+                RowLayout {
+                    required property string severity
+                    required property string message
+                    required property string tip
+                    required property string time
+                    Layout.fillWidth: true
+                    spacing: Theme.sp2
+                    StatusChip {
+                        kind: severity === "error" ? "danger" : severity === "warn" ? "warn" : "neutral"
+                        text: severity === "error" ? "오류" : severity === "warn" ? "주의" : "알림"
                     }
-                    Cell { text: "토픽"; color: Theme.text2; Layout.preferredWidth: 260 }
-                    Cell { text: "형식"; color: Theme.text2; Layout.preferredWidth: 240 }
-                    Cell { text: "주기"; color: Theme.text2; Layout.preferredWidth: 90 }
-                    Cell { text: "지연"; color: Theme.text2; Layout.preferredWidth: 90 }
-                    Cell { text: "상태"; color: Theme.text2; Layout.preferredWidth: 100 }
-                    Cell { text: "기록"; color: Theme.text2; Layout.preferredWidth: 60 }
-                    Repeater {   // 토픽마다 6 칸
-
-                        model: {
-                            const cells = []
-                            for (const t of robot.topicRows)
-                                if (filter.text === "" || t.name.indexOf(filter.text) >= 0)
-                                    for (let c = 0; c < 6; ++c) cells.push({ t: t, c: c })
-                            return cells
-                        }
-                        delegate: Item {
-                            required property var modelData
-                            readonly property var t: modelData.t
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 36
-                            Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Theme.borderSubtle }
-                            Text {
-                                visible: modelData.c < 4
-                                anchors.fill: parent
-                                leftPadding: 8
-                                verticalAlignment: Text.AlignVCenter
-                                elide: Text.ElideRight
-                                font.family: page.mono
-                                font.pixelSize: modelData.c === 1 ? Theme.fsSmall : Theme.fsBody
-                                color: modelData.c === 1 ? Theme.text2 : Theme.text1
-                                text: [t.name, t.type, t.hz, t.lat][modelData.c] ?? ""
-                            }
-                            Rectangle {
-                                visible: modelData.c === 4
-                                x: 8; anchors.verticalCenter: parent.verticalCenter
-                                radius: Theme.rPill; height: 22; width: st.implicitWidth + 18
-                                color: t.state === "정상" ? Theme.okSubtle : t.state === "구독 안 함" ? Theme.surface3 : Theme.warnSubtle
-                                Text {
-                                    id: st; anchors.centerIn: parent; text: t.state; font.pixelSize: Theme.fsSmall
-                                    color: t.state === "정상" ? Theme.okText : t.state === "구독 안 함" ? Theme.text2 : Theme.warnText
-                                }
-                            }
-                            CheckBox {
-                                visible: modelData.c === 5
-                                x: 4; anchors.verticalCenter: parent.verticalCenter
-                                checked: t.rec
-                                onToggled: robot.setRecordTopic(t.name, checked)
-                            }
-                        }
-                    }
+                    Text { text: message; color: Theme.text1; font.pixelSize: Theme.fsBody; elide: Text.ElideRight; Layout.maximumWidth: 520 }
+                    Text { text: tip; color: Theme.text2; font.pixelSize: Theme.fsSmall; elide: Text.ElideRight; Layout.fillWidth: true }
+                    Text { text: time; color: Theme.text3; font.family: Theme.monoFamily; font.pixelSize: Theme.fsCaption }
                 }
             }
         }
 
-        ColumnLayout {
-            Layout.preferredWidth: 400
-            Layout.fillWidth: false
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.sp3
+            Seg {
+                options: page.tabs
+                current: page.tab
+                onPicked: v => page.tab = v
+            }
+            StatusChip { visible: diagModel.active && diagModel.streamLost; kind: "danger"; text: "진단 끊김" }
+            Item { Layout.fillWidth: true }
+        }
+
+        StackLayout {
+            Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 12
-
-            Panel {
-                Layout.fillWidth: true
-                title: "기록 (CSV)"
-                Text {
-                    color: Theme.text2; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
-                    text: "선택한 토픽 <b>" + robot.recordTopics.length + "개</b> · 경과 <b>" + robot.recordElapsed + "</b>"
-                }
-                Text {
-                    Layout.fillWidth: true; wrapMode: Text.WrapAnywhere
-                    text: robot.recordPath === "" ? "records/<시각>/<토픽>.csv 로 저장" : robot.recordPath
-                    color: Theme.text2; font.family: page.mono; font.pixelSize: Theme.fsSmall
-                }
-                Row {
-                    spacing: 8
-                    Btn { text: robot.recording ? "기록 중지" : "기록 시작"; kind: robot.recording ? "danger" : "accent"; onClicked: robot.toggleRecording() }
-                    Btn { text: "파일 열기"; onClicked: robot.openRecords() }
-                }
-            }
-
-            Panel {
-                Layout.fillWidth: true
-                title: "직진 시험 결과"
-                subtitle: robot.straightRunning ? "진행 중" : (robot.straightResult.reason ?? "")
-                GraphsView {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 130
-                    marginLeft: 0; marginRight: 4; marginTop: 4; marginBottom: 0
-                    theme: GraphsTheme {
-                        backgroundVisible: false
-                        plotAreaBackgroundColor: Theme.surface1
-                        grid.mainColor: Theme.borderDefault
-                        labelTextColor: Theme.text2
-                        axisXLabelFont.pixelSize: Theme.fsCaption
-                        axisYLabelFont.pixelSize: Theme.fsCaption
-                    }
-                    axisX: ValueAxis { min: 0; max: 1.0; tickInterval: 0.25; labelDecimals: 2; subGridVisible: false }
-                    axisY: ValueAxis {   // 옆 오차 cm
-                        readonly property real span: Math.max(2, ...robot.straightTrack.map(p => Math.abs(p.y)))
-                        min: -span; max: span; tickInterval: span; labelDecimals: 1; subGridVisible: false
-                    }
-                    LineSeries { color: Theme.series[1]; width: 2; XYPoint { x: 0; y: 0 } XYPoint { x: 1; y: 0 } }
-                    LineSeries {
-                        id: track
-                        color: Theme.series[0]; width: 2.5
-                        property var pts: robot.straightTrack
-                        onPtsChanged: { clear(); for (const p of pts) append(p.x, p.y) }
-                    }
-                }
-                GridLayout {
-                    columns: 3
-                    columnSpacing: 8
-                    Layout.fillWidth: true
-                    Repeater {
-                        model: [
-                            ["옆 오차", robot.straightResult.cross !== undefined ? (robot.straightResult.cross >= 0 ? "+" : "") + robot.straightResult.cross.toFixed(1) + " cm" : "—"],
-                            ["방향 오차", robot.straightResult.heading !== undefined ? (robot.straightResult.heading >= 0 ? "+" : "") + robot.straightResult.heading.toFixed(1) + "°" : "—"],
-                            ["소요", robot.straightResult.duration !== undefined ? robot.straightResult.duration.toFixed(1) + " s" : "—"]
-                        ]
-                        Rectangle {
-                            required property var modelData
-                            Layout.fillWidth: true
-                            implicitHeight: 52
-                            radius: Theme.rLg; color: Theme.surface2
-                            Column {
-                                anchors.fill: parent; anchors.margins: 8; anchors.leftMargin: 10
-                                Text { text: modelData[0]; color: Theme.text2; font.pixelSize: Theme.fsSmall }
-                                Text { text: modelData[1]; color: Theme.text1; font.family: page.mono; font.pixelSize: Theme.fsTitle }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Panel {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                title: "이벤트"
-                ListView {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Layout.preferredHeight: 260
-                    clip: true
-                    spacing: 6
-                    model: robot.events
-                    delegate: Text {
-                        required property string modelData
-                        width: ListView.view.width
-                        elide: Text.ElideRight
-                        text: modelData
-                        font.family: page.mono
-                        font.pixelSize: Theme.fsBody
-                        color: modelData.indexOf("지연") >= 0 || modelData.indexOf("끊김") >= 0 || modelData.indexOf("비상") >= 0 ? Theme.warnText : Theme.text1
-                    }
-                }
-            }
+            currentIndex: page.tabs.indexOf(page.tab)
+            TopicsTab { robot: page.robot; tree: msgTree; active: page.shows("토픽") }
+            LogTab { log: logModel; filter: logFilter }
+            DiagTab { robot: page.robot; diag: diagModel }
+            NodesTab { robot: page.robot; api: rosApi; active: page.shows("노드") }
+            ServicesTab { api: rosApi; response: responseTree; active: page.shows("서비스") }
+            ParamsTab { params: paramClient; api: rosApi; active: page.shows("파라미터") }
+            RecordTab { robot: page.robot }
         }
     }
 }

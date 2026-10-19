@@ -1,0 +1,20 @@
+name: 기능 제안 · Feature request
+description: 새 패널 · 도구 · 시험 시나리오 아이디어 · A new panel, tool or test scenario
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 어떤 문제를 풀고 싶나요 · What problem does it solve
+    validations: { required: true }
+  - type: textarea
+    id: idea
+    attributes:
+      label: 제안 · Proposal
+      description: 참고한 도구(RViz2, Foxglove, PlotJuggler …)가 있으면 알려 주세요 · Mention prior art if any
+  - type: checkboxes
+    id: test
+    attributes:
+      label: 시험 · Testing
+      options:
+        - label: 모의 서버 시나리오로 시험할 수 있어요 · It can be tested with a mockbridge scenario

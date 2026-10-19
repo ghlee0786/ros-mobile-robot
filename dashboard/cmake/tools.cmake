@@ -9,3 +9,20 @@ target_sources(robot_dashboard PRIVATE
 )
 # QML 형식 등록 코드가 헤더를 파일 이름만으로 include 한다
 target_include_directories(robot_dashboard PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/tools)
+
+# 점검 화면 탭 UI(P7b). Alerts 는 싱글턴(qmldir 표시를 위해 qt_target_qml_sources 보다 먼저).
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/qml/inspector/Alerts.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+qt_target_qml_sources(robot_dashboard
+    QML_FILES
+        qml/inspector/Alerts.qml
+        qml/inspector/InField.qml
+        qml/inspector/InCheck.qml
+        qml/inspector/MessageTree.qml
+        qml/inspector/TopicsTab.qml
+        qml/inspector/RecordTab.qml
+        qml/inspector/LogTab.qml
+        qml/inspector/DiagTab.qml
+        qml/inspector/NodesTab.qml
+        qml/inspector/ServicesTab.qml
+        qml/inspector/ParamsTab.qml
+)

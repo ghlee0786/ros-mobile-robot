@@ -134,7 +134,7 @@ QList<QPointF> PlotFeeder::visiblePoints(int i) const
 {
     if (i < 0 || i >= m_series.size() || !m_series[i]->enabled())
         return {};
-    return m_series[i]->data().decimate(m_xMin, m_xMax, m_pixelWidth);
+    return m_series[i]->data().decimate(m_xMin, m_xMax, m_pixelWidth, m_series[i]->steps());
 }
 
 void PlotFeeder::refresh()

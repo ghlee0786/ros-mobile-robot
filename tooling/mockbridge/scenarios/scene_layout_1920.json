@@ -1,0 +1,65 @@
+{
+  "id": "scene_layout_1920",
+  "title": "1920x1080 창: 위에서 본 지도 · 조종 바(비상 정지까지 잘림 없음) · 3D 위 도구 줄 배치 스크린샷",
+  "needs_pi": false,
+  "needs_human": false,
+  "scene": true,
+  "server_args": [
+    "--freeze-pose"
+  ],
+  "dashboard_args": [
+    "--size",
+    "1920x1080"
+  ],
+  "actions": [
+    {
+      "t": 1,
+      "set": "robot.mapWanted",
+      "value": true
+    },
+    {
+      "t": 2,
+      "set": "scene.cam",
+      "value": "위에서"
+    },
+    {
+      "t": 7,
+      "shot": "map_top.png"
+    }
+  ],
+  "duration_s": 10,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.hasMap",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.mapProbeOccupied",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.mapProbeErrPx",
+        "op": "<=",
+        "value": 2
+      },
+      {
+        "path": "scene.mapProbeErrPx",
+        "op": ">=",
+        "value": 0
+      }
+    ]
+  }
+}

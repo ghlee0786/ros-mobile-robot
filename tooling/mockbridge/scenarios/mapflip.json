@@ -42,6 +42,21 @@
         "path": "robot.hasMap",
         "op": "==",
         "value": true
+      },
+      {
+        "path": "scene.mapProbeOccupied",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.mapProbeErrPx",
+        "op": "<=",
+        "value": 2
+      },
+      {
+        "path": "scene.mapProbeErrPx",
+        "op": ">=",
+        "value": 0
       }
     ]
   }

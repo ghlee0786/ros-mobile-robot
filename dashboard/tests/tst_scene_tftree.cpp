@@ -123,6 +123,24 @@ private slots:
         t.setActive(false);
         QVERIFY(!b.subscribed("/tf") && !b.subscribed("/tf_static"));
     }
+
+    void keepsStaticWhileInactive()
+    {
+        // 꺼져 있을 때 지나간 /tf_static 은 받아 두고, 끌 때도 정적 프레임은 남긴다
+        RosBridge b;
+        TfTree t;
+        t.setBridge(&b);
+        emit b.message("/tf_static", msg({tf("base_link", "laser", 0.1, 0, 0, 0)}));
+        t.setActive(true);
+        t.feed("/tf", msg({tf("odom", "base_link", 1, 0, 0, 0)}));
+        t.update(0);
+        QCOMPARE(t.frameCount(), 3);
+        t.setActive(false);
+        t.setActive(true);
+        t.feed("/tf", msg({tf("odom", "base_link", 1, 0, 0, 0)}));
+        t.update(0);
+        QCOMPARE(t.frameCount(), 3);
+    }
 };
 
 QTEST_MAIN(TstSceneTfTree)
