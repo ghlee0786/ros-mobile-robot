@@ -43,4 +43,5 @@
 
 ```yaml
 reply_language: "Korean"   # 사용자는 한국인 — 대답·진행 보고·요약·최종 정리·작업자 보고 모두 한국어
+check_timeout_min: 45      # 대시보드(Quick 3D)는 새 worktree 에서 처음부터 빌드하면 오래 걸린다
 ```

@@ -6,6 +6,7 @@ import RobotDashboard
 
 ApplicationWindow {
     id: win
+    objectName: "win"
     width: 1440
     height: 980
     visible: true
@@ -16,7 +17,7 @@ ApplicationWindow {
     property int page: 0   // 0 대시보드 · 1 데이터 점검 · 2 연결
     readonly property string mono: "Consolas"
 
-    Robot { id: robot }
+    Robot { id: robot; objectName: "robot" }
 
     // 창 크기는 다음 실행에도 그대로 (위치는 모니터 구성이 바뀌면 화면 밖에 뜰 수 있어 저장하지 않는다)
     Settings {

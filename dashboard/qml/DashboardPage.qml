@@ -52,6 +52,7 @@ FocusScope {
             spacing: 16
 
             SceneView {
+                objectName: "scene"
                 robot: page.robot
                 Layout.fillWidth: true
                 Layout.fillHeight: true
