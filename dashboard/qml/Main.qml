@@ -27,11 +27,16 @@ ApplicationWindow {
     }
 
     // 켜면 마지막 주소로 자동 연결하고, 4 s 안에 붙지 않으면 연결 화면을 띄운다.
-    Component.onCompleted: robot.connectTo(robot.lastHost, robot.lastPort)
+    Component.onCompleted: {
+        if (AppConfig.autoConnect)
+            robot.connectTo(AppConfig.host !== "" ? AppConfig.host : robot.lastHost, AppConfig.port > 0 ? AppConfig.port : robot.lastPort)
+        if (AppConfig.page >= 0)
+            win.page = AppConfig.page
+    }
     Timer {
         interval: 4000
         running: true
-        onTriggered: if (!robot.bridge.connected) win.page = 2
+        onTriggered: if (AppConfig.page < 0 && !robot.bridge.connected) win.page = 2
     }
 
     header: Rectangle {
