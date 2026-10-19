@@ -27,7 +27,7 @@ QtObject {
         category: "theme"
         property bool reduceMotion: false
         property bool largeText: false
-        property bool followSystem: true
+        property bool followSystem: false   // 기본은 다크(3D 화면과 맞춤). 시스템 테마를 따르려면 true
         property bool darkChoice: true   // followSystem 이 꺼졌을 때 쓰는 값
     }
     property alias reduceMotion: store.reduceMotion
