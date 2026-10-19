@@ -1,0 +1,30 @@
+{
+  "id": "safety_freeze_arm",
+  "title": "B7: 수신이 멈춘(linkLost) 동안 armTeleop(true) 는 거부되고 drive(1,0) 의 비0 cmd_vel 이 나가지 않음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": ["--freeze", "10@4"],
+  "dashboard_args": [],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 10},
+    {"t": 1, "set": "robot.mode", "value": "키보드 조종"},
+    {"wait": "robot.linkLost", "timeout_s": 15},
+    {"t": 9, "call": "robot.armTeleop", "args": [true]},
+    {"t": 9.05, "call": "robot.drive", "args": [1, 0]},
+    {"t": 10, "call": "robot.armTeleop", "args": [true]},
+    {"t": 10.05, "call": "robot.drive", "args": [0, 1]}
+  ],
+  "duration_s": 16,
+  "expect": {
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "trace": [
+      {"rule": "was_true_between", "path": "robot.linkLost", "op": "==", "value": true, "from_s": 8, "to_s": 12},
+      {"rule": "never_between", "path": "robot.teleopArmed", "op": "==", "value": true, "from_s": 7, "to_s": 14}
+    ],
+    "server_log": [
+      {"rule": "count_ge", "topic": "/teleop/cmd_vel", "value": 50},
+      {"rule": "max_abs", "topic": "/teleop/cmd_vel", "field": "linear.x", "value": 0},
+      {"rule": "max_abs", "topic": "/teleop/cmd_vel", "field": "angular.z", "value": 0}
+    ]
+  }
+}
