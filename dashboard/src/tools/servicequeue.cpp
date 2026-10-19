@@ -56,6 +56,16 @@ void ServiceQueue::pump()
                 ok(v);
             if (self)
                 self->pump();
+        }, [self, gen](const QString &why) {
+            if (!self || gen != self->m_gen)
+                return;
+            const Fail fail = self->m_cur.fail;
+            const QString svc = self->m_cur.service;
+            self->finish();
+            if (fail)
+                fail(svc + ": " + why);
+            if (self)
+                self->pump();
         });
     }
 }

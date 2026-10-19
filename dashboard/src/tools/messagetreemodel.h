@@ -25,6 +25,7 @@ class MessageTreeModel : public QAbstractItemModel
     Q_PROPERTY(bool hasPrevious READ hasPrevious NOTIFY messageChanged)
     Q_PROPERTY(int diffCount READ diffCount NOTIFY messageChanged)   // 바뀐 잎 필드 수
     Q_PROPERTY(int messageCount READ messageCount NOTIFY messageChanged)
+    Q_PROPERTY(QJsonObject message READ message NOTIFY messageChanged)   // 지금 보이는 메시지(필드 경로 검색용)
 
 public:
     static constexpr int kArrayLimit = 32;
@@ -42,6 +43,7 @@ public:
     bool hasPrevious() const { return !m_prev.isEmpty(); }
     int diffCount() const { return m_diffCount; }
     int messageCount() const { return m_messageCount; }
+    QJsonObject message() const { return m_cur; }
     QSet<QString> changedPaths() const { return m_changed; }
 
     Q_INVOKABLE void setMessage(const QJsonObject &msg);
