@@ -1,0 +1,48 @@
+{
+  "id": "halfopen",
+  "title": "반쯤 열린 연결을 감지하고 다시 붙음",
+  "needs_pi": false,
+  "needs_human": false,
+  "requires": [
+    "P4-core"
+  ],
+  "server_args": [
+    "--halfopen",
+    "5"
+  ],
+  "dashboard_args": [],
+  "actions": [],
+  "duration_s": 30,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "dir": "event",
+        "op": "connect",
+        "value": 2
+      }
+    ],
+    "trace": [
+      {
+        "rule": "was_true_between",
+        "path": "bridge.connected",
+        "op": "==",
+        "value": false,
+        "from_s": 5,
+        "to_s": 25
+      }
+    ]
+  }
+}

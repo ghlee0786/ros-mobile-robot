@@ -1,0 +1,35 @@
+{
+  "id": "skew",
+  "title": "stamp 8 s 어긋남 → clockSkew 표시",
+  "needs_pi": false,
+  "needs_human": false,
+  "requires": [
+    "P4-core"
+  ],
+  "server_args": [
+    "--stamp-skew-ms",
+    "8000"
+  ],
+  "dashboard_args": [],
+  "actions": [],
+  "duration_s": 12,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "bridge.clockSkewMs",
+        "op": ">=",
+        "value": 7000
+      }
+    ]
+  }
+}

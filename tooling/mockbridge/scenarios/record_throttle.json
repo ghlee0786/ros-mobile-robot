@@ -1,0 +1,51 @@
+{
+  "id": "record_throttle",
+  "title": "기록 시작·중지 뒤 probe 해도 /imu throttle_rate 가 50 유지",
+  "needs_pi": false,
+  "needs_human": false,
+  "requires": [
+    "P4-core"
+  ],
+  "server_args": [],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 2,
+      "call": "robot.toggleRecording",
+      "args": []
+    },
+    {
+      "t": 5,
+      "call": "robot.toggleRecording",
+      "args": []
+    },
+    {
+      "t": 6,
+      "call": "robot.probe",
+      "args": []
+    }
+  ],
+  "duration_s": 10,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "throttle_eq",
+        "topic": "/imu/data_raw",
+        "value": 50,
+        "all": true
+      }
+    ]
+  }
+}

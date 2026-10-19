@@ -1,0 +1,43 @@
+{
+  "id": "flood",
+  "title": "/imu 1 kHz 폭주 60 s 동안 /teleop/cmd_vel 10 Hz±10% 유지",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--flood",
+    "/imu/data_raw:1000"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 1,
+      "set": "robot.mode",
+      "value": "키보드 조종"
+    }
+  ],
+  "duration_s": 65,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "rate_between",
+        "topic": "/teleop/cmd_vel",
+        "from_s": 5,
+        "to_s": 60,
+        "min_hz": 9,
+        "max_hz": 11
+      }
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "id": "reconnect",
+  "title": "서버 끊기 · 재시작 뒤 같은 구독 집합과 advertise 4 개 재수신",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--disconnect-every",
+    "8"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 20,
+      "runner": "restart_server",
+      "down_s": 1.0
+    }
+  ],
+  "duration_s": 34,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "resubscribe_within",
+        "within_s": 4,
+        "min_reconnects": 2,
+        "min_advertise": 4
+      }
+    ]
+  }
+}

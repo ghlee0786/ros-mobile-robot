@@ -1,0 +1,48 @@
+{
+  "id": "bigmap",
+  "title": "2000² 지도 수신 (hasMap · mapSize)",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--map-size",
+    "2000x2000"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 1,
+      "set": "robot.mapWanted",
+      "value": true
+    }
+  ],
+  "duration_s": 30,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.hasMap",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.mapSize.width",
+        "op": "==",
+        "value": 100.0
+      },
+      {
+        "path": "robot.mapSize.height",
+        "op": "==",
+        "value": 100.0
+      }
+    ]
+  }
+}

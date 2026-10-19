@@ -1,0 +1,86 @@
+{
+  "id": "estop",
+  "title": "주행 · 직진 중 비상 정지 → 100 ms 안에 0 Twist 3 회 · 직진 취소 · cancel_goal, 그 뒤 비0 없음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 1,
+      "set": "robot.mode",
+      "value": "키보드 조종"
+    },
+    {
+      "t": 2,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 4,
+      "call": "robot.straight",
+      "args": [
+        1.0
+      ]
+    },
+    {
+      "t": 5,
+      "call": "robot.estop",
+      "args": []
+    }
+  ],
+  "duration_s": 10,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "within_ms_after_action",
+        "action": "robot.estop",
+        "topic": "/teleop/cmd_vel",
+        "where": {
+          "linear.x": 0,
+          "angular.z": 0
+        },
+        "ms": 100,
+        "min_count": 3
+      },
+      {
+        "rule": "within_ms_after_action",
+        "action": "robot.estop",
+        "topic": "/straight_drive/cancel",
+        "ms": 100
+      },
+      {
+        "rule": "within_ms_after_action",
+        "action": "robot.estop",
+        "op": "call_service",
+        "service": "/navigate_to_pose/_action/cancel_goal",
+        "ms": 100
+      },
+      {
+        "rule": "zero_after_action",
+        "action": "robot.estop",
+        "topic": "/teleop/cmd_vel",
+        "fields": [
+          "linear.x",
+          "angular.z"
+        ],
+        "after_ms": 0
+      }
+    ]
+  }
+}

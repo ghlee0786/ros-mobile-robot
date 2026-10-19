@@ -76,6 +76,9 @@ class Robot : public QObject
     // 조종 · 직진 시험
     Q_PROPERTY(QString mode READ mode WRITE setMode NOTIFY modeChanged)
     Q_PROPERTY(double maxSpeed READ maxSpeed WRITE setMaxSpeed NOTIFY modeChanged)
+    // 조종 잠금: 잠긴 동안 drive() 입력을 버린다(0 은 10 Hz 로 계속). 연결 · 재연결 · linkLost · estop · 무입력이면 잠긴다.
+    Q_PROPERTY(bool teleopArmed READ teleopArmed NOTIFY teleopArmedChanged)
+    Q_PROPERTY(int armIdleMs READ armIdleMs WRITE setArmIdleMs NOTIFY teleopArmedChanged)   // 무입력 자동 잠금(ms), 시험에서 줄인다
     Q_PROPERTY(bool straightRunning READ straightRunning NOTIFY straightChanged)
     Q_PROPERTY(QVariantMap straightResult READ straightResult NOTIFY straightChanged)
     Q_PROPERTY(QList<QPointF> straightTrack READ straightTrack NOTIFY straightChanged)
@@ -148,6 +151,9 @@ public:
     void setMode(const QString &m);
     double maxSpeed() const { return m_maxSpeed; }
     void setMaxSpeed(double v);
+    bool teleopArmed() const { return m_armed; }
+    int armIdleMs() const { return m_armIdleMs; }
+    void setArmIdleMs(int ms);
     bool straightRunning() const { return m_straightRunning; }
     QVariantMap straightResult() const { return m_straightResult; }
     QList<QPointF> straightTrack() const { return m_straightTrack; }
@@ -159,12 +165,14 @@ public:
 
     // 데이터 폴더(model/ · records/): env ROBOT_DASHBOARD_DIR → 실행 파일 위 폴더(model/ 이 있으면) → 현재 폴더
     static QString dataDir();
+    Q_INVOKABLE QString recordsDir() const;   // dataDir/records (없으면 만든다) — 그래프 CSV · PNG 저장
 
     Q_INVOKABLE void connectTo(const QString &host, int port);
     Q_INVOKABLE void resetSession();   // 다른 로봇에 붙을 때: 자취 · 거리 · 지도 · 경로 · 프레임 · 직진 결과 · map→odom
     Q_INVOKABLE void setSensor(const QString &key, bool on);
     Q_INVOKABLE void probe();
     Q_INVOKABLE void drive(double linear, double angular);   // -1..1 (최대 속도 비율)
+    Q_INVOKABLE void armTeleop(bool on);
     Q_INVOKABLE void straight(double distance);
     Q_INVOKABLE void sendGoal(double x, double y, double yaw);   // Nav2 이동 목표 (odom 프레임 m · rad)
     Q_INVOKABLE void setInitialPose(double x, double y, double yaw);   // AMCL 초기 위치 (odom 프레임 m · rad) → /dashboard/initialpose
@@ -189,6 +197,7 @@ signals:
     void eventsChanged();
     void savedChanged();
     void modeChanged();
+    void teleopArmedChanged();
     void straightChanged();
     void recordChanged();
     // 그래프용 표본(30 Hz): 시간 s, 바퀴 목표/실측 L·R rad/s, gyro z rad/s, accel x m/s²
@@ -257,6 +266,9 @@ private:
 
     QString m_mode = QStringLiteral("키보드 조종");
     double m_maxSpeed = 0.08, m_lin = 0, m_ang = 0;
+    bool m_armed = false;
+    int m_armIdleMs = 30000;
+    QElapsedTimer m_armInput;   // 마지막 조종 입력
     bool m_straightRunning = false;
     QVariantMap m_straightResult;
 
