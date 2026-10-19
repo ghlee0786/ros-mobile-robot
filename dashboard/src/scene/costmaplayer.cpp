@@ -1,4 +1,5 @@
 #include "costmaplayer.h"
+#include "msgparse.h"
 #include "scenemath.h"
 
 #include <QJsonArray>
@@ -27,11 +28,8 @@ QColor CostmapLayer::costColor(int v)
 
 QImage CostmapLayer::toImage(int w, int h, const QJsonArray &data)
 {
-    QImage img(w, h, QImage::Format_ARGB32);
-    for (int r = 0; r < h; ++r)   // 지도 0 행은 아래쪽
-        for (int c = 0; c < w; ++c)
-            img.setPixelColor(c, h - 1 - r, costColor(data[r * w + c].toInt()));
-    return img;
+    // 팔레트는 msgparse 의 costmap 과 같다(costColor 는 시험 · 범례용으로 남김). 지도 0 행은 아래쪽.
+    return msgparse::occupancyToImage(data, w, h, QStringLiteral("costmap")).convertToFormat(QImage::Format_ARGB32);
 }
 
 void CostmapLayer::setTopic(const QString &t)

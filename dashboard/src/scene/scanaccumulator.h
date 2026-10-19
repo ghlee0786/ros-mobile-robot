@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scenesource.h"
+#include "msgparse.h"
 
 #include <QColor>
 #include <QTimer>
@@ -8,7 +9,8 @@
 
 // LiDAR 잔상: /scan 을 받은 시점의 로봇 자세(QML 이 robot.x · y · theta 를 바인딩)로 odom 프레임에 고정해
 // decaySec 동안 묶음 단위로 쌓는다. RViz 처럼 마지막 묶음은 시간이 지나도 남긴다. 점은 최대 kMaxPoints 개.
-// /scan 구독은 Robot 의 LiDAR 센서가 맡으므로 여기서는 받기만 한다.
+// /scan 구독은 Robot 의 LiDAR 센서가 맡으므로 여기서는 받기만 한다. frame_id 가 base_link 가 아니면
+// 함께 지나가는 /tf_static 의 base_link → 레이저 장착 변환을 적용한다(Robot::onScan 과 같음).
 class ScanAccumulator : public SceneSource
 {
     Q_OBJECT
@@ -57,6 +59,7 @@ private:
     QString m_mode = QStringLiteral("flat");
     QColor m_color = Qt::white;
     QList<Batch> m_batches;   // 오래된 것부터
+    QHash<QString, msgparse::Pose2D> m_mounts;   // base_link → 레이저 프레임
     QList<QVector3D> m_points;
     QList<QColor> m_colors;
     QTimer m_tick;

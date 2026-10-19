@@ -45,6 +45,14 @@ void ScanAccumulator::handle(const QString &topic, const QJsonObject &msg)
 {
     if (topic == "/scan")
         addScan(msg, now());
+    else if (topic == "/tf_static")
+        for (const QJsonValue &v : msg["transforms"].toArray()) {
+            const QJsonObject t = v.toObject(), tr = t["transform"].toObject();
+            if (t["header"].toObject()["frame_id"].toString().remove(QChar('/')) == "base_link")
+                m_mounts[t["child_frame_id"].toString().remove(QChar('/'))] = {
+                    tr["translation"].toObject()["x"].toDouble(), tr["translation"].toObject()["y"].toDouble(),
+                    scene::yawOf(tr["rotation"].toObject())};
+        }
 }
 
 void ScanAccumulator::addScan(const QJsonObject &m, qint64 nowMs)
@@ -52,13 +60,16 @@ void ScanAccumulator::addScan(const QJsonObject &m, qint64 nowMs)
     const QJsonArray ranges = m["ranges"].toArray(), inten = m["intensities"].toArray();
     const double a0 = m["angle_min"].toDouble(), da = m["angle_increment"].toDouble();
     const double rmin = qMax(m["range_min"].toDouble(), kSelfHide), rmax = m["range_max"].toDouble(1e9);
+    const msgparse::Pose2D mount = m_mounts.value(m["header"].toObject()["frame_id"].toString().remove(QChar('/')));
     const double c = std::cos(m_rt), s = std::sin(m_rt);
     Batch b{nowMs, {}, {}, {}};
     for (int i = 0; i < ranges.size() && b.pts.size() < kMaxPoints; ++i) {
         const double r = ranges[i].toDouble();   // inf/NaN 은 null 로 와서 0
         if (!(r >= rmin && r <= rmax))
             continue;
-        const double a = a0 + i * da, px = r * std::cos(a), py = r * std::sin(a);
+        const double a = a0 + i * da;
+        const msgparse::Pose2D p = msgparse::transform2D(mount, {r * std::cos(a), r * std::sin(a), 0});
+        const double px = p.x, py = p.y;
         b.pts.append(QVector3D(float(m_rx + c * px - s * py), float(m_ry + s * px + c * py), 0));
         b.range.append(float(r));
         if (inten.size() == ranges.size())
