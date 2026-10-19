@@ -9,6 +9,17 @@
   "dashboard_args": [],
   "actions": [
     {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 2.5,
+      "call": "robot.armTeleop",
+      "args": [
+        true
+      ]
+    },
+    {
       "t": 3,
       "call": "robot.straight",
       "args": [

@@ -36,6 +36,7 @@ const char *kRequired[] = {"/odom", "/scan", "/wheel_states"};
 constexpr double kSelfHide = 0.3;     // 로봇 몸체에 맞은 LiDAR 점(m 이내)은 숨김
 constexpr double kMaxAngular = 0.25;  // 펌웨어 한계 rad/s
 constexpr double kMaxLinear = 0.10;   // 펌웨어 한계 m/s
+constexpr double kMaxStraight = 2.0;  // 직진 시험 거리 상한 m
 // /tf 는 throttle 200 ms · queue 1 이라 창마다 마지막 변환 하나만 온다. map→odom 은 평균 약 0.66 Hz 로
 // 불규칙하게 오므로 2 s 로 판정하면 24 % 동안 낡음으로 본다 — 10 s 안에 한 번이라도 왔으면 신선하다고 본다.
 constexpr qint64 kMapOdomFreshMs = 10000;
@@ -58,7 +59,17 @@ Robot::Robot(QObject *parent) : QObject(parent)
         if (m_bridge.connected()) {
             m_everConnected = true;
             m_lastSendDropped = false;
+            m_connClock.start();
             addEvent("연결됨 " + m_bridge.host());
+            // 끊긴(또는 반쯤 열린) 동안 누른 정지는 닿았는지 알 수 없다 — 화면이 '정지' 면 다시 보낸다.
+            // advertise 는 connectedChanged 뒤에 나가므로 이벤트 루프 다음 턴에 보낸다.
+            if (m_mode == "정지")
+                QTimer::singleShot(0, this, [this] {
+                    if (m_bridge.connected() && m_mode == "정지") {
+                        sendStop();
+                        addEvent("재연결 — 정지 명령을 다시 보냄");
+                    }
+                });
             QSettings s;
             QStringList hosts = s.value("hosts").toStringList();
             if (!hosts.contains(m_bridge.host()) && m_bridge.host() != "192.168.1.201" && m_bridge.host() != "192.168.1.200") {
@@ -115,6 +126,7 @@ Robot::Robot(QObject *parent) : QObject(parent)
 
     // 키보드 조종 중에는 0 을 포함해 10 Hz 로 계속 보낸다 — 끊기면 파이 워치독이 0.5 s 안에 세운다.
     m_teleop.setInterval(100);
+    m_teleop.setTimerType(Qt::PreciseTimer);   // CoarseTimer 는 Windows 에서 109 ms(9.1 Hz)로 나갔다
     connect(&m_teleop, &QTimer::timeout, this, [this] {
         if (m_armed && (m_lin != 0 || m_ang != 0))
             m_armInput.restart();   // 누르고 있는 동안은 입력 중
@@ -163,6 +175,7 @@ void Robot::resetSession()
     m_distance = 0;
     m_haveOdom = false;
     m_plan.clear();
+    m_mapPlan = {};
     m_frames.clear();
     m_frameCount = 0;
     m_mounts.clear();
@@ -389,10 +402,13 @@ void Robot::onTf(const QJsonObject &m, bool isStatic)
         const Pose2D p{tr["translation"].toObject()["x"].toDouble(), tr["translation"].toObject()["y"].toDouble(),
                        yawOf(tr["rotation"].toObject())};
         if (parent == "map" && child == "odom") {
+            const bool moved = !m_haveMapOdom || p.x != m_mo.x || p.y != m_mo.y || p.yaw != m_mo.yaw;
             m_mo = p;
             m_haveMapOdom = true;
             m_moClock.start();
             placeMap();
+            if (moved && !m_mapPlan.isEmpty())   // map 프레임 경로를 새 map→odom 으로 다시 투영한다
+                onPlan(m_mapPlan);
         }
         if (isStatic && stripSlash(parent) == "base_link")
             m_mounts[stripSlash(child)] = p;
@@ -467,6 +483,7 @@ void Robot::renderMap(double bridgeWorkerMs)
 void Robot::onPlan(const QJsonObject &m)
 {
     const bool inMap = m["header"].toObject()["frame_id"].toString() == "map";
+    m_mapPlan = inMap ? m : QJsonObject();
     QList<QVector3D> out;
     QVector3D prev;
     for (const QJsonValue &v : m["poses"].toArray()) {
@@ -605,10 +622,7 @@ void Robot::updateStatus()
         if (m_bridge.stat(t).age < 0)
             m_missing.append(t);
 
-    // 하트비트 센서를 꺼도 rosbridge 에서 3 s 넘게 아무것도 오지 않으면 링크가 끊긴 것으로 본다.
-    const RosBridge::Stat beat = m_bridge.stat("/link/heartbeat");
-    m_linkLost = m_everConnected
-                 && (!conn || (m_sensorOn.value("beat").toBool() && beat.age > 3.0) || m_bridge.rxAge() > 3.0);
+    m_linkLost = linkDown();
     if (m_linkLost)
         armTeleop(false);
 
@@ -631,6 +645,21 @@ void Robot::updateStatus()
     emit statusChanged();
 }
 
+// 하트비트 센서를 꺼도 rosbridge 에서 3 s 넘게 아무것도 오지 않으면 링크가 끊긴 것으로 본다. 하트비트 공백은 다른 수신도
+// 1 s 넘게 없을 때만 친다(하트비트 노드만 멈춘 것은 링크 끊김이 아니다). 재연결 뒤 3 s 는 이전 세션의 하트비트 나이를 보지 않는다.
+// 상태 표(2 Hz)를 기다리지 않고 잠금 해제 · 움직임 명령 때 그 자리에서 다시 계산한다.
+bool Robot::linkDown()
+{
+    if (!m_everConnected)
+        return false;
+    if (!m_bridge.connected())
+        return true;
+    const double rx = m_bridge.rxAge();
+    const bool beatGap = m_sensorOn.value("beat").toBool() && m_bridge.stat("/link/heartbeat").age > 3.0
+                         && m_connClock.elapsed() > 3000 && rx > 1.0;
+    return beatGap || rx > 3.0;
+}
+
 void Robot::addEvent(const QString &text)
 {
     m_events.prepend(QDateTime::currentDateTime().toString("HH:mm:ss") + "  " + text);
@@ -647,28 +676,44 @@ void Robot::sendTwist(double v, double w)
                                          {"angular", QJsonObject{{"x", 0}, {"y", 0}, {"z", w}}}});
 }
 
-// 끊긴 채로 조종 · 정지를 누르면 조용히 버리지 않고 알린다.
+// 정지: 0 Twist ×3 · 직진 취소 · Nav2 목표 취소
+void Robot::sendStop()
+{
+    for (int i = 0; i < 3; ++i)
+        sendTwist(0, 0);
+    m_bridge.publish("/straight_drive/cancel", {});
+    cancelGoal();
+}
+
+// 끊긴 채로 조종 · 정지를 누르면 조용히 버리지 않고 알린다. 연결돼 있어도 1 s 넘게 아무것도 받지 못했으면
+// 반쯤 열린 연결일 수 있어(send 는 성공으로 끝난다) 닿았는지 알 수 없다고 알린다.
 void Robot::noteDropped()
 {
-    if (m_bridge.connected() || m_bridge.noPublish())
+    const double rx = m_bridge.rxAge();
+    if (m_bridge.noPublish() || (m_bridge.connected() && rx >= 0 && rx <= 1.0))
         return;
     if (!m_lastSendDropped) {
         m_lastSendDropped = true;
         emit statusChanged();
     }
-    addEvent("연결 끊김 — 정지 명령을 보내지 못함(파이 워치독 0.5 s 에 의존)");
+    addEvent(m_bridge.connected()
+                 ? QString("%1 s 동안 수신 없음 — 정지 명령이 닿았는지 알 수 없음(재연결 때 다시 보냄)").arg(rx, 0, 'f', 1)
+                 : QString("연결 끊김 — 정지 명령을 보내지 못함(파이 워치독 0.5 s 에 의존, 재연결 때 다시 보냄)"));
 }
 
 void Robot::setMode(const QString &m)
 {
     if (m == m_mode)
         return;
+    const bool wasAuto = m_mode == "자율주행";
     m_mode = m;
     m_lin = m_ang = 0;
     for (int i = 0; i < 3; ++i)
         sendTwist(0, 0);
     if (m == "정지")
         m_bridge.publish("/straight_drive/cancel", {}), cancelGoal();
+    else if (wasAuto)   // 자율주행에서 벗어나면 진행 중인 Nav2 목표를 취소한다(키보드 조종의 0 속도와 겹치지 않게)
+        cancelGoal();
     addEvent("모드 " + m);
     emit modeChanged();
 }
@@ -689,6 +734,10 @@ void Robot::setArmIdleMs(int ms)
 
 void Robot::armTeleop(bool on)
 {
+    if (on && !m_armed && linkDown()) {   // 링크가 끊긴 동안에는 풀지 않는다 — 낡은 화면을 보며 움직이게 된다
+        addEvent("링크 끊김 — 조종 잠금 해제 거부");
+        return;
+    }
     m_armInput.restart();
     if (on == m_armed)
         return;
@@ -700,26 +749,55 @@ void Robot::armTeleop(bool on)
 
 void Robot::drive(double linear, double angular)
 {
+    if (m_armed && linkDown())   // 상태 표(500 ms)를 기다리지 않고 잠근다
+        armTeleop(false);
     if (!m_armed) {   // 잠김: 입력을 버린다(0 은 m_teleop 이 계속 보낸다)
         m_lin = m_ang = 0;
         return;
     }
     m_armInput.restart();
-    m_lin = qBound(-1.0, linear, 1.0);
-    m_ang = qBound(-1.0, angular, 1.0);
+    // qBound 는 NaN 을 -1(전속 후진)로 만든다 — 숫자가 아니거나 무한대면 0
+    m_lin = std::isfinite(linear) ? qBound(-1.0, linear, 1.0) : 0;
+    m_ang = std::isfinite(angular) ? qBound(-1.0, angular, 1.0) : 0;
     if (!m_lastSendDropped)   // 누를 때마다가 아니라 끊긴 동안 한 번만 알린다
         noteDropped();
     if (m_mode == "키보드 조종")
         sendTwist(m_lin * m_maxSpeed, m_ang * kMaxAngular);   // 누르는 즉시 반응
 }
 
+// 로봇을 움직이는 명령(직진 · 목표)을 지금 보내도 되는지. 안 되면 이유(이벤트에 남긴다).
+QString Robot::moveBlocked()
+{
+    if (!m_armed)
+        return "조종이 잠겨 있음";
+    if (!m_bridge.connected() || linkDown())
+        return "연결 끊김";
+    if (m_straightRunning)
+        return "직진 진행 중";
+    return {};
+}
+
 void Robot::straight(double distance)
 {
+    // 1 m 시험용: 키보드 조종 모드에서만(자율주행 중이면 Nav2 와 함께 제어하게 된다), |거리| ≤ 2 m
+    QString why = !std::isfinite(distance) || std::abs(distance) > kMaxStraight
+                      ? QString("거리 %1 m 가 범위(±%2 m) 밖").arg(distance).arg(kMaxStraight)
+                  : m_mode != "키보드 조종" ? "모드가 " + m_mode : moveBlocked();
+    if (!why.isEmpty()) {
+        addEvent("직진 거부 — " + why);
+        return;
+    }
     m_bridge.publish("/straight_drive/goal", {{"x", distance}, {"y", qMin(m_maxSpeed, kMaxLinear)}, {"z", 0}});
 }
 
 void Robot::sendGoal(double x, double y, double yaw)
 {
+    const QString why = !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(yaw) ? QString("숫자가 아닌 목표")
+                        : m_mode == "정지" ? QString("정지 모드") : moveBlocked();
+    if (!why.isEmpty()) {
+        addEvent("이동 목표 거부 — " + why);
+        return;
+    }
     // Nav2 bt_navigator 가 듣는 /goal_pose 로 보낸다. map→odom 이 신선하면 map 으로 바꿔 보낸다: p_map = (map->odom) * p_odom
     QString frame = "odom";
     Pose2D p{x, y, yaw};
@@ -760,6 +838,8 @@ void Robot::setInitialPose(double x, double y, double yaw)
 // 0 uuid · 0 stamp = 모든 Nav2 목표 취소 (rosbridge 가 액션을 몰라 액션의 숨은 서비스를 직접 부른다)
 void Robot::cancelGoal()
 {
+    if (m_bridge.noPublish())   // 읽기 전용: 쓰는 서비스도 부르지 않는다
+        return;
     QJsonArray uuid;
     for (int i = 0; i < 16; ++i)
         uuid.append(0);
@@ -773,10 +853,7 @@ void Robot::estop()
 {
     noteDropped();
     m_lin = m_ang = 0;
-    for (int i = 0; i < 3; ++i)
-        sendTwist(0, 0);
-    m_bridge.publish("/straight_drive/cancel", {});
-    cancelGoal();
+    sendStop();
     setMode("정지");
     armTeleop(false);
     addEvent("비상 정지");

@@ -44,8 +44,9 @@ Scan parseScan(const QJsonObject &m, const Pose2D &mount, double selfHide)
         const double a = a0 + i * da;
         const Pose2D p = transform2D(mount, {r * std::cos(a), r * std::sin(a), 0});
         out.points.append(QVector3D(float(p.x), float(p.y), 0));
-        if (out.nearestRange == 0 || r < out.nearestRange)
-            out.nearestRange = r, out.nearestAngle = qRadiansToDegrees(std::atan2(p.y, p.x));
+        const double d = std::hypot(p.x, p.y);   // 거리도 각도와 같은 로봇(base_link) 기준
+        if (out.nearestRange == 0 || d < out.nearestRange)
+            out.nearestRange = d, out.nearestAngle = qRadiansToDegrees(std::atan2(p.y, p.x));
     }
     out.scanTime = m["scan_time"].toDouble();
     return out;

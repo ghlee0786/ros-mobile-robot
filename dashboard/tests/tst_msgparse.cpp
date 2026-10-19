@@ -121,7 +121,7 @@ private slots:
         QCOMPARE(s.points.size(), 2);
         QVERIFY(qAbs(s.points[0].x() - (0.1 - 1.0)) < 1e-5 && qAbs(s.points[0].y()) < 1e-5);
         QVERIFY(qAbs(s.points[1].x() - 0.1) < 1e-5 && qAbs(s.points[1].y() + 2.0) < 1e-5);
-        QCOMPARE(s.nearestRange, 1.0);
+        QVERIFY(qAbs(s.nearestRange - 0.9) < 1e-9);   // 거리도 base 기준: 점 (-0.9, 0)
     }
 };
 

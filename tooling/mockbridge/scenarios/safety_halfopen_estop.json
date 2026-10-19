@@ -1,0 +1,36 @@
+{
+  "id": "safety_halfopen_estop",
+  "title": "B1: 직진 중 반쯤 열린 연결 동안 누른 비상 정지 — 경고(lastSendDropped)를 띄우고, 재연결 즉시 cancel · cancel_goal · 0 Twist 를 다시 보내 직진이 멈춤",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": ["--halfopen", "5"],
+  "dashboard_args": [],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 10},
+    {"t": 1, "call": "robot.armTeleop", "args": [true]},
+    {"t": 1.5, "call": "robot.straight", "args": [2.0]},
+    {"t": 3, "wait": "robot.straightRunning", "timeout_s": 3},
+    {"t": 6.5, "call": "robot.estop", "args": []},
+    {"t": 12, "wait": "bridge.connected", "timeout_s": 15},
+    {"t": 16, "shot": "after.png"}
+  ],
+  "duration_s": 20,
+  "expect": {
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [
+      {"path": "bridge.connected", "op": "==", "value": true},
+      {"path": "robot.mode", "op": "==", "value": "정지"},
+      {"path": "robot.straightRunning", "op": "==", "value": false},
+      {"path": "robot.v", "op": "abs<=", "value": 0.005}
+    ],
+    "trace": [
+      {"rule": "was_true_between", "path": "robot.lastSendDropped", "op": "==", "value": true, "from_s": 6, "to_s": 9},
+      {"rule": "final_eq", "path": "robot.straightRunning", "value": false}
+    ],
+    "server_log": [
+      {"rule": "count_ge", "dir": "event", "op": "connect", "value": 2},
+      {"rule": "count_ge", "topic": "/straight_drive/cancel", "value": 1},
+      {"rule": "count_ge", "op": "call_service", "service": "/navigate_to_pose/_action/cancel_goal", "value": 1}
+    ]
+  }
+}
