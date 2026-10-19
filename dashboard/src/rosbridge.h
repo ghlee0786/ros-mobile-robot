@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QElapsedTimer>
 #include <QHash>
 #include <QJsonObject>
 #include <QObject>
@@ -12,6 +13,7 @@
 
 // rosbridge v2 JSON 프로토콜 클라이언트. 같은 토픽을 여러 용도(센서 표시 · 기록 등)가 원하면
 // 하나라도 원하는 동안만 subscribe 하고, 끊기면 3 s 마다 다시 붙어 구독 · advertise 를 되살린다.
+// 3 s 동안 아무것도 받지 못하면(반쯤 열린 연결) 소켓을 끊고 같은 재연결 경로를 탄다.
 class RosBridge : public QObject
 {
     Q_OBJECT
@@ -26,6 +28,12 @@ class RosBridge : public QObject
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     Q_PROPERTY(QStringList found READ found NOTIFY foundChanged)
     Q_PROPERTY(bool searching READ searching NOTIFY foundChanged)
+    Q_PROPERTY(double rxAge READ rxAge NOTIFY rxChanged)                  // 마지막 수신 뒤 s (-1: 연결 안 됨)
+    Q_PROPERTY(double rxBytesPerSec READ rxBytesPerSec NOTIFY rxChanged)  // 직전 1 s 전체 수신 바이트
+    Q_PROPERTY(QList<double> rxHistory READ rxHistory NOTIFY rxChanged)   // 최근 60 s, 초당 바이트
+    Q_PROPERTY(QList<double> latencyHistory READ latencyHistory NOTIFY rxChanged)   // 최근 60 개 ping ms
+    Q_PROPERTY(int callsPending READ callsPending NOTIFY callsChanged)
+    Q_PROPERTY(bool noPublish READ noPublish CONSTANT)   // ROBOT_DASHBOARD_NO_PUBLISH=1: advertise · publish 안 함
 
 public:
     struct Stat {
@@ -34,9 +42,15 @@ public:
         double age = -1;        // 마지막 수신 뒤 경과 s (-1: 아직 없음)
         double latencyMs = qQNaN(); // 수신 시각 - header.stamp
         double sinceSub = 0;    // 구독 뒤 경과 s
+        double bytesPerSec = 0; // 최근 2 s 평균 수신 바이트/s
+        qint64 totalBytes = 0;  // 구독 뒤 누적 바이트
+        bool clockSkew = false; // |지연| > 5 s: PC 와 파이 시계가 어긋남
     };
+    using Done = std::function<void(const QJsonObject &)>;
+    using Fail = std::function<void(const QString &)>;
 
     explicit RosBridge(QObject *parent = nullptr);
+    ~RosBridge() override;
 
     QString host() const { return m_host; }
     int port() const { return m_port; }
@@ -47,20 +61,33 @@ public:
     QString error() const { return m_error; }
     QStringList found() const { return m_found; }
     bool searching() const { return m_searching; }
+    double rxAge() const { return m_connected && m_lastRx.isValid() ? m_lastRx.elapsed() / 1000.0 : -1; }
+    double rxBytesPerSec() const { return m_rxBytesPerSec; }
+    QList<double> rxHistory() const { return m_rxHistory; }
+    QList<double> latencyHistory() const { return m_latencyHistory; }
+    int callsPending() const { return int(m_calls.size()); }
+    bool noPublish() const { return m_noPublish; }
 
     Q_INVOKABLE void open(const QString &host, int port);
-    Q_INVOKABLE void discover();
+    Q_INVOKABLE void discover(int port = -1);
 
-    void want(const QString &topic, const QString &type, const QString &reason, bool on, int throttleMs = 0);
+    // reason 마다 throttleMs(-1: 의견 없음)와 queueLength(-1: 기본)를 따로 둔다. 실제 throttle 은
+    // max(토픽 하한, 'record' 가 아닌 이유들의 최소값)이고, 그 값 · queue · type 이 바뀔 때만 다시 subscribe 한다.
+    void want(const QString &topic, const QString &type, const QString &reason, bool on, int throttleMs = 0,
+              int queueLength = -1);
     bool subscribed(const QString &topic) const { return m_wanted.contains(topic); }
+    int throttleOf(const QString &topic) const;
     void advertise(const QString &topic, const QString &type);
-    void publish(const QString &topic, const QJsonObject &msg);
-    void call(const QString &service, const QJsonObject &args, std::function<void(const QJsonObject &)> done);
+    bool publish(const QString &topic, const QJsonObject &msg);
+    // 응답이 result=false 이거나 5 s 안에 오지 않거나 연결이 없으면 fail 을 부른다.
+    void call(const QString &service, const QJsonObject &args, Done done, Fail fail = nullptr);
     void resubscribe();
+    void shutdown();   // 보낼 것을 내보내고 닫는다(앱 종료 때)
     QHash<QString, QString> topicTypes() const { return m_types; }
     QStringList wantedTopics() const { return m_wanted.keys(); }
     QString wantedType(const QString &topic) const { return m_subType.value(topic); }
     Stat stat(const QString &topic);
+    double lastWorkerMs() const { return m_lastWorkerMs; }   // message 신호 안에서: 다른 스레드 파싱 시간
 
 signals:
     void hostChanged();
@@ -69,33 +96,57 @@ signals:
     void topicListChanged();
     void errorChanged();
     void foundChanged();
+    void rxChanged();
+    void callsChanged();
     void message(const QString &topic, const QJsonObject &msg);
+    void bridgeError(const QString &text);   // rosbridge status op, 실패한 서비스 응답
 
 private:
-    struct Times { QList<qint64> arrivals; qint64 last = 0; qint64 since = 0; double latency = qQNaN(); };
+    struct Times { QList<std::pair<qint64, qint64>> arrivals; qint64 last = 0; qint64 since = 0; double latency = qQNaN(); qint64 total = 0; };
+    struct Call { Done done; Fail fail; QString service; };
+    struct Pending { int id = 0; bool ready = false; QJsonObject o; qint64 bytes = 0; double workerMs = 0; };
+    struct Sub { QString type; int throttle = 0; int queue = -1; };
 
-    void send(const QJsonObject &o);
+    bool send(const QJsonObject &o);
     void sendSubscribe(const QString &topic);
+    Sub subOf(const QString &topic) const;
     void refreshTopics();
     void onText(const QString &text);
+    void process(const QJsonObject &o, qint64 bytes, double workerMs);
+    void dispatch(const QJsonObject &o, qint64 bytes, double workerMs);
+    void finishBig(const QString &topic, int id, const QJsonObject &o, double workerMs);
+    void failCall(const QString &id, const QString &why);
+    void scanNext();
 
     QWebSocket m_ws;
     QTimer m_retry, m_tick;
+    QElapsedTimer m_mono, m_lastRx;   // 단조 시계
     QString m_host;
     int m_port = 9090;
     bool m_connected = false;
+    bool m_noPublish = false;
     int m_latency = -1;
     QString m_error;
     QHash<QString, QSet<QString>> m_wanted;   // topic -> 원하는 용도들
     QHash<QString, QString> m_subType;
-    QHash<QString, int> m_throttle;
+    QHash<QString, QHash<QString, int>> m_throttle, m_queue;   // topic -> reason -> 값
+    QHash<QString, Sub> m_sent;                // 마지막으로 보낸 subscribe
     QHash<QString, QString> m_adv;             // topic -> type
     QHash<QString, QString> m_types;           // rosapi 토픽 목록
     bool m_topicListReceived = false;
     QHash<QString, Times> m_times;
-    QHash<QString, std::function<void(const QJsonObject &)>> m_calls;
+    QHash<QString, Call> m_calls;
+    QHash<QString, QList<Pending>> m_pending;  // 다른 스레드에서 파싱 중인 큰 메시지 뒤로 같은 토픽 순서를 지킨다
+    int m_bigId = 0;
+    double m_lastWorkerMs = 0;
     int m_callId = 0;
     int m_ticks = 0;
+    qint64 m_rxSecBytes = 0;
+    double m_rxBytesPerSec = 0;
+    QList<double> m_rxHistory, m_latencyHistory;
     QStringList m_found;
     bool m_searching = false;
+    QStringList m_scanQueue;
+    int m_scanActive = 0;
+    quint16 m_scanPort = 9090;
 };

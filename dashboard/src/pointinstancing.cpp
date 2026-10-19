@@ -2,6 +2,8 @@
 
 void PointInstancing::setPoints(const QList<QVector3D> &p)
 {
+    if (p == m_points)
+        return;
     m_points = p;
     markDirty();
     emit pointsChanged();
