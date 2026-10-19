@@ -54,6 +54,7 @@ Robot::Robot(QObject *parent) : QObject(parent)
     connect(&m_bridge, &RosBridge::message, this, &Robot::onMessage);
     connect(&m_bridge, &RosBridge::bridgeError, this, &Robot::addEvent);
     connect(&m_bridge, &RosBridge::connectedChanged, this, [this] {
+        armTeleop(false);   // 연결 · 재연결 · 끊김 직후에는 잠근다
         if (m_bridge.connected()) {
             m_everConnected = true;
             m_lastSendDropped = false;
@@ -115,6 +116,10 @@ Robot::Robot(QObject *parent) : QObject(parent)
     // 키보드 조종 중에는 0 을 포함해 10 Hz 로 계속 보낸다 — 끊기면 파이 워치독이 0.5 s 안에 세운다.
     m_teleop.setInterval(100);
     connect(&m_teleop, &QTimer::timeout, this, [this] {
+        if (m_armed && (m_lin != 0 || m_ang != 0))
+            m_armInput.restart();   // 누르고 있는 동안은 입력 중
+        else if (m_armed && m_armInput.elapsed() > m_armIdleMs)
+            armTeleop(false);
         if (m_mode == "키보드 조종")
             sendTwist(m_lin * m_maxSpeed, m_ang * kMaxAngular);
     });
@@ -213,6 +218,13 @@ QString Robot::dataDir()
     if (up.exists("model"))
         return up.absolutePath();
     return QDir::current().absolutePath();
+}
+
+QString Robot::recordsDir() const
+{
+    const QString d = QDir(dataDir()).absoluteFilePath("records");
+    QDir().mkpath(d);
+    return d;
 }
 
 QUrl Robot::modelFile(const QString &name) const
@@ -602,6 +614,8 @@ void Robot::updateStatus()
     const RosBridge::Stat beat = m_bridge.stat("/link/heartbeat");
     m_linkLost = m_everConnected
                  && (!conn || (m_sensorOn.value("beat").toBool() && beat.age > 3.0) || m_bridge.rxAge() > 3.0);
+    if (m_linkLost)
+        armTeleop(false);
 
     if (conn && ++m_statusTick % 10 == 1)   // 5 s 마다 워치독 노드가 /teleop/cmd_vel 을 듣고 있는지 확인
         m_bridge.call("/rosapi/subscribers", {{"topic", "/teleop/cmd_vel"}}, [this](const QJsonObject &v) {
@@ -673,8 +687,29 @@ void Robot::setMaxSpeed(double v)
     emit modeChanged();
 }
 
+void Robot::setArmIdleMs(int ms)
+{
+    if (ms != m_armIdleMs) { m_armIdleMs = qMax(100, ms); emit teleopArmedChanged(); }
+}
+
+void Robot::armTeleop(bool on)
+{
+    m_armInput.restart();
+    if (on == m_armed)
+        return;
+    m_armed = on;
+    m_lin = m_ang = 0;
+    addEvent(on ? "조종 잠금 해제" : "조종 잠금");
+    emit teleopArmedChanged();
+}
+
 void Robot::drive(double linear, double angular)
 {
+    if (!m_armed) {   // 잠김: 입력을 버린다(0 은 m_teleop 이 계속 보낸다)
+        m_lin = m_ang = 0;
+        return;
+    }
+    m_armInput.restart();
     m_lin = qBound(-1.0, linear, 1.0);
     m_ang = qBound(-1.0, angular, 1.0);
     if (!m_lastSendDropped)   // 누를 때마다가 아니라 끊긴 동안 한 번만 알린다
@@ -748,6 +783,7 @@ void Robot::estop()
     m_bridge.publish("/straight_drive/cancel", {});
     cancelGoal();
     setMode("정지");
+    armTeleop(false);
     addEvent("비상 정지");
 }
 
