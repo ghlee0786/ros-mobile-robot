@@ -25,6 +25,4 @@ tooling/fusion/exports/
 # dashboard robot meshes (generated from Fusion by tooling/fusion/prepare_dashboard_model.py, ~110 MB)
 dashboard/model/*.obj
 dashboard/model/*.mtl
-# 경량화한 glb(tooling/fusion/decimate_model.py 가 obj 에서 만든다)
-dashboard/model/*.glb
 tooling/fusion/tests/.tmp/
