@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="256" height="256">
+  <!-- 앱 아이콘 '아이소 로봇': 아이소메트릭 몸체 · 분홍 LiDAR 헤드 · 양쪽 바퀴 (색은 qml/Theme.qml 토큰과 같다) -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1B1F27"/><stop offset="1" stop-color="#0B0D10"/></linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#tile)"/>
+  <path d="M32 18 L52 29 L32 40 L12 29 Z" fill="#3D7FF5"/>
+  <path d="M12 29 L32 40 L32 52 L12 41 Z" fill="#1F4FB3"/>
+  <path d="M52 29 L32 40 L32 52 L52 41 Z" fill="#2A63D6"/>
+  <ellipse cx="20" cy="44.5" rx="3.6" ry="5" fill="#0B0D10" stroke="#7F8792" stroke-width="1.6" transform="rotate(-28 20 44.5)"/>
+  <ellipse cx="44" cy="44.5" rx="3.6" ry="5" fill="#0B0D10" stroke="#7F8792" stroke-width="1.6" transform="rotate(28 44 44.5)"/>
+  <path d="M26 23 L26 17 A6 3.2 0 0 1 38 17 L38 23 A6 3.2 0 0 1 26 23 Z" fill="#B8325F"/>
+  <ellipse cx="32" cy="17" rx="6" ry="3.2" fill="#E0457B"/>
+</svg>
