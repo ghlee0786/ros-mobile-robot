@@ -4,6 +4,7 @@
 #include <QCommandLineParser>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
 #include <QSettings>
@@ -14,6 +15,7 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     QCoreApplication::setOrganizationName("RobotDashboard");
     QCoreApplication::setApplicationName("RobotDashboard");
+    QGuiApplication::setWindowIcon(QIcon(":/icons/app.png"));
 
     QCommandLineParser p;
     p.setApplicationDescription(QStringLiteral(
