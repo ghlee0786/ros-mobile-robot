@@ -1,0 +1,39 @@
+{
+  "id": "pi_normal",
+  "title": "실기: 연결 · 필수 토픽 · 워치독 (발행 없음)",
+  "needs_pi": true,
+  "needs_human": false,
+  "server": false,
+  "dashboard_args": [
+    "--url",
+    "ws://{pi_host}:9090",
+    "--no-publish"
+  ],
+  "server_args": [],
+  "actions": [],
+  "duration_s": 30,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.missingRequired",
+        "op": "==",
+        "value": []
+      },
+      {
+        "path": "robot.watchdogOk",
+        "op": "==",
+        "value": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "id": "normal",
+  "title": "연결 · 필수 토픽 · throttle · 5 s 전진",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 1,
+      "set": "robot.mode",
+      "value": "키보드 조종"
+    },
+    {
+      "t": 3,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 8,
+      "call": "robot.drive",
+      "args": [
+        0,
+        0
+      ]
+    }
+  ],
+  "duration_s": 14,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.missingRequired",
+        "op": "==",
+        "value": []
+      },
+      {
+        "path": "robot.watchdogOk",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.distance",
+        "op": ">",
+        "value": 0.2
+      },
+      {
+        "path": "robot.trail.count",
+        "op": ">",
+        "value": 10
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "op": "advertise",
+        "value": 4
+      },
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/scan",
+        "value": 1
+      },
+      {
+        "rule": "throttle_eq",
+        "topic": "/imu/data_raw",
+        "value": 50,
+        "all": true
+      },
+      {
+        "rule": "throttle_eq",
+        "topic": "/tf",
+        "value": 200,
+        "all": true
+      },
+      {
+        "rule": "count_le",
+        "op": "subscribe",
+        "topic": "/camera/image_raw",
+        "value": 0
+      },
+      {
+        "rule": "max_abs",
+        "topic": "/teleop/cmd_vel",
+        "field": "linear.x",
+        "value": 0.1
+      }
+    ]
+  }
+}

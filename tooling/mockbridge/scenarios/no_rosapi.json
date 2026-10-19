@@ -1,0 +1,32 @@
+{
+  "id": "no_rosapi",
+  "title": "rosapi/topics 무응답에서도 연결 화면이 동작",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--no-respond",
+    "/rosapi/topics"
+  ],
+  "dashboard_args": [],
+  "actions": [],
+  "duration_s": 12,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "bridge.topicListReceived",
+        "op": "==",
+        "value": false
+      }
+    ]
+  }
+}
