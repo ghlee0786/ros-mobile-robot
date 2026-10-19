@@ -133,6 +133,37 @@ private slots:
         QCOMPARE(n, 4);
         QVERIFY(inst.hasTransparency());
     }
+
+    void laserMountFromTfStatic()
+    {
+        // base_link → laser 가 yaw 180° 면 레이저 앞 1 m 는 로봇 뒤 1 m
+        ScanAccumulator a;
+        const QJsonObject tr{{"header", QJsonObject{{"frame_id", "base_link"}}}, {"child_frame_id", "laser"},
+                             {"transform", QJsonObject{{"translation", QJsonObject{{"x", 0.1}, {"y", 0}, {"z", 0}}},
+                                                       {"rotation", QJsonObject{{"z", 1}, {"w", 0}}}}}};
+        a.feed("/tf_static", {{"transforms", QJsonArray{tr}}});
+        QJsonObject s = scan(1, 1.0);
+        s["header"] = QJsonObject{{"frame_id", "laser"}};
+        a.addScan(s, 0);
+        QVERIFY(qAbs(a.points().first().x() + 0.9f) < 1e-5f);
+        s["header"] = QJsonObject{{"frame_id", "base_link"}};   // base_link 이면 그대로
+        a.addScan(s, 10);
+        QVERIFY(qAbs(a.points().first().x() - 1.0f) < 1e-5f);
+    }
+
+    void gradientPointsWithoutSource()
+    {
+        // source 가 없으면 points 를 앞(오래된 쪽)일수록 흐리게
+        ColorPointInstancing inst;
+        inst.setColor(QColor(0, 255, 0));
+        inst.setPoints({QVector3D(0, 0, 0), QVector3D(1, 0, 0)});
+        int n = 0;
+        const QByteArray buf = inst.instanceBuffer(&n);
+        QCOMPARE(n, 2);
+        const auto *e = reinterpret_cast<const QQuick3DInstancing::InstanceTableEntry *>(buf.constData());
+        QVERIFY(e[0].color.w() < e[1].color.w());
+        QCOMPARE(e[1].color.w(), 1.0f);
+    }
 };
 
 QTEST_MAIN(TstSceneScanAcc)
