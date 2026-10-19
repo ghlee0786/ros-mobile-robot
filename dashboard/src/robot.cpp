@@ -38,6 +38,9 @@ constexpr double kMaxLinear = 0.10;   // 펌웨어 한계 m/s
 // 불규칙하게 오므로 2 s 로 판정하면 24 % 동안 낡음으로 본다 — 10 s 안에 한 번이라도 왔으면 신선하다고 본다.
 constexpr qint64 kMapOdomFreshMs = 10000;
 constexpr int kMapBinaryThreshold = 65;
+// 파이의 initialpose_node 가 5 s 마다 /initialpose 에 (0,0,0) 을 내므로 대시보드는 따로 보내고,
+// PC 의 split_relay 가 이것을 Nav2 도메인의 /initialpose 로 넘긴다.
+constexpr char kInitialPoseTopic[] = "/dashboard/initialpose";
 
 } // namespace
 
@@ -86,7 +89,7 @@ Robot::Robot(QObject *parent) : QObject(parent)
     m_bridge.advertise("/straight_drive/goal", "geometry_msgs/Vector3");
     m_bridge.advertise("/straight_drive/cancel", "std_msgs/Empty");
     m_bridge.advertise("/goal_pose", "geometry_msgs/PoseStamped");
-    m_bridge.advertise("/initialpose", "geometry_msgs/PoseWithCovarianceStamped");
+    m_bridge.advertise(kInitialPoseTopic, "geometry_msgs/PoseWithCovarianceStamped");
     m_recordTopics = {"/odom", "/scan", "/imu/data_raw", "/wheel_states"};
 
     m_ui.setInterval(33);
@@ -349,9 +352,10 @@ static QString stripSlash(const QString &frame) { return frame.startsWith('/') ?
 
 void Robot::onScan(const QJsonObject &m)
 {
-    // 레이저 프레임의 점을 /tf_static 의 base_link → 레이저 장착 변환으로 로봇 기준으로 옮긴다(없으면 그대로).
+    // 레이저 프레임의 점을 /tf_static 의 base_link → 레이저 장착 변환으로 로봇 기준으로 옮긴다.
+    // frame_id 가 base_link(실기 /scan)이거나 변환이 없으면 그대로 쓴다.
     const QString frame = stripSlash(m["header"].toObject()["frame_id"].toString());
-    const Scan s = parseScan(m, m_mounts.value(frame), kSelfHide);
+    const Scan s = parseScan(m, frame == "base_link" ? Pose2D{} : m_mounts.value(frame), kSelfHide);
     m_scan = s.points;
     m_scanCount = int(m_scan.size());
     m_nearR = s.nearestRange;
@@ -704,21 +708,21 @@ void Robot::sendGoal(double x, double y, double yaw)
 
 void Robot::setInitialPose(double x, double y, double yaw)
 {
-    // AMCL 이 듣는 /initialpose. map→odom 이 신선하면 map 프레임으로 바꿔 보낸다.
+    // /dashboard/initialpose → (PC split_relay) → AMCL 의 /initialpose. map→odom 이 신선하면 map 프레임으로 바꿔 보낸다.
     QString frame = "odom";
     Pose2D p{x, y, yaw};
     if (mapOdomFresh()) {
         p = odomToMap(m_mo, p);
         frame = "map";
     } else {
-        addEvent("경고: map→odom 이 없거나 낡아 초기 위치를 odom 프레임으로 보냄");
+        addEvent(QString("경고: map→odom 이 없거나 낡아 초기 위치(%1)를 odom 프레임으로 보냄").arg(kInitialPoseTopic));
     }
-    m_bridge.publish("/initialpose", {
+    m_bridge.publish(kInitialPoseTopic, {
         {"header", QJsonObject{{"frame_id", frame}, {"stamp", QJsonObject{{"sec", 0}, {"nanosec", 0}}}}},
         {"pose", QJsonObject{{"pose", QJsonObject{{"position", QJsonObject{{"x", p.x}, {"y", p.y}, {"z", 0}}},
                                                   {"orientation", quatFromYaw(p.yaw)}}},
                              {"covariance", initialPoseCovariance()}}}});
-    addEvent(QString("초기 위치 %1 (%2, %3) %4°").arg(frame).arg(p.x, 0, 'f', 2).arg(p.y, 0, 'f', 2).arg(qRadiansToDegrees(p.yaw), 0, 'f', 0));
+    addEvent(QString("초기 위치 %1 %2 (%3, %4) %5°").arg(kInitialPoseTopic, frame).arg(p.x, 0, 'f', 2).arg(p.y, 0, 'f', 2).arg(qRadiansToDegrees(p.yaw), 0, 'f', 0));
 }
 
 // 0 uuid · 0 stamp = 모든 Nav2 목표 취소 (rosbridge 가 액션을 몰라 액션의 숨은 서비스를 직접 부른다)

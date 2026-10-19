@@ -136,6 +136,8 @@ RosBridge::Sub RosBridge::subOf(const QString &topic) const
         s.queue = qMax(s.queue, q);
     if (s.queue <= 0 && s.throttle > 0)
         s.queue = 1;
+    if (topic == "/tf_static")   // 정적 변환은 발행자마다 따로 온다 — queue 1 이면 마지막 것만 남는다
+        s.queue = qMax(s.queue, 10);
     return s;
 }
 

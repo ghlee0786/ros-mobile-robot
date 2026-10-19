@@ -60,7 +60,7 @@ private slots:
         QCOMPARE(b.throttleOf("/foo"), 100);
         b.want("/foo", "", "plot", true, 0);
         QCOMPARE(b.throttleOf("/foo"), 0);
-        // /tf_static 은 항상 0, queueLength 는 그대로 보낸다.
+        // /tf_static 은 항상 throttle 0 · queue 10 이상, queueLength 는 그대로 보낸다.
         b.want("/tf_static", "tf2_msgs/TFMessage", "sensor", true, 500);
         b.want("/rosout", "rcl_interfaces/Log", "log", true, 0, 100);
         QTest::qWait(300);
@@ -69,6 +69,7 @@ private slots:
         QCOMPARE(foo[0]["throttle_rate"].toInt(), 100);
         QVERIFY(!foo[1].contains("throttle_rate"));
         QVERIFY(!s.ops("subscribe", "/tf_static")[0].contains("throttle_rate"));
+        QVERIFY(s.ops("subscribe", "/tf_static")[0]["queue_length"].toInt() >= 10);
         QCOMPARE(s.ops("subscribe", "/rosout")[0]["queue_length"].toInt(), 100);
 
         // 모든 이유가 꺼지면 그때 unsubscribe

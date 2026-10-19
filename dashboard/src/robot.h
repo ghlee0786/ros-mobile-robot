@@ -167,7 +167,7 @@ public:
     Q_INVOKABLE void drive(double linear, double angular);   // -1..1 (최대 속도 비율)
     Q_INVOKABLE void straight(double distance);
     Q_INVOKABLE void sendGoal(double x, double y, double yaw);   // Nav2 이동 목표 (odom 프레임 m · rad)
-    Q_INVOKABLE void setInitialPose(double x, double y, double yaw);   // AMCL 초기 위치 (odom 프레임 m · rad)
+    Q_INVOKABLE void setInitialPose(double x, double y, double yaw);   // AMCL 초기 위치 (odom 프레임 m · rad) → /dashboard/initialpose
     Q_INVOKABLE void estop();
     Q_INVOKABLE void setRecordTopic(const QString &topic, bool on);
     Q_INVOKABLE void toggleRecording();

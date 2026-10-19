@@ -78,6 +78,15 @@ private slots:
         const QVector3D p = r.scanPoints().first();
         QVERIFY(qAbs(p.x() + 1) < 1e-5 && qAbs(p.y()) < 1e-5);
         QCOMPARE(r.nearestRange(), 1.0);
+
+        // 실기 /scan 은 frame_id 가 base_link — base_link→laser 변환이 있어도 그대로 쓴다.
+        scan.clear();
+        emit r.bridge()->message("/scan", {{"header", QJsonObject{{"frame_id", "base_link"}}}, {"angle_min", 0.0},
+                                           {"angle_increment", 0.1}, {"range_min", 0.05}, {"range_max", 10.0},
+                                           {"ranges", QJsonArray{1.0}}});
+        QVERIFY(scan.wait(500));
+        const QVector3D q = r.scanPoints().first();
+        QVERIFY(qAbs(q.x() - 1) < 1e-5 && qAbs(q.y()) < 1e-5);
     }
 
     // scanChanged 는 /scan 이 바뀔 때만, /odom 에는 나지 않는다.
@@ -98,12 +107,12 @@ private slots:
         MockServer s;
         Robot r;
         QVERIFY(connectRobot(r, s));
-        QVERIFY(QTest::qWaitFor([&] { return s.ops("advertise", "/initialpose").size() == 1; }, 2000));
+        QVERIFY(QTest::qWaitFor([&] { return s.ops("advertise", "/dashboard/initialpose").size() == 1; }, 2000));
         emit r.bridge()->message("/tf", tfMsg("map", "odom", 1, 2, M_PI / 2));
         QVERIFY(r.mapOdomFresh());
         r.sendGoal(1, 0, 0);
         r.setInitialPose(1, 0, 0);
-        QVERIFY(QTest::qWaitFor([&] { return !lastPublish(s, "/goal_pose").isEmpty() && !lastPublish(s, "/initialpose").isEmpty(); }, 2000));
+        QVERIFY(QTest::qWaitFor([&] { return !lastPublish(s, "/goal_pose").isEmpty() && !lastPublish(s, "/dashboard/initialpose").isEmpty(); }, 2000));
 
         const QJsonObject goal = lastPublish(s, "/goal_pose");
         QCOMPARE(goal["header"].toObject()["frame_id"].toString(), QString("map"));
@@ -111,7 +120,8 @@ private slots:
         QVERIFY(qAbs(gp["x"].toDouble() - 1) < 1e-9 && qAbs(gp["y"].toDouble() - 3) < 1e-9);
         QVERIFY(qAbs(msgparse::yawOf(goal["pose"].toObject()["orientation"].toObject()) - M_PI / 2) < 1e-9);
 
-        const QJsonObject init = lastPublish(s, "/initialpose");
+        const QJsonObject init = lastPublish(s, "/dashboard/initialpose");
+        QCOMPARE(s.ops("publish", "/initialpose").size(), 0);
         QCOMPARE(init["header"].toObject()["frame_id"].toString(), QString("map"));
         const QJsonObject ip = init["pose"].toObject()["pose"].toObject()["position"].toObject();
         QVERIFY(qAbs(ip["x"].toDouble() - 1) < 1e-9 && qAbs(ip["y"].toDouble() - 3) < 1e-9);

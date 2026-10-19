@@ -47,3 +47,15 @@
 - chosen: tst_rosbridge 의 큰 메시지 시험만 모의 서버를 다른 스레드에 둔다.
 - why: 같은 스레드면 8 MB 를 '보내는' 비용(실제로는 파이가 함)이 GUI 간격에 섞여 92~159 ms 가 나왔다. 클라이언트 쪽만 재면 22~28 ms.
 - effect: tests/tst_rosbridge.cpp 의 bigMessageOffThread 하나.
+
+## 9. /tf_static queue_length 를 어디서 정할지
+- options: Robot 의 want 호출에 queueLength 10 을 넘김 / RosBridge 가 토픽 규칙으로 항상 10 이상
+- chosen: RosBridge `subOf()` 에서 /tf_static 은 항상 queue 10 이상(throttle 0 과 같은 자리)
+- why: 어느 묶음이 /tf_static 을 원해도 정적 변환이 사라지지 않게(G7 하한 표와 같은 방식).
+- effect: rosbridge.cpp 한 줄.
+
+## 10. 스캔 frame_id 가 base_link 일 때 장착 변환
+- options: base_link→base_link 변환을 찾음(없으니 항등) / base_link 면 명시적으로 항등
+- chosen: 명시적으로 항등 — base_link→laser 변환이 있어도 적용하지 않는다
+- why: 실기 /scan 은 이미 base_link 기준이라 laser 변환을 또 적용하면 12 cm 어긋난다.
+- effect: `Robot::onScan()` 한 줄.
