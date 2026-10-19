@@ -9,6 +9,7 @@ NODES = {
     "/link_pingpong": (["/link/pong", "/link/heartbeat"], ["/link/ping"]),
     "/odom_tf_broadcaster": (["/tf"], ["/odom"]),
     "/static_tf_laser": (["/tf_static"], []),
+    "/initialpose_node": (["/initialpose"], ["/dashboard/initialpose"]),
     "/imu_node": (["/imu/data_raw"], []),
     "/sllidar_node": (["/scan"], []),
     "/slam_toolbox": (["/map", "/tf"], ["/scan", "/initialpose"]),
@@ -94,7 +95,7 @@ class Services:
         node, _, srv = name.rpartition("/")
         if srv in PARAM_SRV and node in self.params() and node in self.nodes():
             return True, getattr(self, "param_" + srv)(self.params()[node], args)
-        return False, "서비스 없음"
+        return False, f"Service {name} does not exist"
 
     # ---- rosapi --------------------------------------------------------------------------
     def rosapi_topics(self, _):

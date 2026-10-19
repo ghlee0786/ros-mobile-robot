@@ -24,6 +24,7 @@ class Room:
         선분마다 그 선분이 가리는 각도 구간의 광선만 계산한다(1800 광선 10 Hz 를 한 코어로)."""
         best = [rmax] * n
         cos, sin, atan2, tau = math.cos, math.sin, math.atan2, 2 * math.pi
+        m = math.ceil(tau / inc - 1e-9)      # 한 바퀴 칸 수(광선이 한 바퀴를 다 채우지 않을 수 있다)
         dirs = [(cos(a0 + i * inc), sin(a0 + i * inc)) for i in range(n)]
         for ax, ay, bx, by in self.segments:
             qx, qy, ex, ey = ax - x, ay - y, bx - ax, by - ay
@@ -35,7 +36,9 @@ class Room:
             i0 = math.ceil(((lo - a0) % tau) / inc)
             cnt = int(((hi - lo) / inc)) + 2
             for k in range(i0 - 1, i0 + cnt):
-                i = k % n
+                i = k % m
+                if i >= n:
+                    continue
                 dx, dy = dirs[i]
                 den = dx * ey - dy * ex
                 if abs(den) < 1e-12:

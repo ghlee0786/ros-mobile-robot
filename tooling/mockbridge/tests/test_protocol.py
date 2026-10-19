@@ -1,11 +1,11 @@
-"""rosbridge 프로토콜 계약: 핑퐁 흐름 · throttle · unsubscribe · rosapi · 오류 status · inf→null."""
+"""rosbridge 프로토콜 계약: 핑퐁 흐름 · throttle · unsubscribe · rosapi · Foxy 의 무응답 동작 · inf→null."""
 import json
 import os
 import subprocess
 import sys
 import time
 
-import pytest
+import websocket
 
 from conftest import ROOT, run_scenarios
 from mockbridge.protocol import encode
@@ -32,14 +32,22 @@ def test_pingpong_flow(mock, client):
         c.send(op="unsubscribe", topic=topic)
 
 
-def test_pingpong_script_on_9090(mock):
-    """원래 스크립트는 9090 고정이라 9090 이 비어 있을 때만 실제로 돌린다."""
-    try:
-        mock(port=9090)
-    except RuntimeError:
-        pytest.skip("9090 이 사용 중")
-    r = subprocess.run([sys.executable, PINGPONG, "127.0.0.1", "3"], capture_output=True, text=True,
-                       encoding="utf-8", timeout=60)
+# 원래 스크립트는 고치지 않고, websocket.create_connection 만 바꿔 9090 을 시험 포트로 돌린다.
+REDIRECT = """
+import runpy, sys, websocket
+port, script = sys.argv[1], sys.argv[2]
+orig = websocket.create_connection
+websocket.create_connection = lambda url, **kw: orig(url.replace(":9090", ":" + port), **kw)
+sys.argv = [script] + sys.argv[3:]
+runpy.run_path(script, run_name="__main__")
+"""
+
+
+def test_pingpong_script(mock):
+    """tooling/pc/rosbridge_pingpong_test.py 를 그대로 실행해 종료 코드 0."""
+    port = mock().port
+    r = subprocess.run([sys.executable, "-c", REDIRECT, str(port), PINGPONG, "127.0.0.1", "3"], capture_output=True,
+                       text=True, encoding="utf-8", timeout=60)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "3/3 성공" in r.stdout
 
@@ -92,19 +100,20 @@ def test_tf_throttle_drops_map_odom(mock, client):
 
 
 def test_unknown_type_and_mismatch(mock, client):
+    """Foxy rosbridge 처럼 모르는 형식 · 형식 불일치 구독에는 status 도 데이터도 없다(실기 확인)."""
     c = client(mock().port)
     c.send(op="subscribe", topic="/odom", type="foo_msgs/Bar")
-    m = c.until(lambda m: m.get("op") == "status")
-    assert m["level"] == "error"
-    c.send(op="subscribe", topic="/odom", type="sensor_msgs/Imu")
-    m = c.until(lambda m: m.get("op") == "status")
-    assert m["level"] == "error" and "불일치" in m["msg"]
+    c.send(op="subscribe", topic="/imu/data_raw", type="nav_msgs/Odometry")
+    c.send(op="subscribe", topic="/wheel_states", type="sensor_msgs/JointState")
+    got = c.collect(1.0)
+    assert {m.get("topic") for _, m in got} == {"/wheel_states"}
+    assert not [m for _, m in got if m.get("op") == "status"]
 
 
 def test_unknown_service(mock, client):
     c = client(mock().port)
     m = c.call("/no/such_service")
-    assert m["result"] is False and m["values"] == "서비스 없음"
+    assert m["result"] is False and m["values"] == "Service /no/such_service does not exist"
 
 
 def test_no_respond(mock, client):
@@ -124,7 +133,8 @@ def test_inf_nan_to_null(mock, client):
             break
     assert "null" in raw and "Infinity" not in raw and "NaN" not in raw
     scan = json.loads(raw)["msg"]
-    assert len(scan["ranges"]) == 1800 and scan["header"]["frame_id"] == "laser"
+    assert len(scan["ranges"]) == 1800 and scan["header"]["frame_id"] == "base_link"
+    assert (scan["angle_min"], scan["angle_increment"], scan["range_min"]) == (-3.124, 0.003483, 0.15)
 
 
 def test_rx_log(mock, client):
@@ -139,13 +149,19 @@ def test_rx_log(mock, client):
     assert rx[1]["msg"]["linear"]["x"] == 0.05 and rx[1]["wall"] > 1e9 and "t" in rx[1]
 
 
-@pytest.mark.skipif(not __import__("importlib").util.find_spec("cbor2"), reason="cbor2 없음(선택)")
-def test_cbor(mock, client):
-    c = client(mock("--cbor").port)
-    c.send(op="subscribe", topic="/link/heartbeat", type="std_msgs/String", compression="cbor")
-    c.ws.settimeout(3)
-    op, data = c.ws.recv_data()
-    assert op == 2
+def test_cbor_silent(mock, client):
+    """실기 Foxy 는 compression cbor 구독에 아무 프레임도 보내지 않는다."""
+    c = client(mock().port)
+    c.send(op="subscribe", topic="/odom", type="nav_msgs/Odometry", compression="cbor")
+    c.send(op="subscribe", topic="/wheel_states", type="sensor_msgs/JointState")
+    c.ws.settimeout(0.2)
+    frames, deadline = [], time.time() + 1.0
+    while time.time() < deadline:
+        try:
+            frames.append(c.ws.recv_data())
+        except websocket.WebSocketTimeoutException:
+            pass
+    assert frames and all(op == 1 and b'"/odom"' not in data for op, data in frames)
 
 
 def test_pi_suite_probe_on_mock(mock):
@@ -154,7 +170,7 @@ def test_pi_suite_probe_on_mock(mock):
     p = pi_suite.probe("127.0.0.1", mock("--stamp-skew-ms", "5000").port)
     assert "/rosapi/topics" in p["services"] and "/navigate_to_pose/_action/cancel_goal" in p["services"]
     assert p["client_count"] is True and p["cbor"] is False
-    assert p["scan_frame"] == "laser" and p["scan_rays"] == 1800 and p["laser_tf"] is True
+    assert p["scan_frame"] == "base_link" and p["scan_rays"] == 1800 and p["laser_tf"] is True
     assert 4000 < p["stamp_skew_ms"] < 6000
     assert pi_suite.diff(p, dict(p, cbor=True, services=p["services"][1:])) == {
         "cbor": {"실기": False, "모의": True}, "services": {"실기만": p["services"][:1], "모의만": []}}

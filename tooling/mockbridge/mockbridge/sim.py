@@ -16,6 +16,8 @@ from .room import RES
 R, L = 0.05, 0.34          # 바퀴 반지름, 바퀴 간격(펌웨어 config.h)
 MAX_V, MAX_W = 0.1, 0.25
 DT = 0.01
+LASER = (-0.12, 0.0, 0.28)  # base_link→laser (x, y, z), 실기 /tf_static
+IMU = (-0.12, 0.0, 0.18)    # base_link→imu
 
 BASE_TYPES = {
     "std_msgs/String", "std_msgs/Empty", "std_msgs/Int32", "std_msgs/Float32", "std_msgs/Float64", "std_msgs/Bool",
@@ -79,6 +81,13 @@ class Source:
             for t, ty in c.adv.items():
                 out.setdefault(t, ty)
         return out
+
+    def pi_initialpose(self):
+        """파이 initialpose_node: 5 s 마다 map 원점 /initialpose (발행하고 그대로 적용)."""
+        msg = {"header": self.header("map"), "pose": {"pose": {"position": {"x": 0.0, "y": 0.0, "z": 0.0},
+                                                             "orientation": quat(0.0)}, "covariance": [0.0] * 36}}
+        self.on_command("/initialpose", msg)
+        return msg
 
     def on_subscribe(self, conn, topic):
         pass
@@ -149,6 +158,8 @@ class World(Source):
                       "/local_costmap/costmap": "nav_msgs/OccupancyGrid",
                       "/local_costmap/published_footprint": "geometry_msgs/PolygonStamped",
                       "/navigate_to_pose/_action/status": "action_msgs/msg/GoalStatusArray"})
+        if a.pi_initialpose:
+            T["/initialpose"] = "geometry_msgs/PoseWithCovarianceStamped"
         self.types = T
         s = [("/odom", 1 / 33, self.make_odom), ("/tf", 1 / 33, self.make_tf_odom), ("map_odom", 0.2, self.make_tf_map),
              ("/wheel_states", 1 / 30, lambda: self.make_joint(self.wheels)),
@@ -158,6 +169,8 @@ class World(Source):
              ("/diagnostics", 1.0, self.make_diag), ("/client_count", 1.0, self.make_clients)]
         if a.map_every:
             s.append(("/map", a.map_every, self.make_map))
+        if a.pi_initialpose:
+            s.append(("/initialpose", 5.0, self.pi_initialpose))
         if a.map_grow:
             s.append(("map_grow", 2.0, self.grow_map))
         if a.nav:
@@ -237,7 +250,8 @@ class World(Source):
             self.straight_finish("canceled")
         elif topic == "/goal_pose":
             self.set_goal(msg)
-        elif topic == "/initialpose":
+        elif topic in ("/initialpose", "/dashboard/initialpose"):
+            # 대시보드는 /dashboard/initialpose 로 보낸다(P4). 받으면 map→odom(--map-odom)을 그에 맞춘다.
             p = msg.get("pose", {}).get("pose", {})
             pm = (p.get("position", {}).get("x", 0.0), p.get("position", {}).get("y", 0.0),
                   yaw_of(p.get("orientation", {})))
@@ -246,9 +260,19 @@ class World(Source):
             if self.args.nav:
                 self.server.publish("/amcl_pose", self.make_amcl())
 
+    def pi_initialpose(self):
+        """파이 initialpose_node: 5 s 마다 map 원점 /initialpose (발행하고 그대로 적용)."""
+        msg = {"header": self.header("map"), "pose": {"pose": {"position": {"x": 0.0, "y": 0.0, "z": 0.0},
+                                                             "orientation": quat(0.0)}, "covariance": [0.0] * 36}}
+        self.on_command("/initialpose", msg)
+        return msg
+
     def on_subscribe(self, conn, topic):
         # 구독할 때 한 번 보내는 토픽(transient local)
-        if topic in ("/tf_static", "/map") and topic not in self.stopped:
+        if topic == "/tf_static" and topic not in self.stopped:
+            for msg in self.static_tfs():
+                self.server.publish(topic, msg, only=conn)
+        elif topic == "/map" and topic not in self.stopped:
             self.server.publish(topic, self.make(topic), only=conn)
         elif topic == "/client_count":
             self.server.publish(topic, self.make_clients(), only=conn)
@@ -381,8 +405,15 @@ class World(Source):
             return None
         return {"transforms": [self.tf("map", "odom", self.map_odom)]}
 
+    def static_tfs(self):
+        """실기 /tf_static: 변환 3 개가 각각 따로 온다."""
+        return [{"transforms": [self.tf("base_link", "base_footprint", (0.0, 0.0, 0.0))]},
+                {"transforms": [self.tf("base_link", "laser", LASER[:2] + (math.radians(self.args.laser_yaw_deg),),
+                                        LASER[2])]},
+                {"transforms": [self.tf("base_link", "imu", IMU[:2] + (0.0,), IMU[2])]}]
+
     def make_tf_static(self):
-        return {"transforms": [self.tf("base_link", "laser", (0.0, 0.0, math.radians(self.args.laser_yaw_deg)), 0.15)]}
+        return self.static_tfs()[1]
 
     def make_joint(self, vel):
         return {"header": self.header(""), "name": ["left_wheel_joint", "right_wheel_joint"],
@@ -390,7 +421,7 @@ class World(Source):
 
     def make_imu(self):
         yaw = self.imu_yaw() + self.rng.gauss(0, self.imu_noise)
-        return {"header": self.header("imu_link"), "orientation": quat(yaw), "orientation_covariance": [0.0] * 9,
+        return {"header": self.header("imu"), "orientation": quat(yaw), "orientation_covariance": [0.0] * 9,
                 "angular_velocity": {"x": 0.0, "y": 0.0, "z": self.w_true}, "angular_velocity_covariance": [0.0] * 9,
                 "linear_acceleration": {"x": self.accel_x, "y": 0.0, "z": 9.81},
                 "linear_acceleration_covariance": [0.0] * 9}
@@ -398,9 +429,14 @@ class World(Source):
     def make_scan(self):
         a = self.args
         n = a.scan_rays
-        inc = 2 * math.pi / n
-        base = self.true[2] + math.radians(a.laser_yaw_deg)
-        ranges = self.room.raycast(self.true[0], self.true[1], base - math.pi, inc, n, a.scan_max)
+        # 실기 1800 광선: angle_min -3.124, angle_increment 0.003483 (한 바퀴를 조금 덜 채운다)
+        a0, inc = (-3.124, 0.003483) if n == 1800 else (-math.pi, 2 * math.pi / n)
+        ox, oy, yaw = self.true
+        if a.scan_frame != "base_link":    # laser 프레임이면 장착 위치에서 잰다
+            c, s = math.cos(yaw), math.sin(yaw)
+            ox, oy = ox + c * LASER[0] - s * LASER[1], oy + s * LASER[0] + c * LASER[1]
+            yaw += math.radians(a.laser_yaw_deg)
+        ranges = self.room.raycast(ox, oy, yaw + a0, inc, n, a.scan_max)
         rng = self.rng
         for i, r in enumerate(ranges):
             if r is None:
@@ -413,7 +449,7 @@ class World(Source):
             for i in range(0, n, max(1, n // 8)):
                 ranges[i] = 0.12 + rng.random() * 0.05
         intens = [0.0 if r is None else 47.0 for r in ranges]
-        return {"header": self.header("laser"), "angle_min": -math.pi, "angle_max": -math.pi + (n - 1) * inc,
+        return {"header": self.header(a.scan_frame), "angle_min": a0, "angle_max": a0 + (n - 1) * inc,
                 "angle_increment": inc, "time_increment": 0.1 / n, "scan_time": 0.1, "range_min": 0.15,
                 "range_max": a.scan_max, "ranges": ranges, "intensities": intens}
 
@@ -530,7 +566,7 @@ class World(Source):
                     if key == "map_grow":
                         self.grow_map()
                         maker = self.make_map
-                    if topic in self.stopped or not server.wants(topic):
+                    if topic in self.stopped or (not server.wants(topic) and key != "/initialpose"):
                         continue
                     msg = maker()
                     if msg is not None:

@@ -42,7 +42,8 @@ def test_trace_rules():
 
 
 def test_server_log_rules():
-    tw = lambda v, w=0.0: {"linear": {"x": v}, "angular": {"z": w}}   # noqa: E731
+    def tw(v, w=0.0):
+        return {"linear": {"x": v}, "angular": {"z": w}}
     recs = [{"dir": "event", "op": "connect", "t": 0.0, "wall": 1000.0, "conn": 1},
             rx("advertise", 0.1, topic="/teleop/cmd_vel"), rx("subscribe", 0.1, topic="/imu/data_raw", throttle_rate=50),
             rx("subscribe", 0.1, topic="/scan")]

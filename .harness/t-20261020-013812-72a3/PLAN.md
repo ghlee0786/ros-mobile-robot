@@ -11,7 +11,9 @@
 - [x] record_rosbridge.py, run_scenarios.py, shot_diff.py, pi_suite.py
 - [x] scenarios/*.json 22 개 (P4 이후 기대: halfopen · record_throttle · skew · soak 에 requires P4-core)
 - [x] tests/ (conftest, fake_dashboard.py, data/sample.jsonl, test_protocol/sim/faults/replay/runner), check.cmd
-- [x] 검사 통과: `cmd //c "checks\\p1_mockbridge.cmd"` → 43 passed, 1 skipped(cbor2 없음)
+- [x] 검사 통과(1차): 43 passed, 1 skipped
+- [x] 메인 세션 추가 지시(실기 확인) 반영: --pi-initialpose, /dashboard/initialpose, scan frame base_link·실기 각도, /tf_static 3 개 따로, Foxy 무응답 동작(잘못된 형식·cbor), 없는 서비스 문구
+- [x] 품질 지적 반영: noqa 제거, skip 없앰(핑퐁 원 스크립트를 포트만 바꿔 실행) → `cmd //c "checks\\p1_mockbridge.cmd"` 46 passed
 - [x] 완료 조건 수동 확인: `run_scenarios.py --no-dashboard --port 9090 --only normal` + `rosbridge_pingpong_test.py 127.0.0.1 3` → 3/3, rc 0
 
 ## 발견

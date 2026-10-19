@@ -18,12 +18,11 @@ import subprocess
 import sys
 import time
 
+import record_rosbridge
+import run_scenarios
 import websocket
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, HERE)
-import record_rosbridge  # noqa: E402
-import run_scenarios     # noqa: E402
 
 PINGPONG = os.path.normpath(os.path.join(HERE, "..", "pc", "rosbridge_pingpong_test.py"))
 RECORD_TOPICS = ["/odom", "/scan", "/imu/data_raw", "/wheel_states", "/wheel_cmd", "/tf", "/tf_static", "/map",

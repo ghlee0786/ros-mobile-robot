@@ -1,4 +1,5 @@
 """계약 시험 공통: 모의 서버를 빈 포트로 띄우고 websocket-client 로 붙는다."""
+import importlib
 import json
 import os
 import sys
@@ -11,7 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
-import run_scenarios  # noqa: E402
+run_scenarios = importlib.import_module("run_scenarios")   # 위에서 더한 경로에서 읽는다
 
 
 def pytest_configure(config):

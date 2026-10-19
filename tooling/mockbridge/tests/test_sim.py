@@ -122,10 +122,16 @@ def test_map_grow(mock, client):
 
 def test_tf_static_and_heartbeat(mock, client):
     c = client(mock("--laser-yaw-deg", "180").port)
-    c.send(op="subscribe", topic="/tf_static", type="tf2_msgs/TFMessage")
-    tf = c.until(lambda m: m.get("topic") == "/tf_static")["msg"]["transforms"][0]
-    assert (tf["header"]["frame_id"], tf["child_frame_id"]) == ("base_link", "laser")
-    assert abs(abs(tf["transform"]["rotation"]["z"]) - 1.0) < 1e-9
+    # 실기처럼 throttle 0 · queue 10 으로 늦게 구독해도 변환 3 개가 각각 따로 온다
+    c.send(op="subscribe", topic="/tf_static", type="tf2_msgs/TFMessage", queue_length=10)
+    msgs = [m["msg"]["transforms"] for _, m in c.collect(1.0, lambda m: m.get("topic") == "/tf_static")]
+    assert [len(t) for t in msgs] == [1, 1, 1]
+    tfs = {t[0]["child_frame_id"]: t[0] for t in msgs}
+    assert set(tfs) == {"base_footprint", "laser", "imu"} and all(t["header"]["frame_id"] == "base_link" for t in tfs.values())
+    tr = tfs["laser"]["transform"]
+    assert (tr["translation"]["x"], tr["translation"]["z"]) == (-0.12, 0.28)
+    assert abs(abs(tr["rotation"]["z"]) - 1.0) < 1e-9
+    assert tfs["imu"]["transform"]["translation"]["z"] == 0.18
     c.send(op="subscribe", topic="/link/heartbeat", type="std_msgs/String")
     beat = c.until(lambda m: m.get("topic") == "/link/heartbeat")["msg"]["data"]
     assert beat.startswith("mockpi seq=") and " time=" in beat
@@ -158,7 +164,7 @@ def test_scan_cost_one_core():
                                  encoder_scale=1.01, imu_offset=1.0, imu_noise=0.0, freeze_pose=False, map_odom=None,
                                  map_origin_yaw_deg=0, map_size=None, map_max=2000, nav=False, map_every=0,
                                  map_grow=False, rosout_burst=0, scan_rays=1800, scan_max=12.0, scan_noise=0.01,
-                                 scan_dropout=0.01, self_hit=True, laser_yaw_deg=0.0)
+                                 scan_dropout=0.01, self_hit=True, laser_yaw_deg=0.0, scan_frame="base_link", pi_initialpose=False)
     w = World(types.SimpleNamespace(conns=set()), args, Room.load(f"{ROOT}/rooms/default.json"))
     t = time.perf_counter()
     for i in range(20):
@@ -167,3 +173,32 @@ def test_scan_cost_one_core():
     ms = (time.perf_counter() - t) / 20 * 1000
     print(f"/scan 1800 광선 한 장 {ms:.1f} ms")
     assert len(scan["ranges"]) == 1800 and ms < 50
+
+
+def amcl_xy(c):
+    p = c.until(lambda m: m.get("topic") == "/amcl_pose")["msg"]["pose"]["pose"]["position"]
+    return p["x"], p["y"]
+
+
+def test_dashboard_initialpose_moves_map_odom(mock, client):
+    """대시보드의 /dashboard/initialpose 를 받으면 --map-odom 이 그에 맞게 바뀐다."""
+    c = client(mock("--map-odom", "1,2,30", "--nav").port)
+    c.send(op="subscribe", topic="/amcl_pose", type="geometry_msgs/PoseWithCovarianceStamped")
+    assert math.hypot(amcl_xy(c)[0] - 1, amcl_xy(c)[1] - 2) < 0.01
+    c.send(op="advertise", topic="/dashboard/initialpose", type="geometry_msgs/PoseWithCovarianceStamped")
+    c.send(op="publish", topic="/dashboard/initialpose", msg={"header": {"frame_id": "map"}, "pose": {"pose": {
+        "position": {"x": -0.5, "y": 0.75, "z": 0}, "orientation": {"x": 0, "y": 0, "z": 0, "w": 1}}}})
+    c.collect(0.3)
+    x, y = amcl_xy(c)
+    assert math.hypot(x + 0.5, y - 0.75) < 0.01
+
+
+def test_pi_initialpose(mock, client):
+    """--pi-initialpose: 파이 initialpose_node 처럼 /initialpose 를 map 원점으로 발행하고 적용한다."""
+    c = client(mock("--map-odom", "1,2,30", "--nav", "--pi-initialpose").port)
+    c.send(op="subscribe", topic="/initialpose", type="geometry_msgs/PoseWithCovarianceStamped")
+    c.send(op="subscribe", topic="/amcl_pose", type="geometry_msgs/PoseWithCovarianceStamped")
+    ip = c.until(lambda m: m.get("topic") == "/initialpose", 6.0)
+    assert ip["msg"]["header"]["frame_id"] == "map" and ip["msg"]["pose"]["pose"]["position"]["x"] == 0.0
+    c.collect(0.3)
+    assert math.hypot(*amcl_xy(c)) < 0.01

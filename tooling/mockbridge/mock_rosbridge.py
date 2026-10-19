@@ -17,14 +17,11 @@ import asyncio
 import json
 import logging
 import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from mockbridge.faults import Faults            # noqa: E402
-from mockbridge.protocol import Server          # noqa: E402
-from mockbridge.room import Room                # noqa: E402
-from mockbridge.services import Services        # noqa: E402
+from mockbridge.faults import Faults
+from mockbridge.protocol import Server
+from mockbridge.room import Room
+from mockbridge.services import Services
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -53,9 +50,13 @@ def parser():
     g.add_argument("--odom-cov", action="store_true", help="/odom pose.covariance 를 0 이 아니게")
     g.add_argument("--map-odom", help="map→odom 'x,y,yaw_deg' (5 Hz /tf)")
     g.add_argument("--laser-yaw-deg", type=float, default=0.0, help="base_link→laser yaw")
+    g.add_argument("--scan-frame", default="base_link",
+                   help="/scan frame_id (실기는 base_link: 로봇 중심에서 잰다. 다른 값이면 laser 장착 위치에서 잰다)")
+    g.add_argument("--pi-initialpose", action="store_true",
+                   help="파이 initialpose_node 처럼 5 s 마다 /initialpose(map 원점)를 발행하고 적용한다")
     g.add_argument("--scan-rays", type=int, default=1800, help="/scan 광선 수")
     g.add_argument("--scan-rays-from", help="기록 JSONL 의 첫 /scan 광선 수로 맞춘다")
-    g.add_argument("--scan-max", type=float, default=12.0, help="/scan range_max(m)")
+    g.add_argument("--scan-max", type=float, default=25.0, help="/scan range_max(m)")
     g.add_argument("--scan-noise", type=float, default=0.0, help="/scan 거리 잡음(m)")
     g.add_argument("--scan-dropout", type=float, default=0.0, help="/scan 광선 유실 확률")
     g.add_argument("--self-hit", action="store_true", help="몸체에 맞은 근거리 반사를 섞는다")

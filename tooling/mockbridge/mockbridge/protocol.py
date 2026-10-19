@@ -160,7 +160,9 @@ class Conn:
 
     def _send(self, pkt, sub, now):
         sub.last_sent = now
-        if sub.compression == "cbor" and self.server.args.cbor:
+        if sub.compression == "cbor":   # 실기 Foxy 는 cbor 구독에 아무 프레임도 보내지 않는다(--cbor 일 때만 보낸다)
+            if not self.server.args.cbor:
+                return
             data = pkt.cbor
         else:
             data = self.server.faults.corrupt(pkt.text)
@@ -274,11 +276,9 @@ class Server:
     def subscribe(self, conn, msg):
         topic, want = msg.get("topic"), norm_type(msg.get("type"))
         known = norm_type(self.source.topic_type(topic))
-        if want and want not in self.source.known_types():
-            conn.status("error", f"subscribe {topic}: 모르는 형식 {want}")
-            return
-        if want and known and want != known:
-            conn.status("error", f"subscribe {topic}: 형식 불일치 {want} != {known}")
+        # Foxy rosbridge 는 모르는 형식 · 형식 불일치 구독에 status 를 보내지 않고 데이터도 보내지 않는다(실기 확인)
+        if want and (want not in self.source.known_types() or (known and want != known)):
+            log.warning("subscribe %s: 형식 %s 무시(알려진 형식 %s)", topic, want, known or "-")
             return
         if not want and not known:
             conn.status("error", f"subscribe {topic}: 아직 발행되지 않아 형식을 알 수 없음")
