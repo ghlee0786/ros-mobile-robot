@@ -28,6 +28,42 @@ QString bigMapText(const QString &topic, int w, int h, int marker)
                    R"("orientation":{"w":1}}},"data":[%5]}})")
         .arg(topic).arg(marker).arg(w).arg(h).arg(data);
 }
+
+// 손으로 만든 WebSocket 서버 쪽: 핸드셰이크에 답하고 upgraded 를 표시한다(그 뒤 받는 ping 등은 무시).
+void answerHandshake(QTcpSocket *c)
+{
+    QObject::connect(c, &QTcpSocket::readyRead, c, [c] {
+        if (c->property("upgraded").toBool()) {
+            c->readAll();
+            return;
+        }
+        const QByteArray req = c->peek(c->bytesAvailable());
+        if (!req.contains("\r\n\r\n"))
+            return;
+        c->readAll();
+        QByteArray key;
+        for (const QByteArray &line : req.split('\n'))
+            if (line.toLower().startsWith("sec-websocket-key:"))
+                key = line.mid(18).trimmed();
+        const QByteArray accept = QCryptographicHash::hash(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11",
+                                                           QCryptographicHash::Sha1).toBase64();
+        c->write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                 "Sec-WebSocket-Accept: " + accept + "\r\n\r\n");
+        c->setProperty("upgraded", true);
+    });
+}
+
+// 서버 → 클라이언트 text 프레임(마스크 없음). 길이는 가장 짧은 꼴로 써야 한다(아니면 프로토콜 오류로 닫힌다).
+QByteArray textFrame(const QByteArray &payload)
+{
+    const quint64 n = quint64(payload.size());
+    QByteArray f(1, char(0x81));
+    const int bytes = n < 126 ? 0 : n < 65536 ? 2 : 8;
+    f.append(char(bytes == 0 ? n : bytes == 2 ? 126 : 127));
+    for (int i = bytes - 1; i >= 0; --i)
+        f.append(char((n >> (8 * i)) & 0xFF));
+    return f + payload;
+}
 } // namespace
 
 class TstRosBridge : public QObject
@@ -292,6 +328,96 @@ private slots:
         th.quit();
         th.wait();
         QVERIFY2(maxGap < 100, qPrintable(QString("GUI 스레드가 %1 ms 막힘").arg(maxGap)));
+    }
+
+    // B5: 느린 링크로 큰 지도 한 프레임이 6 s 에 걸쳐 들어온다. 서버는 그동안 pong 을 보내지 않는다(같은 줄 뒤).
+    // 받는 중인 바이트를 살아 있음으로 보고 끊지 않아, 같은 연결로 지도를 끝까지 받는다. 한 번 다시 붙은 뒤의 소켓에서 본다.
+    void slowBigFrameKeepsConnection()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        int connections = 0;
+        QList<QTcpSocket *> socks;
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [&] {
+            while (QTcpSocket *c = server.nextPendingConnection()) {
+                ++connections;
+                socks.append(c);
+                answerHandshake(c);
+            }
+        });
+        RosBridge b;
+        int disconnects = 0, maps = 0;
+        QObject::connect(&b, &RosBridge::connectedChanged, &b, [&] { disconnects += !b.connected(); });
+        QObject::connect(&b, &RosBridge::message, &b, [&](const QString &topic, const QJsonObject &msg) {
+            maps += topic == "/map" && msg["data"].toArray().size() == 600 * 600;
+        });
+        b.open("127.0.0.1", server.serverPort());
+        QVERIFY(QTest::qWaitFor([&] { return b.connected() && !socks.isEmpty() && socks[0]->property("upgraded").toBool(); }, 5000));
+        QTest::qWait(1500);
+        socks[0]->close();
+        QVERIFY(QTest::qWaitFor([&] { return b.connected() && socks.size() == 2 && socks[1]->property("upgraded").toBool(); }, 5000));
+        const QByteArray frame = textFrame(bigMapText("/map", 600, 600, 1).toUtf8());   // 약 720 KB
+        constexpr int kChunks = 24;   // 250 ms 마다 1/24 → 6 s
+        QElapsedTimer t;
+        t.start();
+        for (int i = 0; i < kChunks; ++i) {
+            const qsizetype n = frame.size() / kChunks + 1;
+            socks[1]->write(frame.mid(i * n, n));
+            QTest::qWait(250);
+        }
+        QVERIFY(QTest::qWaitFor([&] { return maps == 1; }, 5000));
+        QVERIFY2(t.elapsed() > 5500, qPrintable(QString("%1 ms").arg(t.elapsed())));
+        QCOMPARE(disconnects, 1);
+        QCOMPARE(connections, 2);
+        QVERIFY(b.connected());
+        qDeleteAll(socks);
+    }
+
+    // B5: 서버가 붙을 때마다 큰 메시지를 직렬화하느라 4.5 s 동안 아무것도(pong 도) 보내지 못한다.
+    // 처음 한 번은 3 s 기준으로 끊어도, 기준을 늘려 다음 연결은 살아남는다(같은 원인으로 끝없이 다시 붙지 않는다).
+    void rxTimeoutBacksOff()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+        int connections = 0;
+        QList<QTcpSocket *> socks;
+        QObject::connect(&server, &QTcpServer::newConnection, &server, [&] {
+            while (QTcpSocket *c = server.nextPendingConnection()) {
+                ++connections;
+                socks.append(c);
+                answerHandshake(c);
+                const QByteArray msg = textFrame(R"({"op":"publish","topic":"/odom","msg":{}})");
+                auto *beat = new QTimer(c);
+                QObject::connect(beat, &QTimer::timeout, c, [c, msg] { c->write(msg); });
+                QTimer::singleShot(4500, c, [beat] { beat->start(200); });
+            }
+        });
+        RosBridge b;
+        int odom = 0;
+        QObject::connect(&b, &RosBridge::message, &b, [&](const QString &topic, const QJsonObject &) { odom += topic == "/odom"; });
+        b.open("127.0.0.1", server.serverPort());
+        QVERIFY(QTest::qWaitFor([&] { return odom > 0; }, 20000));
+        QTest::qWait(3000);
+        QVERIFY(b.connected());
+        QCOMPARE(connections, 2);
+        qDeleteAll(socks);
+    }
+
+    // B29: 1 s 넘게 붙어 있던 연결을 서버가 닫으면 3 s 재시도 주기를 기다리지 않고 1 s 안에 다시 붙는다(여러 번 되풀이해도).
+    void quickReconnectAfterServerClose()
+    {
+        MockServer s;
+        RosBridge b;
+        QVERIFY(connectTo(b, s));
+        for (int i = 1; i <= 3; ++i) {
+            QTest::qWait(1500);
+            QVERIFY(!s.clients.isEmpty());
+            QElapsedTimer t;
+            t.start();
+            s.clients.first()->close();
+            QVERIFY(QTest::qWaitFor([&] { return s.connections == i + 1 && b.connected(); }, 5000));
+            QVERIFY2(t.elapsed() < 1000, qPrintable(QString("%1 번째 재연결 %2 ms").arg(i).arg(t.elapsed())));
+        }
     }
 };
 

@@ -203,6 +203,7 @@ void TestHooks::start(QQuickWindow *win)
         if (now - m_bucketStartMs >= 1000) {
             const double fps = m_bucketFrames * 1000.0 / (now - m_bucketStartMs);
             m_fpsMin = m_fpsMin < 0 ? fps : qMin(m_fpsMin, fps);
+            m_fpsLast = fps;
             m_bucketStartMs = now;
             m_bucketFrames = 0;
         }
@@ -214,6 +215,16 @@ void TestHooks::start(QQuickWindow *win)
             auto *t = new QTimer(this);
             connect(t, &QTimer::timeout, this, &TestHooks::writeTrace);
             t->start(int(1000 / m_opt.traceHz));
+            // 20 ms 타이머가 늦은 만큼 = GUI 스레드가 멈춘 시간. trace 줄마다 그 사이 최대값을 쓴다.
+            auto *stall = new QTimer(this);
+            stall->setTimerType(Qt::PreciseTimer);
+            connect(stall, &QTimer::timeout, this, [this] {
+                const qint64 now = m_clock.elapsed();
+                if (m_stallLastMs >= 0)
+                    m_stallMaxMs = qMax(m_stallMaxMs, now - m_stallLastMs - 20);
+                m_stallLastMs = now;
+            });
+            stall->start(20);
             // 연결이 잠깐(주기보다 짧게) 끊겼다 붙어도 trace 에 남도록 바뀔 때마다 한 줄 더 쓴다
             if (QObject *b = findObject(QStringLiteral("bridge")))
                 connect(b, SIGNAL(connectedChanged()), this, SLOT(writeTrace()));
@@ -238,6 +249,7 @@ void TestHooks::writeTrace()
         return;
     m_traceFile->write(QJsonDocument(snapshot(false)).toJson(QJsonDocument::Compact) + '\n');
     m_traceFile->flush();
+    m_stallMaxMs = 0;
 }
 
 QObject *TestHooks::findObject(const QString &path) const
@@ -381,6 +393,20 @@ QJsonObject TestHooks::snapshot(bool full) const
         r["robot"] = dumpObject(o, false);
     if (QObject *o = findObject(QStringLiteral("bridge")))
         r["bridge"] = dumpObject(o, false);
+    // 메모리 · fps 는 trace 줄마다 넣어 시계열로 본다(fps: 직전 1 s 구간)
+    QJsonObject proc;
+#ifdef Q_OS_WIN
+    PROCESS_MEMORY_COUNTERS pmc{};
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof pmc)) {
+        proc["rssMB"] = pmc.WorkingSetSize / 1048576.0;
+        proc["peakMB"] = pmc.PeakWorkingSetSize / 1048576.0;
+    }
+#endif
+    r["proc"] = proc;
+    const double span = (m_lastFrameMs - m_firstFrameMs) / 1000.0;
+    r["render"] = QJsonObject{{"fpsAvg", span > 0 ? (m_frames - 1) / span : 0.0}, {"fps", m_fpsLast},
+                              {"fpsMin", m_fpsMin < 0 ? 0.0 : m_fpsMin}, {"frames", m_frames},
+                              {"stallMs", m_stallMaxMs}};   // 직전 trace 줄 뒤 GUI 스레드가 가장 오래 멈춘 ms
     if (!full)
         return r;
     for (const char *name : {"scene", "inspector", "dash"})
@@ -403,18 +429,6 @@ void TestHooks::finish(const QString &reason)
 
     QJsonObject s = snapshot(true);
     s["actions_done"] = m_done;
-    QJsonObject proc;
-#ifdef Q_OS_WIN
-    PROCESS_MEMORY_COUNTERS pmc{};
-    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof pmc)) {
-        proc["rssMB"] = pmc.WorkingSetSize / 1048576.0;
-        proc["peakMB"] = pmc.PeakWorkingSetSize / 1048576.0;
-    }
-#endif
-    s["proc"] = proc;
-    const double span = (m_lastFrameMs - m_firstFrameMs) / 1000.0;
-    s["render"] = QJsonObject{{"fpsAvg", span > 0 ? (m_frames - 1) / span : 0.0},
-                              {"fpsMin", m_fpsMin < 0 ? 0.0 : m_fpsMin}, {"frames", m_frames}};
     {
         QMutexLocker lock(&g_logLock);
         s["warnings"] = QJsonArray::fromStringList(g_warnings);

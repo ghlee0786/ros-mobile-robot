@@ -11,6 +11,9 @@
 namespace {
 constexpr qsizetype kBigMessage = 512 * 1024;   // 이보다 큰 원문은 다른 스레드에서 파싱
 constexpr qint64 kRxTimeoutMs = 3000;           // 이만큼 아무것도 받지 못하면 반쯤 열린 연결로 보고 끊는다
+constexpr qint64 kRxTimeoutMaxMs = 12000;       // 시간 초과로 끊을 때마다 기준을 두 배로, 이 값까지
+constexpr int kRetryMs = 3000;                  // 붙지 못하면 이 간격으로 다시 시도
+constexpr int kQuickRetryMs = 300;              // 1 s 넘게 붙어 있던 연결이 끊기면 이만큼 뒤 곧 다시 시도
 constexpr int kCallTimeoutMs = 5000;
 constexpr int kHistory = 60;
 
@@ -26,7 +29,13 @@ RosBridge::RosBridge(QObject *parent) : QObject(parent)
     m_noPublish = qEnvironmentVariableIntValue("ROBOT_DASHBOARD_NO_PUBLISH") == 1;
     connect(&m_ws, &QWebSocket::connected, this, [this] {
         m_connected = true;
+        m_up.restart();
         m_lastRx.restart();
+        // 큰 프레임(/map)은 다 받아야 메시지가 되고, 그 뒤에 줄 선 pong 도 늦는다. 받는 중인 바이트도 살아 있음으로 본다.
+        disconnect(m_rawRx);
+        for (QTcpSocket *sock : m_ws.findChildren<QTcpSocket *>())   // 지난 연결의 소켓이 아직 남아 있을 수 있다
+            if (sock->state() == QAbstractSocket::ConnectedState)
+                m_rawRx = connect(sock, &QIODevice::readyRead, this, [this] { m_lastRx.restart(); });
         m_lastData.restart();
         m_error.clear();
         emit errorChanged();
@@ -45,6 +54,8 @@ RosBridge::RosBridge(QObject *parent) : QObject(parent)
         for (const QString &id : m_calls.keys())
             failCall(id, "연결 끊김");
         if (m_connected) {
+            if (m_retry.isActive() && m_up.elapsed() > 1000)   // 서버가 닫았으면 3 s 를 기다리지 않는다
+                m_retry.start(kQuickRetryMs);
             m_connected = false;
             emit connectedChanged();
             emit rxChanged();
@@ -62,16 +73,20 @@ RosBridge::RosBridge(QObject *parent) : QObject(parent)
         emit latencyChanged();
     });
 
-    m_retry.setInterval(3000);   // 끊기면 3 s 간격으로 다시 연결
+    m_retry.setInterval(kRetryMs);
     connect(&m_retry, &QTimer::timeout, this, [this] {
+        if (m_retry.interval() != kRetryMs)
+            m_retry.setInterval(kRetryMs);
         if (m_ws.state() == QAbstractSocket::UnconnectedState)
             m_ws.open(QUrl(QString("ws://%1:%2").arg(m_host).arg(m_port)));
     });
     m_tick.setInterval(1000);
     connect(&m_tick, &QTimer::timeout, this, [this] {
-        if (m_lastRx.elapsed() > kRxTimeoutMs) {   // 반쯤 열린 연결: disconnected → 재연결
-            m_error = QString("%1 s 동안 수신 없음 — 다시 연결").arg(kRxTimeoutMs / 1000);
+        if (m_lastRx.elapsed() > m_rxTimeoutMs) {   // 반쯤 열린 연결: disconnected → 재연결
+            m_error = QString("%1 s 동안 수신 없음 — 다시 연결").arg(m_rxTimeoutMs / 1000);
             emit errorChanged();
+            // 서버가 큰 메시지를 직렬화하느라 멈춘 것이면 같은 기준으로는 붙을 때마다 다시 끊긴다
+            m_rxTimeoutMs = qMin(m_rxTimeoutMs * 2, kRxTimeoutMaxMs);
             m_ws.abort();
             return;
         }
@@ -102,6 +117,7 @@ void RosBridge::open(const QString &host, int port)
     m_host = host;
     m_port = port;
     emit hostChanged();
+    m_rxTimeoutMs = kRxTimeoutMs;
     m_ws.abort();
     m_types.clear();
     m_skew.clear();
@@ -268,10 +284,12 @@ void RosBridge::onText(const QString &text)
     const QString topic = re.match(text.left(4096)).captured(1);
     const int id = ++m_bigId;
     m_pending[topic].append(Pending{id, false, {}, bytes, 0});
-    QtConcurrent::run([text] {
+    QtConcurrent::run([src = std::make_shared<QString>(text)] {
         QElapsedTimer t;
         t.start();
-        const QJsonObject o = QJsonDocument::fromJson(text.toUtf8()).object();
+        const QByteArray utf8 = src->toUtf8();
+        *src = QString();   // 파싱하는 동안 UTF-16 원문(3000² 지도면 약 54 MB)까지 들고 있지 않는다
+        const QJsonObject o = QJsonDocument::fromJson(utf8).object();
         return std::pair<QJsonObject, double>(o, double(t.elapsed()));
     }).then(this, [this, topic, id](const std::pair<QJsonObject, double> &r) {   // GUI 스레드로 queued
         finishBig(topic, id, r.first, r.second);
@@ -331,7 +349,12 @@ void RosBridge::dispatch(const QJsonObject &o, qint64 bytes, double workerMs)
                 m_skew.removeFirst();
         }
         m_lastWorkerMs = workerMs;
+        QElapsedTimer gui;
+        gui.start();
         emit message(topic, msg);
+        emit received(topic);
+        if (auto it = m_times.find(topic); it != m_times.end())   // 받는 쪽이 구독을 끊었을 수 있어 다시 찾는다
+            it->guiMs = gui.nsecsElapsed() / 1e6;
         m_lastWorkerMs = 0;
     } else if (op == "service_response") {
         const QString id = o["id"].toString();
@@ -382,6 +405,7 @@ RosBridge::Stat RosBridge::stat(const QString &topic)
     s.totalBytes = it->total;
     s.age = it->last ? (now - it->last) / 1000.0 : -1;
     s.latencyMs = it->latency;
+    s.guiMs = it->guiMs;
     s.clockSkew = !qIsNaN(s.latencyMs) && std::abs(s.latencyMs) > 5000;
     s.sinceSub = (now - it->since) / 1000.0;
     return s;

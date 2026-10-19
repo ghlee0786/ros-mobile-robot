@@ -1,0 +1,48 @@
+{
+  "id": "net_flap",
+  "title": "서버가 2.5 s 마다 끊어도 곧 다시 붙어 연결 시간 대부분 조종 0 명령이 나간다(고정 3 s 재시도 아님, B29)",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--disconnect-every",
+    "2.5"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 1,
+      "set": "robot.mode",
+      "value": "키보드 조종"
+    }
+  ],
+  "duration_s": 30,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "dir": "event",
+        "op": "connect",
+        "value": 6
+      },
+      {
+        "rule": "rate_between",
+        "topic": "/teleop/cmd_vel",
+        "from_s": 5,
+        "to_s": 25,
+        "min_hz": 5.0,
+        "max_hz": 11
+      },
+      {
+        "rule": "max_abs",
+        "topic": "/teleop/cmd_vel",
+        "field": "linear.x",
+        "value": 0
+      }
+    ]
+  }
+}

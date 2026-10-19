@@ -69,7 +69,7 @@ FocusScope {
     Timer { interval: 500; repeat: true; running: page.active; onTriggered: page.nowMs = Date.now() }
     Connections {
         target: robot.bridge
-        function onMessage(topic) {
+        function onReceived(topic) {
             if (topic === "/wheel_states") page.wheelSeen = Date.now()
             else if (topic === "/imu/data_raw") page.imuSeen = Date.now()
         }

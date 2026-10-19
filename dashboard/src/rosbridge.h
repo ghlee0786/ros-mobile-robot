@@ -12,8 +12,9 @@
 #include <functional>
 
 // rosbridge v2 JSON 프로토콜 클라이언트. 같은 토픽을 여러 용도(센서 표시 · 기록 등)가 원하면
-// 하나라도 원하는 동안만 subscribe 하고, 끊기면 3 s 마다 다시 붙어 구독 · advertise 를 되살린다.
-// 3 s 동안 아무것도 받지 못하면(반쯤 열린 연결) 소켓을 끊고 같은 재연결 경로를 탄다.
+// 하나라도 원하는 동안만 subscribe 하고, 끊기면(붙어 있던 연결은 곧, 그 뒤로는 3 s 마다) 다시 붙어 구독 · advertise 를
+// 되살린다. 3 s 동안 아무것도(받는 중인 프레임의 바이트도) 받지 못하면(반쯤 열린 연결) 소켓을 끊고 같은 재연결 경로를
+// 타며, 그때마다 이 기준을 두 배로(12 s 까지) 늘린다(open 하면 3 s 로).
 class RosBridge : public QObject
 {
     Q_OBJECT
@@ -46,6 +47,7 @@ public:
         double bytesPerSec = 0; // 최근 2 s 평균 수신 바이트/s
         qint64 totalBytes = 0;  // 구독 뒤 누적 바이트
         bool clockSkew = false; // |지연| > 5 s: PC 와 파이 시계가 어긋남
+        double guiMs = 0;       // 마지막 메시지를 받는 쪽들에 나눠 주느라 GUI 스레드에서 쓴 ms
     };
     using Done = std::function<void(const QJsonObject &)>;
     using Fail = std::function<void(const QString &)>;
@@ -101,10 +103,13 @@ signals:
     void rxChanged();
     void callsChanged();
     void message(const QString &topic, const QJsonObject &msg);
+    // message 와 같지만 내용이 없다. QML 은 message 의 msg 를 통째로 JS 객체로 바꾸므로(3000² 지도면 수백 ms),
+    // 토픽 이름만 필요한 QML 은 이것을 쓴다.
+    void received(const QString &topic);
     void bridgeError(const QString &text);   // rosbridge status op, 실패한 서비스 응답
 
 private:
-    struct Times { QList<std::pair<qint64, qint64>> arrivals; qint64 last = 0; qint64 since = 0; double latency = qQNaN(); qint64 total = 0; };
+    struct Times { QList<std::pair<qint64, qint64>> arrivals; qint64 last = 0; qint64 since = 0; double latency = qQNaN(); qint64 total = 0; double guiMs = 0; };
     struct Call { Done done; Fail fail; QString service; };
     struct Pending { int id = 0; bool ready = false; QJsonObject o; qint64 bytes = 0; double workerMs = 0; };
     struct Sub { QString type; int throttle = 0; int queue = -1; };
@@ -124,7 +129,9 @@ private:
     QTimer m_retry, m_tick;
     // 단조 시계. m_lastRx 는 pong 까지(반쯤 열린 연결 판단), m_lastData 는 메시지만(rxAge — 데이터가 멈춰도
     // 서버 WebSocket 층은 ping 에 계속 답하므로 pong 으로는 링크 끊김을 알 수 없다).
-    QElapsedTimer m_mono, m_lastRx, m_lastData;
+    QElapsedTimer m_mono, m_lastRx, m_lastData, m_up;
+    qint64 m_rxTimeoutMs = 3000;
+    QMetaObject::Connection m_rawRx;   // 내부 TCP 소켓 readyRead → m_lastRx
     QString m_host;
     int m_port = 9090;
     bool m_connected = false;

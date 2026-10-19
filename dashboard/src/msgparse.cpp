@@ -97,7 +97,21 @@ Rgba cellColor(int v, int scheme, int binaryThreshold)
 
 QImage occupancyToImage(const QJsonArray &data, int w, int h, const QString &scheme, int binaryThreshold)
 {
-    if (w <= 0 || h <= 0 || data.size() < qsizetype(w) * h)
+    return cellsToImage(occupancyCells(data), w, h, scheme, binaryThreshold);
+}
+
+QByteArray occupancyCells(const QJsonArray &data)
+{
+    QByteArray cells(data.size(), Qt::Uninitialized);
+    char *out = cells.data();
+    for (const QJsonValue &v : data)
+        *out++ = char(v.toInt() & 0xFF);
+    return cells;
+}
+
+QImage cellsToImage(const QByteArray &cells, int w, int h, const QString &scheme, int binaryThreshold)
+{
+    if (w <= 0 || h <= 0 || cells.size() < qsizetype(w) * h)
         return {};
     const int sch = scheme == "costmap" ? 1 : scheme == "raw" ? 2 : 0;
     // 값 256 가지의 색을 미리 만들어 둔다.
@@ -105,11 +119,11 @@ QImage occupancyToImage(const QJsonArray &data, int w, int h, const QString &sch
     for (int u = 0; u < 256; ++u)
         lut[u] = cellColor(u, sch, binaryThreshold);
     QImage img(w, h, QImage::Format_RGBA8888);
-    auto it = data.begin();
+    auto it = reinterpret_cast<const uchar *>(cells.constData());
     for (int r = 0; r < h; ++r) {   // 지도 0 행은 아래쪽
         auto *line = reinterpret_cast<Rgba *>(img.scanLine(h - 1 - r));
         for (int c = 0; c < w; ++c, ++it)
-            line[c] = lut[(*it).toInt() & 0xFF];
+            line[c] = lut[*it];
     }
     return img;
 }

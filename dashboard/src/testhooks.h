@@ -59,5 +59,6 @@ private:
     // frameSwapped 로 센 fps
     qint64 m_frames = 0, m_firstFrameMs = -1, m_lastFrameMs = -1, m_bucketStartMs = -1;
     int m_bucketFrames = 0;
-    double m_fpsMin = -1;
+    double m_fpsMin = -1, m_fpsLast = 0;
+    qint64 m_stallLastMs = -1, m_stallMaxMs = 0;
 };

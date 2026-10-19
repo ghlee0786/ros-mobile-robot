@@ -246,7 +246,9 @@ private:
     QElapsedTimer m_moClock;             // map -> odom 받은 뒤 경과
     bool m_hasMap = false, m_mapWanted = false, m_mapBinary = false;
     QString m_mapScheme = QStringLiteral("map");
-    QJsonObject m_lastMap;
+    QJsonObject m_mapPending, m_mapInfo;   // 받은 원문은 칸 바이트로 바꿀 때까지만 든다(3000² 면 QJsonArray 만 144 MB)
+    QByteArray m_mapCells;                 // 지도 칸마다 1 바이트(msgparse::occupancyCells)
+    int m_mapPendingJob = 0;
     int m_mapJob = 0, m_mapApplied = 0, m_mapImageSerial = 0;
     QImage m_mapImage;
     msgparse::Pose2D m_mapO;             // 지도 판 중심(map 프레임)
