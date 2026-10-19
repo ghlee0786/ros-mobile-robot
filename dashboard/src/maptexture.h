@@ -21,4 +21,5 @@ signals:
 
 private:
     QImage m_image;
+    qint64 m_sourceKey = 0;
 };

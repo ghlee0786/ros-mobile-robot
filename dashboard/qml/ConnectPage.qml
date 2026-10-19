@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Controls.impl
 import QtQuick.Layouts
 import RobotDashboard
 
@@ -7,7 +8,6 @@ import RobotDashboard
 Item {
     id: page
     required property Robot robot
-    readonly property string mono: "Consolas"
     property bool waiting: false
     signal done()
 
@@ -20,92 +20,147 @@ Item {
 
     component Field: TextField {
         Layout.fillWidth: true
-        implicitHeight: 44
-        color: "#E6E9EE"
-        font.family: page.mono
-        font.pixelSize: 15
-        leftPadding: 12
-        background: Rectangle { radius: 10; color: "#0F1318"; border.color: "#2E3744" }
+        implicitHeight: Theme.hLg
+        color: Theme.text1
+        font.family: Theme.monoFamily
+        font.pixelSize: Theme.fsLabel
+        leftPadding: Theme.sp3
+        background: Rectangle {
+            radius: Theme.rSm
+            color: Theme.base
+            border.color: parent.activeFocus ? Theme.accent : Theme.borderDefault
+        }
     }
+    component FieldLabel: Text { color: Theme.text2; font.pixelSize: Theme.fsSmall; font.weight: Theme.wMedium }
 
     Rectangle {
         anchors.centerIn: parent
         width: 720
-        height: col.implicitHeight + 72
-        color: "#161A21"
-        border.color: "#2B323C"
+        height: col.implicitHeight + 2 * Theme.sp8
+        radius: Theme.rXl
+        color: Theme.surface1
+        border.color: Theme.borderSubtle
 
         ColumnLayout {
             id: col
             anchors.fill: parent
-            anchors.margins: 36
-            anchors.leftMargin: 40
-            anchors.rightMargin: 40
-            spacing: 20
+            anchors.margins: Theme.sp8
+            spacing: Theme.sp5
 
             Column {
-                Text { text: "로봇에 연결"; color: "#E6E9EE"; font.pixelSize: 22; font.bold: true }
-                Text { text: "앱을 켜면 마지막 주소로 자동 연결합니다. 실패하면 이 화면이 뜹니다."; color: "#9AA3AF"; font.pixelSize: 13 }
+                spacing: Theme.sp1
+                Text { text: "로봇에 연결"; color: Theme.text1; font.pixelSize: Theme.fsHeading; font.weight: Theme.wStrong; font.letterSpacing: -0.3 }
+                Text { text: "앱을 켜면 마지막 주소로 자동 연결합니다. 실패하면 이 화면이 뜹니다."; color: Theme.text2; font.pixelSize: Theme.fsBody }
             }
 
             GridLayout {
                 columns: 2
-                columnSpacing: 14
-                rowSpacing: 6
+                columnSpacing: Theme.sp3
+                rowSpacing: Theme.spNudge
                 Layout.fillWidth: true
-                Text { text: "로봇 주소"; color: "#C5CBD3"; font.pixelSize: 13 }
-                Text { text: "rosbridge 포트"; color: "#C5CBD3"; font.pixelSize: 13 }
+                FieldLabel { text: "로봇 주소" }
+                FieldLabel { text: "rosbridge 포트" }
                 Field { id: host; text: robot.lastHost }
                 Field { id: port; text: robot.lastPort; validator: IntValidator { bottom: 1; top: 65535 } }
             }
 
             ColumnLayout {
                 Layout.fillWidth: true
-                spacing: 6
-                Text { text: "저장된 로봇"; color: "#C5CBD3"; font.pixelSize: 13 }
+                spacing: Theme.spNudge
+                FieldLabel { text: "저장된 로봇" }
                 Repeater {
                     model: robot.savedRobots.concat(robot.bridge.found.map(h => ({ name: "찾은 rosbridge", host: h })))
                     Button {
+                        id: pick
                         required property var modelData
+                        readonly property bool selected: host.text === modelData.host
                         Layout.fillWidth: true
-                        implicitHeight: 48
+                        implicitHeight: Theme.hLg + Theme.sp1
+                        hoverEnabled: true
+                        focusPolicy: Qt.NoFocus
+                        leftPadding: Theme.sp3
+                        rightPadding: Theme.sp3
                         onClicked: host.text = modelData.host
                         contentItem: RowLayout {
-                            Text { text: modelData.name; color: "#E6E9EE"; font.pixelSize: 14; Layout.fillWidth: true }
-                            Text { text: modelData.host; color: "#E6E9EE"; font.family: page.mono; font.pixelSize: 13 }
+                            Text { text: pick.modelData.name; color: Theme.text1; font.pixelSize: Theme.fsLabel; Layout.fillWidth: true }
+                            Text { text: pick.modelData.host; color: pick.selected ? Theme.accentText : Theme.text2; font.family: Theme.monoFamily; font.pixelSize: Theme.fsBody }
                         }
                         background: Rectangle {
-                            radius: 10
-                            color: host.text === modelData.host ? "#1B3446" : "#1D232C"
-                            border.color: host.text === modelData.host ? "#2E5A73" : "#2E3744"
+                            radius: Theme.rSm
+                            color: pick.selected ? Theme.accentSubtle : Theme.surface2
+                            border.color: pick.selected ? Theme.accent : Theme.borderDefault
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: parent.radius
+                                color: Theme.text1
+                                opacity: pick.down ? Theme.stPressed : pick.hovered ? Theme.stHover : 0
+                            }
                         }
                     }
                 }
             }
 
+            // 연결 단계: 상태마다 점(정상 · 기다림) 또는 아이콘(실패)과 원인을 같은 행에 붙인다
             Rectangle {
                 Layout.fillWidth: true
-                radius: 10
-                color: "#0F1318"
-                implicitHeight: checks.implicitHeight + 24
+                radius: Theme.rMd
+                color: Theme.base
+                border.color: Theme.borderSubtle
+                implicitHeight: checks.implicitHeight + 2 * Theme.sp3
                 Column {
                     id: checks
-                    x: 14; y: 12
-                    spacing: 4
-                    component Check: Text {
+                    x: Theme.sp4; y: Theme.sp3
+                    width: parent.width - 2 * Theme.sp4
+                    spacing: Theme.sp2
+                    component Check: Row {
+                        id: chk
                         property bool ok
                         property bool fail
+                        property url failIcon: "qrc:/icons/octagon-alert.svg"
                         property string label
-                        textFormat: Text.StyledText
-                        font.pixelSize: 13
-                        color: "#E6E9EE"
-                        text: "<font color='" + (ok ? "#5BC48A" : fail ? "#D93A40" : "#F2A33A") + "'>●</font> " + label
+                        property string cause
+                        readonly property color tone: ok ? Theme.okText : fail ? Theme.dangerText : Theme.warnText
+                        spacing: Theme.sp2
+                        Item {
+                            width: 16; height: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            Rectangle {
+                                visible: !chk.fail
+                                anchors.centerIn: parent
+                                width: 8; height: 8; radius: width / 2
+                                color: chk.ok ? Theme.ok : Theme.warn
+                            }
+                            IconImage {
+                                visible: chk.fail
+                                anchors.fill: parent
+                                source: chk.failIcon
+                                sourceSize: Qt.size(16, 16)
+                                color: chk.tone
+                            }
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: chk.label
+                            color: chk.fail ? Theme.dangerText : Theme.text1
+                            font.pixelSize: Theme.fsBody
+                            font.features: Theme.numFeatures
+                        }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: chk.cause !== ""
+                            text: chk.cause
+                            color: Theme.text2
+                            font.family: Theme.monoFamily
+                            font.pixelSize: Theme.fsSmall
+                        }
                     }
                     Check {
                         ok: robot.bridge.connected
                         fail: !robot.bridge.connected && robot.bridge.error !== ""
+                        failIcon: "qrc:/icons/plug.svg"
                         label: robot.bridge.connected ? "웹소켓 연결 확인"
-                             : robot.bridge.error !== "" ? "웹소켓 연결 실패 · " + robot.bridge.error : "웹소켓 연결 기다리는 중…"
+                             : fail ? "웹소켓 연결 실패" : "웹소켓 연결 기다리는 중…"
+                        cause: fail ? robot.bridge.error : ""
                     }
                     Check {
                         ok: robot.bridge.topicListReceived
@@ -113,7 +168,12 @@ Item {
                     }
                     Check {
                         ok: robot.missingRequired.length === 0
-                        label: robot.missingRequired.length === 0 ? "필수 토픽 수신 (/odom, /scan, /wheel_states)" : robot.missingRequired.join(", ") + " 기다리는 중…"
+                        // 토픽 목록까지 받았는데 필수 센서가 안 오면 실패로 보인다
+                        fail: robot.bridge.topicListReceived && robot.missingRequired.length > 0
+                        failIcon: "qrc:/icons/wifi-off.svg"
+                        label: ok ? "필수 토픽 수신 (/odom, /scan, /wheel_states)"
+                             : fail ? "센서 수신 안 됨" : "필수 토픽 기다리는 중…"
+                        cause: ok ? "" : robot.missingRequired.join(", ")
                     }
                     Check {
                         visible: robot.bridge.searching || robot.bridge.found.length > 0
@@ -124,18 +184,18 @@ Item {
             }
 
             Row {
-                spacing: 10
+                spacing: Theme.sp2
                 Btn {
                     text: "연결"
-                    implicitHeight: 48
-                    font.pixelSize: 15; font.bold: true
-                    leftPadding: 22; rightPadding: 22
-                    background: Rectangle { radius: 10; color: parent.down ? "#236D91" : "#2B7FA8" }
+                    kind: "accent"
+                    size: "lg"
+                    icon.source: "qrc:/icons/plug.svg"
                     onClicked: { page.waiting = true; robot.connectTo(host.text.trim(), parseInt(port.text)) }
                 }
                 Btn {
                     text: "네트워크에서 찾기"
-                    implicitHeight: 48
+                    size: "lg"
+                    icon.source: "qrc:/icons/search.svg"
                     enabled: !robot.bridge.searching
                     onClicked: robot.bridge.discover()
                 }

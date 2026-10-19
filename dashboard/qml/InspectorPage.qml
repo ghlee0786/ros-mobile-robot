@@ -8,7 +8,7 @@ import RobotDashboard
 Item {
     id: page
     required property Robot robot
-    readonly property string mono: "Consolas"
+    readonly property string mono: Theme.monoFamily
 
     RowLayout {
         anchors.fill: parent
@@ -24,14 +24,14 @@ Item {
             title: "토픽 상태"
             headerExtra: Column {
                 spacing: 4
-                Text { text: "토픽 찾기"; color: "#9AA3AF"; font.pixelSize: 12 }
+                Text { text: "토픽 찾기"; color: Theme.text2; font.pixelSize: Theme.fsSmall }
                 TextField {
                     id: filter
                     width: 220; height: 36
                     placeholderText: "/odom"
-                    color: "#E6E9EE"; placeholderTextColor: "#5A636E"
+                    color: Theme.text1; placeholderTextColor: Theme.text3
                     font.family: page.mono
-                    background: Rectangle { radius: 8; color: "#0F1318"; border.color: "#2E3744" }
+                    background: Rectangle { radius: Theme.rMd; color: Theme.base; border.color: Theme.borderDefault }
                 }
             }
             ScrollView {
@@ -50,16 +50,16 @@ Item {
                         Layout.preferredHeight: 34
                         leftPadding: 8
                         verticalAlignment: Text.AlignVCenter
-                        color: "#E6E9EE"
-                        font.pixelSize: 13
+                        color: Theme.text1
+                        font.pixelSize: Theme.fsBody
                         elide: Text.ElideRight
                     }
-                    Cell { text: "토픽"; color: "#9AA3AF"; Layout.preferredWidth: 260 }
-                    Cell { text: "형식"; color: "#9AA3AF"; Layout.preferredWidth: 240 }
-                    Cell { text: "주기"; color: "#9AA3AF"; Layout.preferredWidth: 90 }
-                    Cell { text: "지연"; color: "#9AA3AF"; Layout.preferredWidth: 90 }
-                    Cell { text: "상태"; color: "#9AA3AF"; Layout.preferredWidth: 100 }
-                    Cell { text: "기록"; color: "#9AA3AF"; Layout.preferredWidth: 60 }
+                    Cell { text: "토픽"; color: Theme.text2; Layout.preferredWidth: 260 }
+                    Cell { text: "형식"; color: Theme.text2; Layout.preferredWidth: 240 }
+                    Cell { text: "주기"; color: Theme.text2; Layout.preferredWidth: 90 }
+                    Cell { text: "지연"; color: Theme.text2; Layout.preferredWidth: 90 }
+                    Cell { text: "상태"; color: Theme.text2; Layout.preferredWidth: 100 }
+                    Cell { text: "기록"; color: Theme.text2; Layout.preferredWidth: 60 }
                     Repeater {   // 토픽마다 6 칸
 
                         model: {
@@ -74,7 +74,7 @@ Item {
                             readonly property var t: modelData.t
                             Layout.fillWidth: true
                             Layout.preferredHeight: 36
-                            Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: "#1F252E" }
+                            Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Theme.borderSubtle }
                             Text {
                                 visible: modelData.c < 4
                                 anchors.fill: parent
@@ -82,18 +82,18 @@ Item {
                                 verticalAlignment: Text.AlignVCenter
                                 elide: Text.ElideRight
                                 font.family: page.mono
-                                font.pixelSize: modelData.c === 1 ? 12 : 13
-                                color: modelData.c === 1 ? "#AEB6C0" : "#E6E9EE"
+                                font.pixelSize: modelData.c === 1 ? Theme.fsSmall : Theme.fsBody
+                                color: modelData.c === 1 ? Theme.text2 : Theme.text1
                                 text: [t.name, t.type, t.hz, t.lat][modelData.c] ?? ""
                             }
                             Rectangle {
                                 visible: modelData.c === 4
                                 x: 8; anchors.verticalCenter: parent.verticalCenter
-                                radius: 999; height: 22; width: st.implicitWidth + 18
-                                color: t.state === "정상" ? "#17302A" : t.state === "구독 안 함" ? "#232A33" : "#3A3320"
+                                radius: Theme.rPill; height: 22; width: st.implicitWidth + 18
+                                color: t.state === "정상" ? Theme.okSubtle : t.state === "구독 안 함" ? Theme.surface3 : Theme.warnSubtle
                                 Text {
-                                    id: st; anchors.centerIn: parent; text: t.state; font.pixelSize: 12
-                                    color: t.state === "정상" ? "#8EE2B4" : t.state === "구독 안 함" ? "#AEB6C0" : "#F5D27A"
+                                    id: st; anchors.centerIn: parent; text: t.state; font.pixelSize: Theme.fsSmall
+                                    color: t.state === "정상" ? Theme.okText : t.state === "구독 안 함" ? Theme.text2 : Theme.warnText
                                 }
                             }
                             CheckBox {
@@ -118,13 +118,13 @@ Item {
                 Layout.fillWidth: true
                 title: "기록 (CSV)"
                 Text {
-                    color: "#C5CBD3"; font.pixelSize: 13; textFormat: Text.StyledText
+                    color: Theme.text2; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
                     text: "선택한 토픽 <b>" + robot.recordTopics.length + "개</b> · 경과 <b>" + robot.recordElapsed + "</b>"
                 }
                 Text {
                     Layout.fillWidth: true; wrapMode: Text.WrapAnywhere
                     text: robot.recordPath === "" ? "records/<시각>/<토픽>.csv 로 저장" : robot.recordPath
-                    color: "#9AA3AF"; font.family: page.mono; font.pixelSize: 12
+                    color: Theme.text2; font.family: page.mono; font.pixelSize: Theme.fsSmall
                 }
                 Row {
                     spacing: 8
@@ -143,21 +143,21 @@ Item {
                     marginLeft: 0; marginRight: 4; marginTop: 4; marginBottom: 0
                     theme: GraphsTheme {
                         backgroundVisible: false
-                        plotAreaBackgroundColor: "#161A21"
-                        grid.mainColor: "#232A33"
-                        labelTextColor: "#9AA3AF"
-                        axisXLabelFont.pixelSize: 10
-                        axisYLabelFont.pixelSize: 10
+                        plotAreaBackgroundColor: Theme.surface1
+                        grid.mainColor: Theme.borderDefault
+                        labelTextColor: Theme.text2
+                        axisXLabelFont.pixelSize: Theme.fsCaption
+                        axisYLabelFont.pixelSize: Theme.fsCaption
                     }
                     axisX: ValueAxis { min: 0; max: 1.0; tickInterval: 0.25; labelDecimals: 2; subGridVisible: false }
                     axisY: ValueAxis {   // 옆 오차 cm
                         readonly property real span: Math.max(2, ...robot.straightTrack.map(p => Math.abs(p.y)))
                         min: -span; max: span; tickInterval: span; labelDecimals: 1; subGridVisible: false
                     }
-                    LineSeries { color: "#F2A33A"; width: 2; XYPoint { x: 0; y: 0 } XYPoint { x: 1; y: 0 } }
+                    LineSeries { color: Theme.series[1]; width: 2; XYPoint { x: 0; y: 0 } XYPoint { x: 1; y: 0 } }
                     LineSeries {
                         id: track
-                        color: "#4CC3E8"; width: 2.5
+                        color: Theme.series[0]; width: 2.5
                         property var pts: robot.straightTrack
                         onPtsChanged: { clear(); for (const p of pts) append(p.x, p.y) }
                     }
@@ -176,11 +176,11 @@ Item {
                             required property var modelData
                             Layout.fillWidth: true
                             implicitHeight: 52
-                            radius: 10; color: "#1D232C"
+                            radius: Theme.rLg; color: Theme.surface2
                             Column {
                                 anchors.fill: parent; anchors.margins: 8; anchors.leftMargin: 10
-                                Text { text: modelData[0]; color: "#9AA3AF"; font.pixelSize: 12 }
-                                Text { text: modelData[1]; color: "#E6E9EE"; font.family: page.mono; font.pixelSize: 17 }
+                                Text { text: modelData[0]; color: Theme.text2; font.pixelSize: Theme.fsSmall }
+                                Text { text: modelData[1]; color: Theme.text1; font.family: page.mono; font.pixelSize: Theme.fsTitle }
                             }
                         }
                     }
@@ -204,8 +204,8 @@ Item {
                         elide: Text.ElideRight
                         text: modelData
                         font.family: page.mono
-                        font.pixelSize: 13
-                        color: modelData.indexOf("지연") >= 0 || modelData.indexOf("끊김") >= 0 || modelData.indexOf("비상") >= 0 ? "#F2C27A" : "#E6E9EE"
+                        font.pixelSize: Theme.fsBody
+                        color: modelData.indexOf("지연") >= 0 || modelData.indexOf("끊김") >= 0 || modelData.indexOf("비상") >= 0 ? Theme.warnText : Theme.text1
                     }
                 }
             }
