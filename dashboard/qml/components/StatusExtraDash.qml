@@ -5,4 +5,10 @@ import RobotDashboard
 Row {
     required property Robot robot
     spacing: Theme.sp2
+
+    StatusChip {
+        objectName: "armStatusChip"
+        kind: parent.robot.teleopArmed ? "ok" : "neutral"
+        text: parent.robot.teleopArmed ? "조종 켜짐" : "조종 잠김"
+    }
 }

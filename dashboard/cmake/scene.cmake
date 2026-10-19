@@ -10,3 +10,12 @@ target_sources(robot_dashboard PRIVATE
 )
 # qmltyperegistrar 가 만든 등록 파일이 헤더를 파일 이름만으로 include 한다.
 target_include_directories(robot_dashboard PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/scene)
+# 3D 장면 QML(P8b): SceneView 가 쓰는 레이어 · 패널 조각. 다른 묶음과 이름이 겹치지 않게 Scene 접두사를 붙인다.
+qt_target_qml_sources(robot_dashboard
+    QML_FILES
+        qml/scene/SceneDots.qml
+        qml/scene/ScenePoseArrow.qml
+        qml/scene/SceneCovEllipse.qml
+        qml/scene/SceneTfAxes.qml
+        qml/scene/SceneLayerPanel.qml
+)
