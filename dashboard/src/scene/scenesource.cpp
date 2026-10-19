@@ -1,9 +1,9 @@
 #include "scenesource.h"
+#include "msgparse.h"
 #include "scenemath.h"
 
 #include <QDateTime>
 #include <QJsonArray>
-#include <cmath>
 
 SceneSource::SceneSource(QObject *parent)
     : QObject(parent), m_reason(QStringLiteral("scene:%1").arg(quintptr(this), 0, 16))
@@ -61,7 +61,8 @@ void SceneSource::setReceived(bool on)
 
 void SceneSource::feed(const QString &topic, const QJsonObject &msg)
 {
-    if (topic == "/tf") {
+    // map→odom 은 /tf 와 PC 내비 스택의 /map_odom(같은 TFMessage) 둘 다로 온다(Robot 과 같음).
+    if (topic == "/tf" || topic == "/map_odom") {
         for (const QJsonValue &v : msg["transforms"].toArray()) {
             const QJsonObject t = v.toObject();
             if (t["header"].toObject()["frame_id"].toString() != "map" || t["child_frame_id"].toString() != "odom")
@@ -81,8 +82,6 @@ void SceneSource::toOdom(const QString &frame, double &x, double &y, double &yaw
 {
     if (frame != "map" || !m_haveMapOdom)
         return;
-    const double dx = x - m_moX, dy = y - m_moY, c = std::cos(m_moYaw), s = std::sin(m_moYaw);
-    x = c * dx + s * dy;
-    y = -s * dx + c * dy;
-    yaw -= m_moYaw;
+    const msgparse::Pose2D p = msgparse::mapToOdom({m_moX, m_moY, m_moYaw}, {x, y, yaw});
+    x = p.x, y = p.y, yaw = p.yaw;
 }

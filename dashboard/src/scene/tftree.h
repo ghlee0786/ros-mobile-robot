@@ -9,6 +9,8 @@
 
 // /tf · /tf_static 으로 프레임 트리를 만들고 프레임마다 고정 프레임(fixedFrame) 기준 자세를 구한다.
 // 정적이 아닌 프레임은 RViz 처럼 timeoutSec 동안 페이드한다(1/3 정상 → 1/3 회색 보간 → 1/3 알파 감소).
+// /tf_static 은 연결 때 한 번만 오므로(같은 토픽을 다른 용도가 이미 구독 중이면 다시 오지 않음) 꺼져 있어도
+// bridge 로 지나가는 것을 받아 두고, 끌 때도 정적 프레임은 남긴다.
 class TfTree : public SceneSource
 {
     Q_OBJECT
@@ -53,4 +55,5 @@ private:
     double m_timeout = 15;
     QVariantList m_list;
     QTimer m_tick;
+    QMetaObject::Connection m_staticConn;
 };
