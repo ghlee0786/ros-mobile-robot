@@ -6,7 +6,7 @@
 #include <QJsonArray>
 #include <QSettings>
 
-// P4 병합 뒤: want() 에 queueLength 가 생기면 작은 queue 로 준다. 1 Hz 라 throttle 은 두지 않는다.
+// 1 Hz 라 throttle 은 두지 않고 작은 queue 로 준다.
 static const char *kDiag = "/diagnostics";
 static const qint64 kStaleMs = 5000, kLostMs = 10000;
 
@@ -53,7 +53,7 @@ void DiagnosticsModel::updateSubscription()
     if (want == m_subscribed)
         return;
     m_subscribed = want;
-    m_bridge->want(kDiag, "diagnostic_msgs/msg/DiagnosticArray", "diag", want);
+    m_bridge->want(kDiag, "diagnostic_msgs/msg/DiagnosticArray", "diag", want, 0, 5);
 }
 
 void DiagnosticsModel::setFilter(const QString &f)

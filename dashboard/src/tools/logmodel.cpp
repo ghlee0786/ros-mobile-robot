@@ -7,7 +7,7 @@
 #include <QGuiApplication>
 #include <QSettings>
 
-// P4 병합 뒤: want() 에 queueLength 가 생기면 /rosout 은 queue 를 크게(버스트에 줄이 빠지지 않게) 준다.
+// /rosout 은 throttle 0 에 queue 를 크게(버스트에 줄이 빠지지 않게) 준다.
 static const char *kRosout = "/rosout";
 
 LogModel::LogModel(QObject *parent) : QAbstractListModel(parent) {}
@@ -69,7 +69,7 @@ void LogModel::updateSubscription()
     if (want == m_subscribed)
         return;
     m_subscribed = want;
-    m_bridge->want(kRosout, "rcl_interfaces/msg/Log", "log", want);
+    m_bridge->want(kRosout, "rcl_interfaces/msg/Log", "log", want, 0, 200);
 }
 
 int LogModel::rowCount(const QModelIndex &parent) const

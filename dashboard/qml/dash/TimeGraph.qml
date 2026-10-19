@@ -49,21 +49,18 @@ ColumnLayout {
         }
     }
 
+    // GraphsView(Qt 6.8)는 removeSeries 한 선을 다음 polish 때까지 날 포인터로 들고 있어, 바로 destroy 하면
+    // polish 에서 죽는다. 선은 지우지 않고 다시 쓰고, 남는 선은 src 를 비워 숨긴다.
     property var lines: []
     function rebuild() {
-        for (const l of lines) {
-            view.removeSeries(l)
-            l.destroy()
-        }
-        const out = []
-        for (const s of series) {
-            const l = lineComp.createObject(g, { src: s })
+        while (lines.length < series.length) {
+            const l = lineComp.createObject(g)
             view.addSeries(l)
-            out.push(l)
+            lines.push(l)
         }
-        lines = out
+        lines.forEach((l, i) => { l.src = i < series.length ? series[i] : null; if (!l.src) l.clear() })
         feeder.series = series
-        feeder.targets = out
+        feeder.targets = lines.slice(0, series.length)
         feeder.refresh()
     }
     onSeriesChanged: rebuild()

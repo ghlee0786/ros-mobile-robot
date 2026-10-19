@@ -43,7 +43,7 @@ void RosApiClient::rosapi(const QString &service, const QJsonObject &args, Servi
     m_queue.enqueue(service, args, [this, ok](const QJsonObject &r) {
         setError({}, false);
         ok(r);
-    }, [this](const QString &e) { setError(e, e != "연결 안 됨"); });
+    }, [this](const QString &e) { setError(e, e.contains("응답 없음")); });   // 시간 초과만 지연 경보
 }
 
 void RosApiClient::refreshNodes()
