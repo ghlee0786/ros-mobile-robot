@@ -69,3 +69,9 @@
 - chosen: 실행기가 action 뒤 첫 0 명령을 찾아, wall >= action 이라도 스트림 순서로 그보다 앞선 비0 은 action 전에 보낸 것으로 본다. 그 뒤의 비0 은 그대로 실패.
 - why: 20261020_042326 에서 estop 직전 10 Hz 타이머의 0.08 이 estop 의 0 명령들과 한 묶음으로 와 wall 이 0.6 ms 늦었다(순서는 0.08 → 0 × 3). TCP 는 보낸 순서를 지킨다.
 - effect: test_runner::test_zero_after_action_same_batch. after_ms 가 음수인 기존 판정은 그대로.
+
+## 13. test_tf_throttle_drops_map_odom 을 시계와 무관하게 (메인 세션 추가 3)
+- options: 서버에 시계를 주입 / 고정 시각열을 throttle 에 직접(지터 없음) / sim.run 과 같은 틱 순서를 시드 고정 지터로 Conn 에 직접
+- chosen: 마지막. 실제 Conn · Sub · Packet 에 가짜 server(faults 항등)를 붙이고, 약 5 ms(+0~1 ms 시드 1 지터) 틱마다 때가 된 odom(33 Hz) · map(5 Hz, 13 ms 어긋남)을 offer → flush 를 60 s 흉내 낸 뒤 송신 대기열을 센다. 판정: 전체 >= 280, odom >= 220, map <= 60(발행 300 중).
+- why: map 주기 200 ms 가 throttle 창과 같아, 지터가 없으면 창이 열리는 순간에 map 이 위상 고정된다. 지터 없는 고정 시각열도 위상·flush 간격에 따라 map 0~14/15 로 갈렸다(실측). 빠른 리눅스에서 'map 이 여러 번 남음' 이 이것이다. 지터 0.5~2 ms · 시드 0~4 에서는 map 24~34/300 으로 안정적이다(뜻 '대부분 빠진다' 유지).
+- effect: 시험은 서버 프로세스 · 소켓 없이 즉시 끝나고 GitHub Actions(ubuntu-latest)에서도 같은 결과. 모의 서버 동작 자체는 바꾸지 않았다. conftest 의 basetemp 는 이미 `os.path.isdir("E:/Temp")` 일 때만 바꾸므로 E: 가 없으면 pytest 기본값을 쓴다(확인만, 수정 없음).

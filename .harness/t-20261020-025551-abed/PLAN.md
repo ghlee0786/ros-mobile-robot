@@ -23,3 +23,7 @@
 - 대시보드는 병렬 실행에서 서버보다 2~10 s 늦게 붙는다(QML 로드).
 - 모의 서버 --freeze 중에도 websockets 는 ping 에 답한다.
 - trace 마지막 줄이 앱 종료로 연결이 닫힐 때 쓰이면 final_eq 가 틀린다 → m_finished 뒤에는 쓰지 않음.
+
+## 메인 세션 추가 3
+- [x] test_protocol::test_tf_throttle_drops_map_odom 결정적으로(결정 13) — Conn 에 시드 고정 틱열 직접, 14 passed
+- [x] conftest basetemp: E:/Temp 가 없으면 기본값(코드 확인, 수정 없음)
