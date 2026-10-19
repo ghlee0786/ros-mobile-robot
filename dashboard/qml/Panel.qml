@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import RobotDashboard
 
 // 오른쪽 센서 패널 · 점검 화면의 카드
 Rectangle {
@@ -9,40 +10,42 @@ Rectangle {
     default property alias content: body.data
     property alias headerExtra: extra.data
 
-    color: "#161A21"
-    border.color: "#2B323C"
-    radius: 14
-    implicitHeight: col.implicitHeight + 28
+    color: Theme.surface1
+    border.color: Theme.borderSubtle
+    radius: Theme.rLg
+    implicitHeight: col.implicitHeight + 2 * Theme.sp3
 
     ColumnLayout {
         id: col
         anchors.fill: parent
-        anchors.margins: 14
-        anchors.leftMargin: 16
-        anchors.rightMargin: 16
-        spacing: 8
+        anchors.topMargin: Theme.sp3
+        anchors.bottomMargin: Theme.sp3
+        anchors.leftMargin: Theme.sp4
+        anchors.rightMargin: Theme.sp4
+        spacing: Theme.sp2
         RowLayout {
             Layout.fillWidth: true
             visible: root.title !== ""
+            spacing: Theme.sp2
             Text {
                 text: root.title
-                color: "#E6E9EE"
-                font.pixelSize: 15
-                font.weight: Font.DemiBold
+                color: Theme.text1
+                font.pixelSize: Theme.fsTitle
+                font.weight: Theme.wStrong
             }
             Text {
                 text: root.subtitle
-                color: "#9AA3AF"
-                font.pixelSize: 12
+                color: Theme.text2
+                font.pixelSize: Theme.fsSmall
                 Layout.fillWidth: true
             }
-            Row { id: extra; spacing: 6 }
+            Row { id: extra; spacing: Theme.spNudge }
         }
         ColumnLayout {
             id: body
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 6
+            spacing: Theme.spNudge
         }
     }
 }

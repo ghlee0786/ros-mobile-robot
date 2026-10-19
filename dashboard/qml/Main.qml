@@ -11,11 +11,11 @@ ApplicationWindow {
     height: 980
     visible: true
     title: "로봇 대시보드"
-    color: "#101318"
-    font.family: "Malgun Gothic"
+    color: Theme.canvas
+    font.family: Theme.fontFamily
 
     property int page: 0   // 0 대시보드 · 1 데이터 점검 · 2 연결
-    readonly property string mono: "Consolas"
+    readonly property string mono: Theme.monoFamily
 
     Robot { id: robot; objectName: "robot" }
 
@@ -40,81 +40,58 @@ ApplicationWindow {
     }
 
     header: Rectangle {
-        color: "#161A21"
-        implicitHeight: hdr.implicitHeight + 24
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: "#2B323C" }
+        color: Theme.base
+        implicitHeight: hdr.implicitHeight + 2 * Theme.sp3
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.borderSubtle }
         RowLayout {
             id: hdr
             anchors.fill: parent
-            anchors.leftMargin: 20
-            anchors.rightMargin: 20
-            spacing: 20
+            anchors.leftMargin: Theme.sp5
+            anchors.rightMargin: Theme.sp5
+            spacing: Theme.sp5
             Row {
-                spacing: 10
-                Text { text: "로봇 대시보드"; color: "#E6E9EE"; font.pixelSize: 18; font.bold: true }
+                spacing: Theme.sp2
+                Text { id: appTitle; text: "로봇 대시보드"; color: Theme.text1; font.pixelSize: Theme.fsTitle; font.weight: Theme.wStrong }
                 Text {
-                    anchors.baseline: parent.children[0].baseline
-                    text: "robot1 · ROS 2 Foxy"; color: "#9AA3AF"; font.family: win.mono; font.pixelSize: 12
+                    anchors.baseline: appTitle.baseline
+                    text: "robot1 · ROS 2 Foxy"; color: Theme.text3; font.family: Theme.monoFamily; font.pixelSize: Theme.fsSmall
                 }
             }
-            Flow {
-                Layout.fillWidth: true
-                spacing: 8
-                Rectangle {
-                    readonly property bool ok: robot.bridge.connected
-                    radius: 999
-                    color: ok ? "#17302A" : "#3A1A1C"
-                    width: chipRow.implicitWidth + 20
-                    height: 26
-                    Row {
-                        id: chipRow
-                        anchors.centerIn: parent
-                        spacing: 6
-                        Rectangle { width: 8; height: 8; radius: 4; anchors.verticalCenter: parent.verticalCenter; color: parent.parent.ok ? "#5BC48A" : "#D93A40" }
-                        Text {
-                            color: parent.parent.ok ? "#8EE2B4" : "#F4B4B6"
-                            font.pixelSize: 13
-                            text: "rosbridge " + robot.bridge.host + ":" + robot.bridge.port + " · "
-                                  + (parent.parent.ok ? "연결됨 · " + robot.bridge.latencyMs + " ms" : "연결 끊김 · 재연결 중")
-                        }
-                    }
-                }
-                Repeater {
-                    model: robot.rates
-                    Rectangle {
-                        required property string modelData
-                        radius: 999; color: "#1D232C"; height: 26; width: rt.implicitWidth + 20
-                        Text { id: rt; anchors.centerIn: parent; text: modelData; color: "#C5CBD3"; font.family: win.mono; font.pixelSize: 12 }
-                    }
-                }
-                Rectangle {
-                    radius: 999; height: 26; width: wd.implicitWidth + 20
-                    color: "#1D232C"
-                    Text {
-                        id: wd; anchors.centerIn: parent; font.pixelSize: 12
-                        text: robot.watchdogOk ? "워치독 정상" : "워치독 확인 안 됨"
-                        color: robot.watchdogOk ? "#8EE2B4" : "#F5D27A"
-                    }
-                }
-            }
+            StatusBar { robot: robot; Layout.fillWidth: true }
             Row {
-                spacing: 6
+                spacing: Theme.sp1
                 Repeater {
                     model: ["대시보드", "데이터 점검", "연결"]
                     Button {
+                        id: tab
                         required property string modelData
                         required property int index
+                        readonly property bool selected: win.page === index
                         text: modelData
                         focusPolicy: Qt.NoFocus
-                        font.pixelSize: 14
+                        hoverEnabled: true
+                        implicitHeight: Theme.hSm
+                        leftPadding: Theme.sp3; rightPadding: Theme.sp3
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fsLabel
+                        font.weight: selected ? Theme.wMedium : Theme.wRegular
                         onClicked: win.page = index
-                        contentItem: Text { text: parent.text; font: parent.font; color: win.page === index ? "#E6F6FD" : "#C5CBD3" }
-                        background: Rectangle { radius: 8; color: win.page === index ? "#23405A" : "#1D232C" }
+                        contentItem: Text {
+                            text: tab.text; font: tab.font; verticalAlignment: Text.AlignVCenter
+                            color: tab.selected || tab.hovered ? Theme.text1 : Theme.text2
+                        }
+                        background: Rectangle {
+                            radius: Theme.rSm
+                            color: tab.selected ? Theme.accentSubtle : Theme.text1
+                            opacity: tab.selected ? 1 : tab.down ? Theme.stPressed : tab.hovered ? Theme.stHover : 0
+                        }
                     }
                 }
             }
         }
     }
+
+    footer: ActionBar { robot: robot }
 
     StackLayout {
         anchors.fill: parent
@@ -124,13 +101,33 @@ ApplicationWindow {
         ConnectPage { robot: robot; onDone: win.page = 0 }
     }
 
-    // 연결 · 하트비트가 끊기면 화면 테두리를 빨갛게
+    // 연결 · 하트비트가 끊기면 화면 테두리를 빨갛게 하고 위쪽에 경과 시간 배너를 띄운다
     Rectangle {
         parent: win.contentItem.parent
         anchors.fill: parent
         z: 1000
         color: "transparent"
-        border.color: "#D93A40"
+        border.color: Theme.danger
         border.width: robot.linkLost ? 6 : 0
     }
+    Banner {
+        parent: win.contentItem
+        z: 1001
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: Theme.sp3
+        active: robot.linkLost
+        text: "연결 끊김"
+    }
+
+    CommandPalette {
+        robot: robot
+        onPageRequested: (i) => win.page = i
+    }
+
+    // 동봉 글꼴(Pretendard · JetBrains Mono). 읽지 못하면 Theme 의 기본값(Malgun Gothic · Consolas)을 그대로 쓴다.
+    FontLoader { id: uiFont; source: "qrc:/fonts/PretendardVariable.ttf" }
+    FontLoader { id: monoFont; source: "qrc:/fonts/JetBrainsMono-Regular.ttf" }
+    Binding { target: Theme; property: "fontFamily"; value: uiFont.name; when: uiFont.status === FontLoader.Ready }
+    Binding { target: Theme; property: "monoFamily"; value: monoFont.name; when: monoFont.status === FontLoader.Ready }
 }
