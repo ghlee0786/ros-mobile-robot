@@ -173,6 +173,27 @@ private slots:
         QVERIFY(b.rxAge() >= 0 && b.rxAge() < 1);
     }
 
+    // header.stamp 가 8 s 앞선 메시지들: clockSkewMs 는 중앙값이라 튀는 값 하나(−60 s)에 흔들리지 않는다.
+    void clockSkewMedian()
+    {
+        MockServer s;
+        RosBridge b;
+        QVERIFY(connectTo(b, s));
+        QCOMPARE(b.clockSkewMs(), 0.0);
+        b.want("/foo", "std_msgs/Header", "sensor", true);
+        QTest::qWait(200);
+        auto pub = [&](double offsetMs) {
+            const double ms = QDateTime::currentMSecsSinceEpoch() + offsetMs;
+            s.publish("/foo", {{"header", QJsonObject{{"stamp", QJsonObject{{"sec", std::floor(ms / 1000)},
+                                                                             {"nanosec", std::fmod(ms, 1000) * 1e6}}}}}});
+        };
+        for (int i = 0; i < 5; ++i)
+            pub(8000);
+        pub(-60000);
+        QVERIFY(QTest::qWaitFor([&] { return b.stat("/foo").recent == 6; }, 2000));
+        QVERIFY2(b.clockSkewMs() > 7500 && b.clockSkewMs() < 8100, qPrintable(QString::number(b.clockSkewMs())));
+    }
+
     // 핸드셰이크만 하고 아무것도 보내지 않는 서버(반쯤 열린 연결): 3 s 넘게 받지 못하면 끊고 다시 붙는다.
     void halfOpenReconnects()
     {

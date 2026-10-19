@@ -27,6 +27,7 @@ RosBridge::RosBridge(QObject *parent) : QObject(parent)
     connect(&m_ws, &QWebSocket::connected, this, [this] {
         m_connected = true;
         m_lastRx.restart();
+        m_lastData.restart();
         m_error.clear();
         emit errorChanged();
         emit connectedChanged();
@@ -54,7 +55,7 @@ RosBridge::RosBridge(QObject *parent) : QObject(parent)
         emit errorChanged();
     });
     connect(&m_ws, &QWebSocket::textMessageReceived, this, &RosBridge::onText);
-    connect(&m_ws, &QWebSocket::binaryMessageReceived, this, [this] { m_lastRx.restart(); });
+    connect(&m_ws, &QWebSocket::binaryMessageReceived, this, [this] { m_lastRx.restart(), m_lastData.restart(); });
     connect(&m_ws, &QWebSocket::pong, this, [this](quint64 ms) {
         m_lastRx.restart();
         m_latency = int(ms);
@@ -103,6 +104,7 @@ void RosBridge::open(const QString &host, int port)
     emit hostChanged();
     m_ws.abort();
     m_types.clear();
+    m_skew.clear();
     m_topicListReceived = false;
     emit topicListChanged();
     m_ws.open(QUrl(QString("ws://%1:%2").arg(host).arg(port)));
@@ -254,6 +256,7 @@ void RosBridge::refreshTopics()
 void RosBridge::onText(const QString &text)
 {
     m_lastRx.restart();
+    m_lastData.restart();
     const qint64 bytes = text.size();   // UTF-8 바이트 근사(대부분 ASCII)
     m_rxSecBytes += bytes;
     if (bytes <= kBigMessage) {
@@ -320,9 +323,13 @@ void RosBridge::dispatch(const QJsonObject &o, qint64 bytes, double workerMs)
         while (!t.arrivals.isEmpty() && t.arrivals.first().first < now - 2000)
             t.arrivals.removeFirst();
         const QJsonObject stamp = msg["header"].toObject()["stamp"].toObject();
-        if (!stamp.isEmpty())   // 지연은 벽시계끼리 비교한다(파이 시계와 어긋나면 clockSkew)
+        if (!stamp.isEmpty()) {   // 지연은 벽시계끼리 비교한다(파이 시계와 어긋나면 clockSkew)
             t.latency = QDateTime::currentMSecsSinceEpoch()
                         - (stamp["sec"].toDouble() * 1000.0 + stamp["nanosec"].toDouble() / 1e6);
+            m_skew.append(-t.latency);
+            if (m_skew.size() > kHistory)
+                m_skew.removeFirst();
+        }
         m_lastWorkerMs = workerMs;
         emit message(topic, msg);
         m_lastWorkerMs = 0;
@@ -346,6 +353,15 @@ void RosBridge::dispatch(const QJsonObject &o, qint64 bytes, double workerMs)
     } else if (op == "status") {
         emit bridgeError(QString("rosbridge %1: %2").arg(o["level"].toString(), o["msg"].toString()));
     }
+}
+
+double RosBridge::clockSkewMs() const
+{
+    if (m_skew.isEmpty())
+        return 0;
+    QList<double> s = m_skew;
+    std::nth_element(s.begin(), s.begin() + s.size() / 2, s.end());
+    return s[s.size() / 2];
 }
 
 RosBridge::Stat RosBridge::stat(const QString &topic)

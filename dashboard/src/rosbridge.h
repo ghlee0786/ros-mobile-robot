@@ -28,10 +28,11 @@ class RosBridge : public QObject
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     Q_PROPERTY(QStringList found READ found NOTIFY foundChanged)
     Q_PROPERTY(bool searching READ searching NOTIFY foundChanged)
-    Q_PROPERTY(double rxAge READ rxAge NOTIFY rxChanged)                  // 마지막 수신 뒤 s (-1: 연결 안 됨)
+    Q_PROPERTY(double rxAge READ rxAge NOTIFY rxChanged)                  // 마지막 메시지 수신 뒤 s, pong 은 빼고 (-1: 연결 안 됨)
     Q_PROPERTY(double rxBytesPerSec READ rxBytesPerSec NOTIFY rxChanged)  // 직전 1 s 전체 수신 바이트
     Q_PROPERTY(QList<double> rxHistory READ rxHistory NOTIFY rxChanged)   // 최근 60 s, 초당 바이트
     Q_PROPERTY(QList<double> latencyHistory READ latencyHistory NOTIFY rxChanged)   // 최근 60 개 ping ms
+    Q_PROPERTY(double clockSkewMs READ clockSkewMs NOTIFY rxChanged)   // 최근 메시지 header.stamp − 수신 시각의 중앙값 ms (표본 없으면 0)
     Q_PROPERTY(int callsPending READ callsPending NOTIFY callsChanged)
     Q_PROPERTY(bool noPublish READ noPublish CONSTANT)   // ROBOT_DASHBOARD_NO_PUBLISH=1: advertise · publish 안 함
 
@@ -61,10 +62,11 @@ public:
     QString error() const { return m_error; }
     QStringList found() const { return m_found; }
     bool searching() const { return m_searching; }
-    double rxAge() const { return m_connected && m_lastRx.isValid() ? m_lastRx.elapsed() / 1000.0 : -1; }
+    double rxAge() const { return m_connected && m_lastData.isValid() ? m_lastData.elapsed() / 1000.0 : -1; }
     double rxBytesPerSec() const { return m_rxBytesPerSec; }
     QList<double> rxHistory() const { return m_rxHistory; }
     QList<double> latencyHistory() const { return m_latencyHistory; }
+    double clockSkewMs() const;
     int callsPending() const { return int(m_calls.size()); }
     bool noPublish() const { return m_noPublish; }
 
@@ -120,7 +122,9 @@ private:
 
     QWebSocket m_ws;
     QTimer m_retry, m_tick;
-    QElapsedTimer m_mono, m_lastRx;   // 단조 시계
+    // 단조 시계. m_lastRx 는 pong 까지(반쯤 열린 연결 판단), m_lastData 는 메시지만(rxAge — 데이터가 멈춰도
+    // 서버 WebSocket 층은 ping 에 계속 답하므로 pong 으로는 링크 끊김을 알 수 없다).
+    QElapsedTimer m_mono, m_lastRx, m_lastData;
     QString m_host;
     int m_port = 9090;
     bool m_connected = false;
@@ -144,6 +148,7 @@ private:
     qint64 m_rxSecBytes = 0;
     double m_rxBytesPerSec = 0;
     QList<double> m_rxHistory, m_latencyHistory;
+    QList<double> m_skew;   // 최근 kHistory 개 메시지의 stamp − 수신 시각(ms)
     QStringList m_found;
     bool m_searching = false;
     QStringList m_scanQueue;

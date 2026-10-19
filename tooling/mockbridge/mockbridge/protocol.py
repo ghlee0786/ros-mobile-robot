@@ -219,6 +219,7 @@ class Server:
     async def handler(self, ws, *_):
         conn = Conn(self, ws, next(self.cids))
         self.conns.add(conn)
+        self.faults.connected()
         self.log_event("connect", conn=conn.cid)
         writer = asyncio.ensure_future(conn.writer())
         try:

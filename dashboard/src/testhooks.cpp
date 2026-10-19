@@ -14,6 +14,7 @@
 #include <QPointF>
 #include <QQuickWindow>
 #include <QRegularExpression>
+#include <QSizeF>
 #include <QTimer>
 #include <QVector3D>
 #include <cstdio>
@@ -87,6 +88,10 @@ QJsonValue toJson(const QVariant &v)
         if (!l.isEmpty())
             r["last"] = QJsonArray{l.last().x(), l.last().y()};
         return r;
+    }
+    if (mt == QMetaType::fromType<QSizeF>()) {
+        const QSizeF s = v.toSizeF();
+        return QJsonObject{{"width", s.width()}, {"height", s.height()}};
     }
     if (mt == QMetaType::fromType<QImage>()) {
         const QImage img = v.value<QImage>();
@@ -204,14 +209,14 @@ void TestHooks::start(QQuickWindow *win)
     }, Qt::QueuedConnection);
 
     if (!m_opt.tracePath.isEmpty() && m_opt.traceHz > 0) {
-        auto *f = new QFile(m_opt.tracePath, this);
-        if (f->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        m_traceFile = new QFile(m_opt.tracePath, this);
+        if (m_traceFile->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
             auto *t = new QTimer(this);
-            connect(t, &QTimer::timeout, this, [this, f] {
-                f->write(QJsonDocument(snapshot(false)).toJson(QJsonDocument::Compact) + '\n');
-                f->flush();
-            });
+            connect(t, &QTimer::timeout, this, &TestHooks::writeTrace);
             t->start(int(1000 / m_opt.traceHz));
+            // 연결이 잠깐(주기보다 짧게) 끊겼다 붙어도 trace 에 남도록 바뀔 때마다 한 줄 더 쓴다
+            if (QObject *b = findObject(QStringLiteral("bridge")))
+                connect(b, SIGNAL(connectedChanged()), this, SLOT(writeTrace()));
         } else {
             qWarning().noquote() << "[testhooks] trace 파일을 열 수 없음:" << m_opt.tracePath;
         }
@@ -225,6 +230,14 @@ void TestHooks::start(QQuickWindow *win)
     connect(qApp, &QCoreApplication::aboutToQuit, this, [this] { finish(QStringLiteral("quit")); });
 
     QTimer::singleShot(0, this, &TestHooks::runNext);
+}
+
+void TestHooks::writeTrace()
+{
+    if (m_finished)   // 끝내며 연결을 닫는 것은 trace 에 넣지 않는다
+        return;
+    m_traceFile->write(QJsonDocument(snapshot(false)).toJson(QJsonDocument::Compact) + '\n');
+    m_traceFile->flush();
 }
 
 QObject *TestHooks::findObject(const QString &path) const
@@ -253,6 +266,7 @@ void TestHooks::runNext()
         QTimer::singleShot(int((a.t - now) * 1000) + 1, this, &TestHooks::runNext);
         return;
     }
+    const double wall = QDateTime::currentMSecsSinceEpoch() / 1000.0;   // 실행 직전(보낸 메시지보다 앞선다)
     if (a.o.contains("wait")) {
         const QString path = a.o.value("wait").toString();
         const int dot = path.lastIndexOf('.');
@@ -274,7 +288,13 @@ void TestHooks::runNext()
         if (!execute(a.o, &err))
             fail(QStringLiteral("action %1: %2").arg(m_next).arg(err));
     }
-    m_done.append(QJsonObject{{"i", m_next}, {"t", a.t}, {"wall", m_clock.elapsed() / 1000.0}});
+    // 실행기는 call · set 이름과 wall(epoch 초)로 서버 로그와 맞춰 본다(가짜 대시보드와 같은 모양).
+    QJsonObject done = a.o;
+    done["i"] = m_next;
+    done["t"] = a.t;
+    done["elapsed"] = now;
+    done["wall"] = wall;
+    m_done.append(done);
     ++m_next;
     QTimer::singleShot(0, this, &TestHooks::runNext);
 }
@@ -295,6 +315,10 @@ bool TestHooks::execute(const QJsonObject &a, QString *err)
         for (int i = 0; i < mo->methodCount() && !m.isValid(); ++i)
             if (mo->method(i).name() == name && mo->method(i).parameterCount() == args.size())
                 m = mo->method(i);
+        if (!m.isValid() && a.value("optional").toBool()) {   // 이 빌드에 없는 메서드: 건너뛴다
+            qInfo().noquote() << "[action] 없는 메서드 건너뜀:" << path;
+            return true;
+        }
         if (!m.isValid())
             return *err = QStringLiteral("메서드 없음: %1(인자 %2개)").arg(path).arg(args.size()), false;
         QList<QVariant> vals;
@@ -350,7 +374,7 @@ bool TestHooks::execute(const QJsonObject &a, QString *err)
 
 QJsonObject TestHooks::snapshot(bool full) const
 {
-    QJsonObject r{{"t", m_clock.elapsed() / 1000.0},
+    QJsonObject r{{"t", m_clock.elapsed() / 1000.0}, {"wall", QDateTime::currentMSecsSinceEpoch() / 1000.0},
                   {"win", QJsonObject{{"page", m_win->property("page").toInt()},
                                       {"width", m_win->width()}, {"height", m_win->height()}}}};
     if (QObject *o = findObject(QStringLiteral("robot")))

@@ -76,6 +76,20 @@ def test_server_log_rules():
     assert rs.check_server_log(recs, good[5:6], []) != []
 
 
+def test_zero_after_action_same_batch():
+    """20261020_042326 estop: 직전 10 Hz 명령(0.08)이 estop 의 0 명령들과 한 묶음으로 와 wall 이 estop 보다 0.6 ms 늦었다."""
+    def tw(v):
+        return {"linear": {"x": v}, "angular": {"z": 0.0}}
+    rule = [{"rule": "zero_after_action", "action": "robot.estop", "topic": "/teleop/cmd_vel", "fields": ["linear.x"]}]
+    done = [{"call": "robot.estop", "wall": 1005.0}]
+    batch = [rx("publish", 4.9, topic="/teleop/cmd_vel", msg=tw(0.08)),
+             rx("publish", 5.0006, topic="/teleop/cmd_vel", msg=tw(0.08))]
+    batch += [rx("publish", 5.0006, topic="/teleop/cmd_vel", msg=tw(0.0)) for _ in range(3)]
+    assert rs.check_server_log(batch, rule, done) == []
+    late = batch + [rx("publish", 5.1, topic="/teleop/cmd_vel", msg=tw(0.08))]   # 0 명령 뒤의 비0 은 여전히 실패
+    assert rs.check_server_log(late, rule, done) != []
+
+
 def test_resubscribe_and_goal_rules():
     def session(conn, t0, topics, adv=4):
         out = [{"dir": "event", "op": "connect", "t": t0, "wall": 1000 + t0, "conn": conn}]
@@ -150,6 +164,37 @@ def test_run_with_fake_dashboard(tmp_path):
         assert part in cmd
     log = rs.read_log(str(out / "restart" / "server.jsonl"))
     assert sum(1 for r in log if r.get("op") == "connect") == 0     # 대시보드 없음, 서버 재시작만
+
+
+def test_mem_growth_skips_warmup():
+    # 20261020_024216 soak 실측: 0 s(QML 로드 전) 51 MB → 10 s 307 MB → 190 s 뒤 195±3 MB 평탄. 예전 판정은 144 MB '증가'.
+    soak = [(0.0, 51.0), (10.1, 307.2), (60.4, 308.6), (120.7, 247.1), (181.0, 211.4), (300.0, 197.9), (603.4, 194.8)]
+    assert rs.mem_growth(soak, 30) < 0
+    leak = [(t, 200.0 + t * 0.2) for t in range(0, 601, 10)]   # 분당 12 MB 씩 느는 진짜 누수
+    assert rs.mem_growth(leak, 30) > 50
+    assert rs.mem_growth([(0, 1.0), (40, 2.0)], 30) is None
+
+
+def test_rebase_trace_and_missing_op():
+    tr = [{"t": 0.5, "wall": 1003.0, "robot": {"linkLost": False}}, {"t": 6.0, "wall": 1008.5, "robot": {"linkLost": True}}]
+    rule = [{"rule": "was_true_between", "path": "robot.linkLost", "value": True, "from_s": 8, "to_s": 12}]
+    assert rs.check_trace(tr, rule) != []                       # 대시보드 시계(로드 뒤 6 s)로는 창 밖
+    assert rs.check_trace(rs.rebase_trace(tr, 1000.0), rule) == []   # 서버 시계로는 8.5 s
+    st = {"robot": {"straightResult": {"reason": "reached"}}}
+    assert rs.check_state(st, [{"path": "robot.straightResult.heading", "op": "missing"}]) == []
+    assert rs.check_state(st, [{"path": "robot.straightResult.reason", "op": "missing"}]) != []
+
+
+def test_shot_path_and_trace_arg(tmp_path):
+    scd = tmp_path / "sc"
+    scd.mkdir()
+    write(scd, {"id": "shot", "duration_s": 2, "server_args": [], "actions": [{"t": 1, "shot": "a.png"}],
+                "expect": {"trace": [{"rule": "final_eq", "path": "x", "value": None}]}})
+    out = tmp_path / "out"
+    rs.main(["--scenarios", str(scd), "--out", str(out), "--dashboard-cmd", f'"{sys.executable}" "{FAKE}"'])
+    acts = json.load(open(out / "shot" / "actions.json", encoding="utf-8"))
+    assert acts[0]["shot"] == str(out / "shot" / "a.png")
+    assert "--trace " + str(out / "shot" / "trace.jsonl") in (out / "shot" / "cmd.txt").read_text(encoding="utf-8")
 
 
 def test_list_real_scenarios():

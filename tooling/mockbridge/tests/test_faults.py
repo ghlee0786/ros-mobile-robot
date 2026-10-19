@@ -39,6 +39,24 @@ def test_halfopen_no_pong(mock):
     ws2.close()
 
 
+def test_fault_clock_starts_at_first_connect(mock):
+    """대시보드가 서버보다 늦게 붙어도(QML 로드 2~10 s) --halfopen T 는 그 연결의 T 초 뒤에 걸린다."""
+    srv = mock("--halfopen", "1.0")
+    time.sleep(1.5)
+    ws = websocket.create_connection(f"ws://127.0.0.1:{srv.port}", timeout=3)
+    ws.ping("a")
+    assert ws.recv_data(control_frame=True)[0] == websocket.ABNF.OPCODE_PONG
+    time.sleep(1.5)
+    ws.ping("b")
+    ws.settimeout(1.5)
+    try:
+        op, _ = ws.recv_data(control_frame=True)
+        assert False, f"연결 1 s 뒤 반쯤 열리지 않았다: {op}"
+    except websocket.WebSocketTimeoutException:
+        pass
+    ws.close(timeout=0.1)
+
+
 def test_disconnect_every(mock, client):
     c = client(mock("--disconnect-every", "1").port)
     c.ws.settimeout(3)

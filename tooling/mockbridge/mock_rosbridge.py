@@ -9,7 +9,7 @@ rosapi 와 가짜 노드 매개변수 서비스에 답하며, 장애(지연·유
 예)
     --port 0 --log E:/Temp/rx.jsonl          빈 포트로 띄우고 받은 op 를 기록(시작하면 'MOCKBRIDGE_PORT=<n>' 출력)
     --nav --map-odom 1,2,30                   Nav2 토픽과 map→odom 변환을 함께 낸다
-    --freeze 3@10 --drop /scan:0.1            10 초에 3 초 송신 멈춤, /scan 10% 유실
+    --freeze 3@10 --drop /scan:0.1            첫 연결 10 초 뒤 3 초 송신 멈춤, /scan 10% 유실
     --replay run1.jsonl --rate 2 --loop --restamp   기록을 2 배속으로 반복 재생(시각은 지금으로)
 """
 import argparse
@@ -76,8 +76,8 @@ def parser():
     g.add_argument("--jitter-ms", type=float, default=0.0, help="송신 지연 흔들림(±)")
     g.add_argument("--drop", action="append", help="유실 확률 P 또는 topic:P (여러 번)")
     g.add_argument("--disconnect-every", type=float, default=0.0, help="S 초마다 모든 연결을 닫는다")
-    g.add_argument("--freeze", action="append", help="S@T: T 초에 S 초 동안 송신만 멈춤(여러 번)")
-    g.add_argument("--halfopen", type=float, help="T 초에 열린 연결의 읽기·쓰기를 멈춘다(pong 없음)")
+    g.add_argument("--freeze", action="append", help="S@T: 첫 연결 T 초 뒤 S 초 동안 송신만 멈춤(여러 번)")
+    g.add_argument("--halfopen", type=float, help="첫 연결 T 초 뒤 열린 연결의 읽기·쓰기를 멈춘다(pong 없음)")
     g.add_argument("--flood", action="append", help="topic:Hz throttle 무시하고 쏟아 낸다(여러 번)")
     g.add_argument("--stamp-skew-ms", type=float, default=0.0, help="header.stamp 를 이만큼 어긋나게")
     g.add_argument("--bad-json", type=float, default=0.0, help="발행 중 깨진 JSON·필드 누락 확률")
