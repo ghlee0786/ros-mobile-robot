@@ -7,6 +7,17 @@
   "dashboard_args": [],
   "actions": [
     {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "call": "robot.armTeleop",
+      "args": [
+        true
+      ],
+      "optional": true
+    },
+    {
       "t": 1,
       "set": "robot.mode",
       "value": "키보드 조종"

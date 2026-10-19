@@ -199,6 +199,21 @@ private slots:
         QVERIFY(l1.contains("t") && l1.contains("wall") && l1.contains("msg"));
     }
 
+    // 서버 송신이 멈춰도 WebSocket 층은 ping 에 답한다(모의 서버 --freeze). 하트비트를 한 번도 못 받았어도
+    // 3 s 넘게 메시지가 없으면 linkLost, 연결은 끊지 않는다(pong 이 오므로 반쯤 열린 연결이 아니다).
+    void linkLostWhenDataStopsButPongs()
+    {
+        MockServer s;   // /rosapi/topics 응답 말고는 아무것도 보내지 않는다(QWebSocketServer 는 ping 에 자동으로 답한다)
+        Robot r;
+        QVERIFY(connectRobot(r, s));
+        QVERIFY(!r.linkLost());
+        QVERIFY(QTest::qWaitFor([&] { return r.linkLost(); }, 4800));
+        QVERIFY(r.bridge()->connected());
+        QVERIFY(r.bridge()->rxAge() > 3.0);
+        s.publish("/odom", odomMsg(0, 0));
+        QVERIFY(QTest::qWaitFor([&] { return !r.linkLost(); }, 2000));
+    }
+
     // 끊긴 채로 정지를 누르면 이벤트 · lastSendDropped
     void droppedWhileDisconnected()
     {

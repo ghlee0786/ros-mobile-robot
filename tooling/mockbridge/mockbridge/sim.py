@@ -167,6 +167,11 @@ class World(Source):
              ("/imu/data_raw", 0.01, self.make_imu), ("/scan", 0.1, self.make_scan),
              ("/link/heartbeat", 1.0, self.make_beat), ("/rosout", 1.0 / max(1.0, a.rosout_burst or 1.0), self.make_rosout),
              ("/diagnostics", 1.0, self.make_diag), ("/client_count", 1.0, self.make_clients)]
+        if a.map_odom or a.nav:
+            # PC 내비 스택(tooling/nav/map_odom_pub.py)처럼 map→odom 만 /map_odom 으로도 5 Hz. throttle 된 /tf 에서는
+            # odom→base_link 에 덮여 운 좋을 때만 살아남는다.
+            T["/map_odom"] = "tf2_msgs/TFMessage"
+            s.append(("/map_odom", 0.2, self.make_tf_map))
         if a.map_every:
             s.append(("/map", a.map_every, self.make_map))
         if a.pi_initialpose:

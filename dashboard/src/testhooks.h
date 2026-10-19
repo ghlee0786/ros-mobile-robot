@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QSize>
 
+class QFile;
 class QQuickWindow;
 
 // 명령줄 시험 모드: 로그 파일 · actions 실행 · 화면 캡처 · 종료 직전 상태(JSON) · 속성 시계열.
@@ -32,6 +33,9 @@ public:
     // app.exec() 결과를 받아 최종 종료 코드를 정한다(3 actions 실패 · 2 경고 · 그 밖은 rc).
     int exitCode(int rc) const;
 
+private slots:
+    void writeTrace();
+
 private:
     struct Action { QJsonObject o; double t = 0; };
 
@@ -44,6 +48,7 @@ private:
 
     TestOptions m_opt;
     QQuickWindow *m_win = nullptr;
+    QFile *m_traceFile = nullptr;
     QElapsedTimer m_clock;
     QList<Action> m_actions;
     int m_next = 0;

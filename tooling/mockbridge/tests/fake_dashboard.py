@@ -39,7 +39,7 @@ def twist(v, w):
 
 def main():
     p = argparse.ArgumentParser()
-    for name in ("--url", "--settings", "--size", "--actions", "--screenshot", "--state", "--log"):
+    for name in ("--url", "--settings", "--size", "--actions", "--screenshot", "--state", "--log", "--trace"):
         p.add_argument(name)
     p.add_argument("--quit-after", type=float, default=5)
     p.add_argument("--no-model", action="store_true")
@@ -52,7 +52,7 @@ def main():
     actions = []
     if a.actions:
         with open(a.actions, encoding="utf-8") as f:
-            actions = sorted(json.load(f), key=lambda x: x["t"])
+            actions = sorted(json.load(f), key=lambda x: x.get("t", 0))
     ws = None
     try:
         ws = websocket.create_connection(a.url, timeout=3)

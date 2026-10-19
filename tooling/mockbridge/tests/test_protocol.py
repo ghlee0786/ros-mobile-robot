@@ -1,14 +1,16 @@
 """rosbridge 프로토콜 계약: 핑퐁 흐름 · throttle · unsubscribe · rosapi · Foxy 의 무응답 동작 · inf→null."""
 import json
 import os
+import random
 import subprocess
 import sys
 import time
+import types
 
 import websocket
 
 from conftest import ROOT, run_scenarios
-from mockbridge.protocol import encode
+from mockbridge.protocol import Conn, Packet, Sub, encode
 
 PINGPONG = os.path.normpath(os.path.join(ROOT, "..", "pc", "rosbridge_pingpong_test.py"))
 
@@ -89,14 +91,34 @@ def test_rosapi_topics_format(mock, client):
     assert "/rosout" not in t
 
 
-def test_tf_throttle_drops_map_odom(mock, client):
-    """/tf 하나에 odom→base_link(33 Hz)와 map→odom(5 Hz)이 섞이면 throttle 200 · queue 1 에서 map→odom 이 대부분 사라진다."""
-    c = client(mock("--map-odom", "1,2,30").port)
-    c.send(op="subscribe", topic="/tf", type="tf2_msgs/TFMessage", throttle_rate=200, queue_length=1)
-    got = c.collect(3.0, lambda m: m.get("topic") == "/tf")
-    kinds = [m["msg"]["transforms"][0]["header"]["frame_id"] for _, m in got]
-    assert kinds.count("odom") >= 10
-    assert kinds.count("map") <= 6        # 5 Hz × 3 s = 15 개가 와야 하지만 대부분 덮인다
+def test_tf_throttle_drops_map_odom():
+    """/tf 하나에 odom→base_link(33 Hz)와 map→odom(5 Hz)이 섞이면 throttle 200 · queue 1 에서 map→odom 이 대부분 사라진다.
+
+    실제 서버를 돌리면 결과가 CPU 속도에 달린다: map 주기(200 ms)가 throttle 창과 같아 루프 지터가 없으면(빠른 리눅스)
+    창이 열리는 순간에 map 이 위상 고정돼 매번 남았다. 그래서 sim.run 과 같은 순서(약 5 ms 틱마다 때가 된 발행 →
+    flush)를 시드 고정 지터와 함께 Conn 에 직접 넣어 60 s 를 흉내 낸다 — 시계와 무관하게 늘 같은 결과."""
+    faults = types.SimpleNamespace(frozen=lambda: False, dropped=lambda t: False, corrupt=lambda t: t, send_due=lambda: 0.0)
+    server = types.SimpleNamespace(faults=faults, args=types.SimpleNamespace(cbor=False), log_tx=lambda c, p: None)
+    conn = Conn(server, None, 1)
+    conn.subs["/tf"] = sub = Sub("tf2_msgs/TFMessage")
+    sub.update(None, 200, 1, "none")
+    rng = random.Random(1)
+    period = {"odom": 1 / 33, "map": 0.2}
+    nxt = {"odom": 0.0, "map": 0.013}      # sim.run 처럼 map→odom 은 13 ms 어긋나게
+    t = 0.0
+    while t < 60.0:
+        for frame in ("odom", "map"):
+            while nxt[frame] <= t:
+                nxt[frame] += period[frame]
+                conn.offer(Packet("/tf", {"transforms": [{"header": {"frame_id": frame}}]}), t)
+        conn.flush(t)
+        t += 0.005 + rng.uniform(0, 0.001)
+    kinds = []
+    while not conn.out.empty():
+        kinds.append(json.loads(conn.out.get_nowait()[1])["msg"]["transforms"][0]["header"]["frame_id"])
+    assert len(kinds) >= 280                 # throttle 200 ms → 약 5 Hz
+    assert kinds.count("odom") >= 220
+    assert kinds.count("map") <= 60          # 5 Hz × 60 s = 300 개가 와야 하지만 대부분 덮인다(시드 1: 약 30)
 
 
 def test_unknown_type_and_mismatch(mock, client):

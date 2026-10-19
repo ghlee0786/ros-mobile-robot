@@ -1,6 +1,6 @@
 {
   "id": "straight_null",
-  "title": "--null-heading: heading_err_deg null 을 0 으로 처리하고 죽지 않음",
+  "title": "--null-heading: heading_err_deg null 이면 heading 키 없음(화면 '—')으로 처리하고 죽지 않음",
   "needs_pi": false,
   "needs_human": false,
   "server_args": [
@@ -36,8 +36,7 @@
       },
       {
         "path": "robot.straightResult.heading",
-        "op": "==",
-        "value": 0
+        "op": "missing"
       }
     ]
   }

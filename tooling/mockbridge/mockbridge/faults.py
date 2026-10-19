@@ -26,7 +26,7 @@ class Faults:
         self.bad_json = args.bad_json
         self.halfopen_at = args.halfopen
         self.disconnect_every = args.disconnect_every
-        self.freezes = [parse_freeze(f) for f in args.freeze or []]   # (시작, 길이) — 서버 시작 기준
+        self.freezes = [parse_freeze(f) for f in args.freeze or []]   # (시작, 길이) — 첫 연결 기준
         self.flood = []
         for f in args.flood or []:
             topic, hz = f.rsplit(":", 1)
@@ -36,12 +36,20 @@ class Faults:
         if args.script:
             with open(args.script, encoding="utf-8") as f:
                 self.script = sorted(json.load(f), key=lambda e: e["t"])
-        self.t0 = time.perf_counter()
+        # 장애 시각의 기준은 첫 클라이언트 연결이다. 대시보드는 부하에 따라 서버보다 2~10 s 늦게 붙어,
+        # 서버 시작 기준이면 '5 초에 반쯤 열기' 가 아무 연결도 없을 때 지나가 버린다.
+        self.t0 = None
+
+    def connected(self):
+        if self.t0 is None:
+            self.t0 = time.perf_counter()
 
     def elapsed(self):
-        return time.perf_counter() - self.t0
+        return 0.0 if self.t0 is None else time.perf_counter() - self.t0
 
     def frozen(self):
+        if self.t0 is None:
+            return False
         t = self.elapsed()
         return any(a <= t < a + s for a, s in self.freezes)
 
@@ -76,6 +84,8 @@ class Faults:
         await asyncio.gather(*tasks)
 
     async def _at(self, t, fn):
+        while self.t0 is None:
+            await asyncio.sleep(0.05)
         await asyncio.sleep(max(0.0, t - self.elapsed()))
         r = fn()
         if asyncio.iscoroutine(r):

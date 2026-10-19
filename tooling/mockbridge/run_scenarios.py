@@ -23,7 +23,8 @@
                       {"rule":"final_eq","path":"bridge.connected","value":true}],
              "server_log":[{"rule":"max_abs","topic":"/teleop/cmd_vel","field":"linear.x","value":0.1}, ...],
              "log_forbid":["TypeError"], "log_regex_max":[{"regex":"gui_ms=([0-9.]+)","max":50}],
-             "mem_growth_max_mb":50}}
+             "mem_growth_max_mb":50, "mem_warmup_s":30}}
+  state op 는 compare() 의 것 + exists · missing. trace 의 t 는 서버의 첫 연결 기준 초로 바꿔 판정한다(장애 시각도 첫 연결 기준).
   인자 안의 {here}(이 폴더) · {out}(시나리오 결과 폴더) · {pi_host} 는 바꿔 넣는다.
   server_log 규칙: max_abs · count_ge · count_le · within_ms_after_action · zero_after_action · throttle_eq ·
   rate_between · resubscribe_within · goal_inverse (각 함수 docstring 참고).
@@ -127,6 +128,9 @@ def check_state(state, rules):
             continue
         if r.get("op") == "exists":
             continue
+        if r.get("op") == "missing":
+            fails.append(f"state {r['path']}: 없어야 하는데 있음(실제 {actual!r})")
+            continue
         if not compare(actual, r["op"], r["value"]):
             fails.append(f"state {r['path']} {r['op']} {r['value']!r} 아님(실제 {actual!r})")
     return fails
@@ -159,6 +163,22 @@ def check_trace(trace, rules):
         else:
             fails.append(f"모르는 trace 규칙 {rule}")
     return fails
+
+
+def rebase_trace(trace, wall0):
+    """trace 의 t 를 서버의 첫 연결(wall0, epoch) 기준 초로 바꾼다 — 모의 서버의 장애 시각(--freeze 6@5 등)과 같은 기준.
+    wall0 이나 wall 이 없으면 그대로(대시보드 QML 로드 기준)."""
+    if wall0 is None:
+        return trace
+    return [dict(s, t=s["wall"] - wall0) if "wall" in s else s for s in trace]
+
+
+def mem_growth(mem, warmup_s):
+    """mem: [(경과 s, MB)]. 시작 warmup_s 동안(QML 로드 · 첫 지도 등)은 빼고, 남은 표본 앞 1/5 의 최소에서 마지막까지 증가."""
+    after = [m for t, m in mem if t >= warmup_s]
+    if len(after) < 2:
+        return None
+    return after[-1] - min(after[: max(1, len(after) // 5)])
 
 
 # ---- 서버 로그 규칙 --------------------------------------------------------------------------
@@ -229,8 +249,13 @@ def check_server_log(recs, rules, actions_done=None):
             if w is None:
                 fails.append(f"zero_after_action: actions_done 에 {r.get('action')!r} 없음")
                 continue
-            bad = [x for x in recs if _match(x, r) and x["wall"] > w + r.get("after_ms", 0) / 1000.0
-                   and any(abs(_field(x.get("msg", {}), f) or 0) > 1e-9 for f in r["fields"])]
+            def nonzero(x):
+                return any(abs(_field(x.get("msg", {}), f) or 0) > 1e-9 for f in r["fields"])
+            # action 직전에 보낸 명령은 action 의 첫 0 명령과 같은 TCP 묶음으로 와 wall 이 action 보다 늦을 수 있다.
+            # wall >= action 이어도 스트림 순서로 그 첫 0 명령보다 앞선 것은 action 전에 보낸 것이다.
+            first_zero = next((i for i, x in enumerate(recs) if _match(x, r) and x["wall"] >= w and not nonzero(x)), None)
+            bad = [x for i, x in enumerate(recs) if _match(x, r) and x["wall"] > w + r.get("after_ms", 0) / 1000.0
+                   and nonzero(x) and not (first_zero is not None and x["wall"] >= w and i < first_zero)]
             if bad:
                 fails.append(f"{r.get('action')} 뒤 {r['topic']} 비0 명령 {len(bad)} 개")
         elif rule == "throttle_eq":
@@ -359,6 +384,8 @@ def dashboard_cmd(a, sc, ddir, port):
             "--actions", os.path.join(ddir, "actions.json"), "--screenshot", os.path.join(ddir, "shot.png"),
             "--state", os.path.join(ddir, "state.json"), "--log", os.path.join(ddir, "dash.log"),
             "--quit-after", str(sc.get("duration_s", 20))]
+    if sc.get("expect", {}).get("trace"):
+        cmd += ["--trace", os.path.join(ddir, "trace.jsonl")]
     if not sc.get("scene"):
         cmd.append("--no-model")
     return cmd + extra
@@ -402,8 +429,11 @@ def run_one(sc, a, root, port):
         for i in range(n_dash):
             ddir = sdir if i == 0 else os.path.join(sdir, f"dash{i}")
             os.makedirs(ddir, exist_ok=True)
+            # 상대 shot 경로는 대시보드 작업 폴더(저장소 루트)가 아니라 결과 폴더에 쓴다
+            acts = [dict(x, shot=os.path.join(ddir, x["shot"])) if "shot" in x and not os.path.isabs(x["shot"]) else x
+                    for x in dash_actions]
             with open(os.path.join(ddir, "actions.json"), "w", encoding="utf-8") as f:
-                json.dump(dash_actions, f, ensure_ascii=False, indent=1)
+                json.dump(acts, f, ensure_ascii=False, indent=1)
             cmd = dashboard_cmd(a, sc, ddir, port)
             with open(os.path.join(ddir, "cmd.txt"), "w", encoding="utf-8") as f:
                 f.write(subprocess.list2cmdline(cmd))
@@ -480,7 +510,10 @@ def run_one(sc, a, root, port):
             res["failures"] += check_state(st, rules)
         if expect.get("trace") and i == 0:
             trace = st.get("trace") or read_log(os.path.join(d["dir"], "trace.jsonl"))
-            res["failures"] += check_trace(trace, expect["trace"])
+            if not trace:
+                res["failures"].append("trace 없음")
+            conn0 = next((x["wall"] for x in read_log(os.path.join(sdir, "server.jsonl")) if x.get("op") == "connect"), None)
+            res["failures"] += check_trace(rebase_trace(trace, conn0), expect["trace"])
         lp = os.path.join(d["dir"], "dash.log")
         if os.path.exists(lp):
             with open(lp, encoding="utf-8", errors="replace") as f:
@@ -488,9 +521,10 @@ def run_one(sc, a, root, port):
     if server and expect.get("server_log"):
         actions_done = (state.get("actions_done") or []) + runner_done
         res["failures"] += check_server_log(read_log(os.path.join(sdir, "server.jsonl")), expect["server_log"], actions_done)
-    if expect.get("mem_growth_max_mb") and len(mem) >= 2:
-        growth = mem[-1][1] - min(m for _, m in mem[: max(1, len(mem) // 5)])
+    growth = mem_growth(mem, expect.get("mem_warmup_s", 30)) if expect.get("mem_growth_max_mb") else None
+    if growth is not None:
         res["mem_mb"] = mem
+        res["mem_growth_mb"] = round(growth, 1)
         if growth > expect["mem_growth_max_mb"]:
             res["failures"].append(f"메모리 증가 {growth:.0f} MB > {expect['mem_growth_max_mb']} MB")
     shot = os.path.join(sdir, "shot.png")
