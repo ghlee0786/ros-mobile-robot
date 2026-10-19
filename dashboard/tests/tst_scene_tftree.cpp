@@ -65,6 +65,20 @@ private slots:
         QVERIFY(near(frame(t, "base_link")["position"].value<QVector3D>(), {2, 0, 0}));
     }
 
+    void piStaticFramesArriveSeparately()
+    {
+        // 실기 /tf_static: 변환 3개가 각각 따로 온다. 하나도 덮어쓰지 않고 모두 남아야 한다.
+        TfTree t;
+        t.ingest(msg({tf("odom", "base_link", 0, 0, 0, 0)}), false, 0);
+        t.ingest(msg({tf("base_link", "base_footprint", 0, 0, 0, 0)}), true, 0);
+        t.ingest(msg({tf("base_link", "laser", -0.12, 0, 0.28, 0)}), true, 0);
+        t.ingest(msg({tf("base_link", "imu", -0.12, 0, 0.18, 0)}), true, 0);
+        t.update(0);
+        QCOMPARE(t.frameCount(), 5);
+        QVERIFY(near(frame(t, "laser")["position"].value<QVector3D>(), {-0.12f, 0, 0.28f}));
+        QVERIFY(near(frame(t, "imu")["position"].value<QVector3D>(), {-0.12f, 0, 0.18f}));
+    }
+
     void disconnectedFramesSkipped()
     {
         TfTree t;

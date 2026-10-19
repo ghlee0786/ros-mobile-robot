@@ -23,5 +23,8 @@ SceneView.qml · RobotModel.qml · qml/scene/** · 시나리오는 다음 작업
   scanAccumPoints ← ScanAccumulator.pointCount
 - 코스트맵 이미지는 Robot::mapImage 와 같은 행 방향(0 행 = 지도 맨 위). SceneView 의 지도 텍스처 설정을 그대로 쓰면 된다.
 
+## 추가 지시(파이 실기) 반영
+- [x] DECISIONS 6: /dashboard/initialpose 는 P4 몫, scan frame_id=base_link 는 지금 항등 처리와 맞음, /tf_static throttle 0 유지 · 정적 변환 3개 시험 추가
+
 ## 남은 일
 - 저장된 뷰(카메라 북마크)는 QML Settings 로 P8b 에서(DECISIONS 3).

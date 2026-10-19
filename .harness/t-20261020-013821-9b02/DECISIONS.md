@@ -27,3 +27,9 @@
 - chosen: AmclPose.topic 을 "/odom" 으로 둔 두 번째 인스턴스를 쓴다(두 메시지 모두 pose.pose · pose.covariance)
 - why: 코드가 가장 적고 켜고 끄기도 독립적이다
 - effect: QML 에서 AmclPose { topic: "/odom" } 하나를 더 둔다. valid 는 공분산이 모두 0 이면 false
+
+## 6. 메인 세션 추가 지시(파이 실기 확인)를 장면 모델에 어떻게 반영할지
+- options: 장면 모델에 /dashboard/initialpose · LiDAR 장착 변환 · queue_length 처리를 새로 넣음 / 장면 모델 범위에 해당하는 것만 확인하고 나머지는 소유 묶음(P4)에 넘김
+- chosen: 뒤쪽. (1) 초기 위치 발행은 robot.setInitialPose(P4) 몫이라 src/scene 에는 /initialpose 를 쓰는 코드가 없다. (2) 실기 /scan 은 frame_id=base_link 라서 ScanAccumulator 가 스캔을 로봇(base_link) 기준 항등으로 두는 지금 방식이 맞다(장착 변환 (16)은 P4). (3) TfTree 는 /tf_static 을 throttle 0 으로 구독하고, 지금 RosBridge 는 throttle 0 일 때 queue_length 를 보내지 않는다(rosbridge 기본값, 실기에서 3개 모두 옴). 따로 온 정적 변환 3개가 모두 남는지 시험(piStaticFramesArriveSeparately)으로 고정했다. (4) 잘못된 type 은 응답 없이 데이터만 안 오므로, 레이어는 received=false 로 '수신 없음'을 보이게 되어 있다
+- why: RosBridge · Robot 은 남의 파일이고 공개 API 에 queue_length 인자가 없다
+- effect: P4 가 sendSubscribe 에서 throttle 0 일 때도 queue_length 를 보내게 바꾼다면 /tf_static 은 10 이상이어야 한다(P4 에 전달할 사항)
