@@ -1,0 +1,46 @@
+{
+  "id": "wifi_bad",
+  "title": "지연 80±60 ms · 유실 2% 에서 linkLost 오탐 없음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--delay-ms",
+    "80",
+    "--jitter-ms",
+    "60",
+    "--drop",
+    "0.02"
+  ],
+  "dashboard_args": [],
+  "actions": [],
+  "duration_s": 30,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.linkLost",
+        "op": "==",
+        "value": false
+      }
+    ],
+    "trace": [
+      {
+        "rule": "never_between",
+        "path": "robot.linkLost",
+        "op": "==",
+        "value": true,
+        "from_s": 3,
+        "to_s": 30
+      }
+    ]
+  }
+}

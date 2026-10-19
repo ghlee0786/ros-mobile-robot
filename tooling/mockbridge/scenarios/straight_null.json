@@ -1,0 +1,44 @@
+{
+  "id": "straight_null",
+  "title": "--null-heading: heading_err_deg null 을 0 으로 처리하고 죽지 않음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--null-heading"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 3,
+      "call": "robot.straight",
+      "args": [
+        0.5
+      ]
+    }
+  ],
+  "duration_s": 25,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.straightResult.reason",
+        "op": "==",
+        "value": "reached"
+      },
+      {
+        "path": "robot.straightResult.heading",
+        "op": "==",
+        "value": 0
+      }
+    ]
+  }
+}

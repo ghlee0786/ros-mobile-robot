@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" font-family="Inter, 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" role="img" aria-label="What we learned from">
+  <title>What we learned from · 무엇에서 배웠나</title>
+  <!-- 8 s 주기: 카드가 0.4 s 간격으로 나타난다. 애니메이션이 없으면 모두 보인다. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B0D10"/>
+      <stop offset="1" stop-color="#111318"/>
+    </linearGradient>
+    <style>
+      .card { fill: #171A20; stroke: #FFFFFF; stroke-opacity: 0.1; }
+      .h { fill: #E8EAED; font-weight: 700; }
+      .t { fill: #E8EAED; }
+      .s { fill: #A3A9B2; }
+      .k { font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+      .div { stroke: #FFFFFF; stroke-opacity: 0.08; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="520" fill="url(#bg)"/>
+  <text x="32" y="44" font-size="22" class="h">What we learned from <tspan class="s" font-weight="400">· 무엇에서 배웠나</tspan></text>
+  <text x="32" y="68" font-size="13" class="s">좋은 로봇 도구들의 생각을 빌려 Qt 6 대시보드로 다시 만들었다.</text>
+
+  <!-- 1 -->
+  <g>
+    <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.08;0.94;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="0 12;0 0;0 0;0 0" keyTimes="0;0.08;0.94;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0 0 1 1" dur="8s" repeatCount="indefinite"/>
+    <rect class="card" x="32" y="96" width="368" height="192" rx="14"/>
+    <circle cx="68" cy="132" r="20" fill="#4C9AFF" fill-opacity="0.15"/><text x="68" y="137" font-size="14" font-weight="700" fill="#4C9AFF" text-anchor="middle">Fg</text>
+    <text x="100" y="128" font-size="17" class="h">Foxglove · Lichtblick</text>
+    <text x="100" y="146" font-size="12" class="s">robotics visualization</text>
+    <text x="48" y="186" font-size="13" class="s">패널 · 메시지 경로 · 데이터 소스</text>
+    <line class="div" x1="48" y1="208" x2="384" y2="208"/>
+    <text x="48" y="234" class="k" fill="#4C9AFF">가져온 것 · TAKEN</text>
+    <text x="48" y="260" font-size="14" class="t">패널 단위 화면 · topic.field 경로 · 소스 교체</text>
+  </g>
+
+  <!-- 2 -->
+  <g>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.05;0.13;0.94;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="0 12;0 12;0 0;0 0;0 0" keyTimes="0;0.05;0.13;0.94;1" calcMode="spline" keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0 0 1 1" dur="8s" repeatCount="indefinite"/>
+    <rect class="card" x="416" y="96" width="368" height="192" rx="14"/>
+    <circle cx="452" cy="132" r="20" fill="#56CCB2" fill-opacity="0.15"/><text x="452" y="137" font-size="14" font-weight="700" fill="#56CCB2" text-anchor="middle">Rv</text>
+    <text x="484" y="128" font-size="17" class="h">RViz2</text>
+    <text x="484" y="146" font-size="12" class="s">ROS 2 3D visualizer</text>
+    <text x="432" y="186" font-size="13" class="s">디스플레이 · 도구 · 뷰 컨트롤러</text>
+    <line class="div" x1="432" y1="208" x2="768" y2="208"/>
+    <text x="432" y="234" class="k" fill="#56CCB2">가져온 것 · TAKEN</text>
+    <text x="432" y="260" font-size="14" class="t">레이어식 디스플레이 · 목표/초기 위치 도구</text>
+  </g>
+
+  <!-- 3 -->
+  <g>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.1;0.18;0.94;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="0 12;0 12;0 0;0 0;0 0" keyTimes="0;0.1;0.18;0.94;1" calcMode="spline" keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0 0 1 1" dur="8s" repeatCount="indefinite"/>
+    <rect class="card" x="800" y="96" width="368" height="192" rx="14"/>
+    <circle cx="836" cy="132" r="20" fill="#F2994A" fill-opacity="0.15"/><text x="836" y="137" font-size="14" font-weight="700" fill="#F2994A" text-anchor="middle">PJ</text>
+    <text x="868" y="128" font-size="17" class="h">PlotJuggler</text>
+    <text x="868" y="146" font-size="12" class="s">time-series plotting</text>
+    <text x="816" y="186" font-size="13" class="s">스트리밍 플롯 · 변환</text>
+    <line class="div" x1="816" y1="208" x2="1152" y2="208"/>
+    <text x="816" y="234" class="k" fill="#F2994A">가져온 것 · TAKEN</text>
+    <text x="816" y="260" font-size="14" class="t">실시간 스트리밍 그래프 · 메시지 경로 · 값 변환</text>
+  </g>
+
+  <!-- 4 -->
+  <g>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.15;0.23;0.94;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="0 12;0 12;0 0;0 0;0 0" keyTimes="0;0.15;0.23;0.94;1" calcMode="spline" keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0 0 1 1" dur="8s" repeatCount="indefinite"/>
+    <rect class="card" x="32" y="304" width="368" height="192" rx="14"/>
+    <circle cx="68" cy="340" r="20" fill="#BB86FC" fill-opacity="0.15"/><text x="68" y="345" font-size="14" font-weight="700" fill="#BB86FC" text-anchor="middle">Re</text>
+    <text x="100" y="336" font-size="17" class="h">Rerun</text>
+    <text x="100" y="354" font-size="12" class="s">multimodal data viewer</text>
+    <text x="48" y="394" font-size="13" class="s">타임라인</text>
+    <line class="div" x1="48" y1="416" x2="384" y2="416"/>
+    <text x="48" y="442" class="k" fill="#BB86FC">가져온 것 · TAKEN</text>
+    <text x="48" y="468" font-size="14" class="t">한 시간축으로 묶는 기록·재생 <tspan class="s" font-size="12">(로드맵)</tspan></text>
+  </g>
+
+  <!-- 5 -->
+  <g>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.2;0.28;0.94;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="0 12;0 12;0 0;0 0;0 0" keyTimes="0;0.2;0.28;0.94;1" calcMode="spline" keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0 0 1 1" dur="8s" repeatCount="indefinite"/>
+    <rect class="card" x="416" y="304" width="368" height="192" rx="14"/>
+    <circle cx="452" cy="340" r="20" fill="#F2C94C" fill-opacity="0.15"/><text x="452" y="345" font-size="12" font-weight="700" fill="#F2C94C" text-anchor="middle">rqt</text>
+    <text x="484" y="336" font-size="17" class="h">rqt</text>
+    <text x="484" y="354" font-size="12" class="s">ROS GUI plugins</text>
+    <text x="432" y="394" font-size="13" class="s">로그 · 진단 · 파라미터</text>
+    <line class="div" x1="432" y1="416" x2="768" y2="416"/>
+    <text x="432" y="442" class="k" fill="#F2C94C">가져온 것 · TAKEN</text>
+    <text x="432" y="468" font-size="14" class="t">/rosout 로그 · 진단 · 노드/파라미터 패널</text>
+  </g>
+
+  <!-- 6 -->
+  <g>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.25;0.33;0.94;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="0 12;0 12;0 0;0 0;0 0" keyTimes="0;0.25;0.33;0.94;1" calcMode="spline" keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0 0 1 1" dur="8s" repeatCount="indefinite"/>
+    <rect class="card" x="800" y="304" width="368" height="192" rx="14"/>
+    <circle cx="836" cy="340" r="20" fill="#2F6FE4" fill-opacity="0.18"/><text x="836" y="345" font-size="14" font-weight="700" fill="#2F6FE4" text-anchor="middle">Aa</text>
+    <text x="868" y="336" font-size="17" class="h">Linear · Vercel Geist · Apple HIG</text>
+    <text x="868" y="354" font-size="12" class="s">design systems</text>
+    <text x="816" y="394" font-size="13" class="s">디자인 토큰 · 모션</text>
+    <line class="div" x1="816" y1="416" x2="1152" y2="416"/>
+    <text x="816" y="442" class="k" fill="#2F6FE4">가져온 것 · TAKEN</text>
+    <text x="816" y="468" font-size="14" class="t">색·간격·반경 토큰 · 8 px 격자 · ease-out 모션</text>
+  </g>
+</svg>

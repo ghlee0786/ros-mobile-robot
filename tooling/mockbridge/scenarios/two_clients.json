@@ -1,0 +1,53 @@
+{
+  "id": "two_clients",
+  "title": "대시보드 2 개 · /client_count · cmd_vel 경합",
+  "needs_pi": false,
+  "needs_human": false,
+  "dashboards": 2,
+  "server_args": [],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 1,
+      "set": "robot.mode",
+      "value": "키보드 조종"
+    }
+  ],
+  "duration_s": 15,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true,
+        "dash": 1
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "dir": "event",
+        "op": "connect",
+        "value": 2
+      },
+      {
+        "rule": "rate_between",
+        "topic": "/teleop/cmd_vel",
+        "from_s": 3,
+        "to_s": 13,
+        "min_hz": 18,
+        "max_hz": 22
+      }
+    ]
+  }
+}
