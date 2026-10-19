@@ -68,6 +68,7 @@ RowLayout {
         ListView {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            visible: tab.params.count > 0
             clip: true
             model: tab.params
             boundsBehavior: Flickable.StopAtBounds
@@ -150,10 +151,16 @@ RowLayout {
                 }
             }
         }
-        EmptyState {
-            Layout.alignment: Qt.AlignHCenter
-            visible: tab.params.count === 0 && !tab.params.busy
-            title: tab.params.node === "" ? "노드를 고르면 파라미터를 읽는다" : "파라미터가 없음"
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: tab.params.count === 0
+            EmptyState {
+                anchors.centerIn: parent
+                visible: !tab.params.busy
+                title: tab.params.node === "" ? "고른 노드 없음" : "파라미터 없음"
+                description: tab.params.node === "" ? "위에서 노드를 고르면 파라미터를 읽어 옵니다" : ""
+            }
         }
     }
 

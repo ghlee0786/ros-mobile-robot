@@ -64,6 +64,7 @@ public:
     // rcl_interfaces 메시지 ↔ 값 변환(단위 시험용으로 공개)
     static QStringList parseListResult(const QJsonObject &resp);
     static QList<Param> parseDescriptors(const QJsonObject &resp);
+    static QList<Param> merge(const QStringList &names, const QJsonObject &describe, const QJsonObject &get);
     static QVariant parseValue(const QJsonObject &parameterValue);
     static QVariantList parseValues(const QJsonObject &resp);
     static QJsonObject makeValue(int type, const QVariant &v);   // 입력칸 문자열도 형식에 맞게 바꾼다

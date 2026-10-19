@@ -1,0 +1,25 @@
+{
+  "id": "fixc_params_foxy",
+  "title": "B6·B16: Foxy describe_parameters 버그(모든 descriptor 가 마지막 이름·형식)에도 파라미터 행 이름·형식이 맞음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": ["--foxy-param-bug"],
+  "dashboard_args": ["--no-publish"],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 15},
+    {"t": 1, "set": "win.page", "value": 1},
+    {"t": 1, "set": "inspector.tab", "value": "파라미터"},
+    {"t": 1.5, "set": "paramClient.node", "value": "/straight_drive"},
+    {"t": 1.5, "call": "paramClient.refresh", "args": []},
+    {"t": 5, "shot": "{out}/params.png"}
+  ],
+  "duration_s": 7,
+  "expect": {
+    "exit_code": 0,
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [
+      {"path": "inspector.paramCount", "op": "==", "value": 14},
+      {"path": "inspector.paramRows", "op": "==", "value": "accel:double,default_speed:double,imu_weight:double,k_cross:double,k_heading:double,log_dir:string,max_angular:double,max_speed:double,rate_hz:double,sensor_pause:double,sensor_timeout:double,stop_tolerance:double,use_imu:bool,use_sim_time:bool"}
+    ]
+  }
+}

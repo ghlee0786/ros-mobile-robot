@@ -576,7 +576,9 @@ void Robot::updateStatus()
         const bool sub = m_bridge.subscribed(t);
         QString state = !sub ? "구독 안 함" : s.age < 0 ? "대기" : "정상";
         // 꾸준히 오던 토픽(2 Hz 이상, 최근 2 s 에 4 개 이상)이 0.5 s 넘게 끊기면 지연으로 보고 이벤트를 한 번 남긴다.
-        const bool late = sub && conn && s.age > 0.5 && ((s.hz >= 2 && s.recent >= 4) || m_late.contains(t));
+        // /rosout · /parameter_events 는 일이 있을 때만 몰려 오는 토픽이라 멈춰도 지연이 아니다.
+        const bool periodic = t != "/rosout" && t != "/parameter_events";
+        const bool late = periodic && sub && conn && s.age > 0.5 && ((s.hz >= 2 && s.recent >= 4) || m_late.contains(t));
         if (late) {
             state = "지연";
             if (!m_late.contains(t) && s.age < 5)

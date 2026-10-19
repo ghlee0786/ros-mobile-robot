@@ -241,3 +241,55 @@ def test_no_dashboard_server_accepts_pingpong(tmp_path):
     finally:
         th.join(20)
     assert json.load(open(out / "summary.json", encoding="utf-8"))["results"][0]["status"] == "pass"
+
+
+def test_server_start_failure_keeps_summary(tmp_path):
+    """B20: 서버가 뜨지 않는 시나리오가 있어도 그것만 '실행 오류' 로 불합격하고 나머지 결과 · 요약을 낸다."""
+    scd = tmp_path / "sc"
+    scd.mkdir()
+    write(scd, {"id": "badsrv", "duration_s": 2, "server_args": ["--no-such-flag"], "expect": {"mem_growth_max_mb": 50}})
+    write(scd, {"id": "ok", "duration_s": 2, "server_args": [], "expect": {}})
+    out = tmp_path / "out"
+    rc = rs.main(["--scenarios", str(scd), "--out", str(out), "--jobs", "2",
+                  "--dashboard-cmd", f'"{sys.executable}" "{FAKE}"'])
+    summary = {r["id"]: r for r in json.load(open(out / "summary.json", encoding="utf-8"))["results"]}
+    assert summary["badsrv"]["status"] == "fail" and "실행 오류" in " ".join(summary["badsrv"]["failures"])
+    assert summary["ok"]["status"] == "pass", summary["ok"]
+    assert rc == 1
+
+
+def test_out_in_actions(tmp_path):
+    """B33: actions 안의 {out} · {here} 도 바꿔 넣는다(shot 이 '{out}/mid.png' 그대로 가면 대시보드가 저장에 실패한다)."""
+    scd = tmp_path / "sc"
+    scd.mkdir()
+    write(scd, {"id": "acts", "duration_s": 2, "server_args": [], "dashboards": 2,
+                "actions": [{"t": 1, "shot": "{out}/mid.png"}, {"t": 1, "call": "robot.f", "args": ["{here}/x", 1]}],
+                "expect": {}})
+    out = tmp_path / "out"
+    rs.main(["--scenarios", str(scd), "--out", str(out), "--dashboard-cmd", f'"{sys.executable}" "{FAKE}"'])
+    for d in (out / "acts", out / "acts" / "dash1"):
+        acts = json.load(open(d / "actions.json", encoding="utf-8"))
+        assert os.path.normpath(acts[0]["shot"]) == os.path.join(str(d), "mid.png")
+        assert os.path.normpath(acts[1]["args"][0]) == os.path.join(rs.HERE, "x") and acts[1]["args"][1] == 1
+
+
+def test_stale_exe(tmp_path, capsys):
+    """B19: 대시보드 exe 가 소스보다 오래됐으면 실행기가 돌지 않고 종료 코드 2 로 알린다(trace wall 이 없던 04:01 빌드)."""
+    root = tmp_path / "dashboard"
+    (root / "build").mkdir(parents=True)
+    (root / "src" / "tools").mkdir(parents=True)
+    exe = root / "build" / "robot_dashboard.exe"
+    exe.write_text("x")
+    src = root / "src" / "tools" / "a.cpp"
+    src.write_text("x")
+    now = time.time()
+    os.utime(exe, (now - 100, now - 100))
+    os.utime(src, (now, now))
+    assert rs.stale_exe(str(exe)) == str(src)
+    scd = tmp_path / "sc"
+    scd.mkdir()
+    write(scd, {"id": "x", "duration_s": 1, "expect": {}})
+    assert rs.main(["--scenarios", str(scd), "--out", str(tmp_path / "out"), "--exe", str(exe)]) == 2
+    assert "오래됨" in capsys.readouterr().err
+    os.utime(exe, (now + 10, now + 10))
+    assert rs.stale_exe(str(exe)) is None

@@ -11,6 +11,7 @@
   환경변수 ROBOT_DASHBOARD_TEST=1 을 주고 PATH 앞에 E:\\Qt\\6.8.3\\mingw_64\\bin 을 넣는다.
   종료 코드: 0 정상, 1 QML 로드 실패, 2 --fail-on-warning 경고, 3 actions 실패.
 - 결과는 E:\\Temp\\dashtest\\<시각>\\<id>\\ 에 모이고 summary.json 과 콘솔 표를 낸다. 모두 합격이면 종료 코드 0.
+- 대시보드 exe 가 옆 소스(<exe>/../../src · qml)보다 오래됐으면 실행하지 않고 종료 코드 2 로 끝난다(다시 빌드).
 
 시나리오 형식(JSON):
   {"id","title","needs_pi","needs_human","requires":["P4-core"],"server":true,"dashboards":1,"scene":false,
@@ -25,7 +26,8 @@
              "log_forbid":["TypeError"], "log_regex_max":[{"regex":"gui_ms=([0-9.]+)","max":50}],
              "mem_growth_max_mb":50, "mem_warmup_s":30}}
   state op 는 compare() 의 것 + exists · missing. trace 의 t 는 서버의 첫 연결 기준 초로 바꿔 판정한다(장애 시각도 첫 연결 기준).
-  인자 안의 {here}(이 폴더) · {out}(시나리오 결과 폴더) · {pi_host} 는 바꿔 넣는다.
+  server_args · dashboard_args · actions 의 문자열 값(shot · value · args 안의 문자열) 안의 {here}(이 폴더) ·
+  {out}(시나리오 결과 폴더, 대시보드 둘째부터는 그 dash<i> 폴더) · {pi_host} 는 바꿔 넣는다.
   server_log 규칙: max_abs · count_ge · count_le · within_ms_after_action · zero_after_action · throttle_eq ·
   rate_between · resubscribe_within · goal_inverse (각 함수 docstring 참고).
 """
@@ -81,6 +83,22 @@ def subst(args, **kw):
             x = x.replace("{" + k + "}", v)
         out.append(x)
     return out
+
+
+def subst_action(x, **kw):
+    out = {k: subst([v], **kw)[0] if isinstance(v, str) else v for k, v in x.items()}
+    if isinstance(out.get("args"), list):
+        out["args"] = [subst([v], **kw)[0] if isinstance(v, str) else v for v in out["args"]]
+    return out
+
+
+def stale_exe(exe):
+    """exe 가 옆 소스(<exe>/../../src · qml)의 가장 새 파일보다 오래됐으면 그 파일 경로, 아니면 None."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(exe)))
+    files = [f for d in ("src", "qml") for f in glob.glob(os.path.join(root, d, "**", "*"), recursive=True)
+             if os.path.isfile(f)]
+    newest = max(files, key=os.path.getmtime, default=None)
+    return newest if newest and os.path.getmtime(newest) > os.path.getmtime(exe) else None
 
 
 # ---- 값 꺼내기 · 비교 ------------------------------------------------------------------------
@@ -418,6 +436,7 @@ def run_one(sc, a, root, port):
     server = None
     dashes = []
     runner_done = []
+    mem = []
     try:
         if sc.get("server", True):
             server = ServerProc(sdir, subst(sc.get("server_args", []), here=HERE, out=sdir, pi_host=a.pi_host or ""), port)
@@ -430,8 +449,9 @@ def run_one(sc, a, root, port):
             ddir = sdir if i == 0 else os.path.join(sdir, f"dash{i}")
             os.makedirs(ddir, exist_ok=True)
             # 상대 shot 경로는 대시보드 작업 폴더(저장소 루트)가 아니라 결과 폴더에 쓴다
+            acts = [subst_action(x, here=HERE, out=ddir, pi_host=a.pi_host or "") for x in dash_actions]
             acts = [dict(x, shot=os.path.join(ddir, x["shot"])) if "shot" in x and not os.path.isabs(x["shot"]) else x
-                    for x in dash_actions]
+                    for x in acts]
             with open(os.path.join(ddir, "actions.json"), "w", encoding="utf-8") as f:
                 json.dump(acts, f, ensure_ascii=False, indent=1)
             cmd = dashboard_cmd(a, sc, ddir, port)
@@ -445,7 +465,6 @@ def run_one(sc, a, root, port):
         # 실행기 동작 · 메모리 표본
         t0 = time.perf_counter()
         pending = sorted((x for x in sc.get("actions", []) if "runner" in x), key=lambda x: x["t"])
-        mem = []
         next_mem = 0.0
         while True:
             el = time.perf_counter() - t0
@@ -572,6 +591,10 @@ def main(argv=None):
         return 0
     if not (a.no_dashboard or a.dashboard_cmd or os.path.exists(a.exe)):
         print(f"대시보드 실행 파일 없음: {a.exe} (--exe · --dashboard-cmd · --no-dashboard)", file=sys.stderr)
+        return 2
+    if not (a.no_dashboard or a.dashboard_cmd) and (newer := stale_exe(a.exe)):
+        print(f"대시보드 실행 파일이 소스보다 오래됨: {a.exe} < {newer} — dashboard/build.cmd 로 다시 빌드한다",
+              file=sys.stderr)
         return 2
     root = a.out or os.path.join(r"E:\Temp\dashtest", datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
     os.makedirs(root, exist_ok=True)

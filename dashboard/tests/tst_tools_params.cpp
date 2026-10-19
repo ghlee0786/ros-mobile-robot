@@ -105,6 +105,42 @@ private slots:
         QCOMPARE(ParamClient::parseSetResult({}).first, false);
     }
 
+    // B6: 실기 Foxy rclpy 의 describe_parameters 는 모든 descriptor 에 마지막 파라미터의 이름 · 형식을 넣는다
+    // (/control_node: list [use_sim_time, pico_port], get 형식 [1, 4], describe [(pico_port, 4), (pico_port, 4)]).
+    void foxyDescribeBug()
+    {
+        const QStringList names{"use_sim_time", "rate_hz", "use_imu", "log_dir"};
+        const QJsonObject logDir{{"name", "log_dir"}, {"type", 4}, {"description", "로그 폴더"}, {"read_only", false},
+                                 {"floating_point_range", QJsonArray()}, {"integer_range", QJsonArray()}};
+        const QJsonObject describe{{"descriptors", QJsonArray{logDir, logDir, logDir, logDir}}};
+        const QJsonObject get{{"values", QJsonArray{pv(1, "bool_value", false), pv(3, "double_value", 20.0),
+                                                    pv(1, "bool_value", true), pv(4, "string_value", "~/logs")}}};
+        const auto rows = ParamClient::merge(names, describe, get);
+        QCOMPARE(rows.size(), 4);
+        QStringList got;
+        for (const auto &p : rows)
+            got << p.name + ":" + ParamClient::typeName(p.type) + "=" + ParamClient::valueText(p.value);
+        QCOMPARE(got, (QStringList{"log_dir:string=~/logs", "rate_hz:double=20", "use_imu:bool=true",
+                                   "use_sim_time:bool=false"}));
+        QCOMPARE(rows[0].description, QString("로그 폴더"));   // 이름이 맞는 descriptor 는 그대로 쓴다
+        QVERIFY(rows[1].description.isEmpty());
+        // 고치면 그 파라미터의 형식으로 쓴다(log_dir 에 string 으로 쓰지 않는다)
+        const QJsonObject req = ParamClient::makeSetRequest(rows[1].name, rows[1].type, "25");
+        QCOMPARE(req["parameters"][0]["name"].toString(), QString("rate_hz"));
+        QCOMPARE(req["parameters"][0]["value"]["type"].toInt(), int(ParamClient::Double));
+
+        // 정상 응답(이름이 모두 맞음)이면 범위 · 읽기 전용도 행에 붙는다
+        const QJsonObject ok{{"descriptors", QJsonArray{
+            QJsonObject{{"name", "a"}, {"type", 3}, {"read_only", true},
+                        {"floating_point_range", QJsonArray{QJsonObject{{"from_value", 0.0}, {"to_value", 2.0}, {"step", 0.0}}}}},
+            QJsonObject{{"name", "b"}, {"type", 2}}}}};
+        const auto rows2 = ParamClient::merge({"a", "b"}, ok, {{"values", QJsonArray{pv(3, "double_value", 1.5), pv(2, "integer_value", 3)}}});
+        QVERIFY(rows2[0].hasRange && rows2[0].readOnly);
+        QCOMPARE(rows2[0].max, 2.0);
+        QCOMPARE(rows2[1].type, int(ParamClient::Integer));
+        QCOMPARE(rows2[1].value.toLongLong(), 3);
+    }
+
     void makeRequest()
     {
         const QJsonObject r = ParamClient::makeSetRequest("max_speed", ParamClient::Double, "0.35");

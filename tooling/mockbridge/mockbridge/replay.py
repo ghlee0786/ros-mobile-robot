@@ -1,6 +1,7 @@
 """record_rosbridge.py 가 남긴 JSONL 을 원래 간격(배속)대로 다시 내보낸다.
 
 형식: 첫 줄 {"meta":{"host","started","topics":{"topics":[],"types":[]}}},
+(대시보드 raw.jsonl 은 "topics":[이름…], 예전 기록은 "topics":{이름: 형식} — 모두 읽는다)
 이후 줄마다 {"t":기록 시작 기준 초,"wall":epoch 초,"topic","type","msg"}.
 """
 import asyncio
@@ -29,21 +30,29 @@ def read_jsonl(path):
 
 
 class Replay(Source):
+    throttle_slack = 1.0   # protocol.Conn.flush_one: 기록 간격의 흔들림을 다시 거르지 않는다
+
     def __init__(self, server, args):
         super().__init__(server)
         self.args = args
         self.meta, self.recs = read_jsonl(args.replay)
         self.hidden = set(args.hide_topic or [])
         topics = self.meta.get("topics") or {}
-        self.types = dict(zip(topics.get("topics", []), topics.get("types", [])))
+        if isinstance(topics, list):
+            self.types = {}
+        elif "topics" in topics:
+            self.types = dict(zip(topics.get("topics", []), topics.get("types", [])))
+        else:
+            self.types = dict(topics)
         for r in self.recs:
             self.types.setdefault(r["topic"], r.get("type", ""))
         self.last = {}
+        self.latched = {}     # 래치 토픽 → {발행 키: 메시지}. /tf_static 은 발행자마다 다른 변환을 낸다
         self.skew = args.stamp_skew_ms / 1000.0
 
     def on_subscribe(self, conn, topic):
-        if topic in LATCHED and topic in self.last:
-            self.server.publish(topic, self.last[topic], only=conn)
+        for msg in self.latched.get(topic, {}).values():
+            self.server.publish(topic, msg, only=conn, flood=True)
 
     def make(self, topic):
         return self.last.get(topic)
@@ -70,6 +79,9 @@ class Replay(Source):
                     self.server.flush()
                 msg = self.restamp(r["msg"]) if self.args.restamp else r["msg"]
                 self.last[r["topic"]] = msg
+                if r["topic"] in LATCHED:   # 기록에 발행자가 없어 /tf_static 은 자식 프레임 묶음으로 가른다
+                    key = tuple(tr.get("child_frame_id") for tr in msg.get("transforms") or [])
+                    self.latched.setdefault(r["topic"], {})[key] = msg
                 if r["topic"] not in self.stopped:
                     self.server.publish(r["topic"], msg)
                 self.server.flush()

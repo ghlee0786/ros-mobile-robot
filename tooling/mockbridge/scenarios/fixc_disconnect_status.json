@@ -1,0 +1,29 @@
+{
+  "id": "fixc_disconnect_status",
+  "title": "B25: 서버가 죽으면 토픽 표 상태가 '끊김', 연결 단계(토픽 목록·필수 토픽)가 다시 기다림으로 바뀜",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": ["--no-publish"],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 20},
+    {"wait": "connectCheckTopics.ok", "timeout_s": 10},
+    {"wait": "connectCheckRequired.ok", "timeout_s": 10},
+    {"t": 1, "set": "win.page", "value": 1},
+    {"t": 14, "runner": "restart_server", "down_s": 45},
+    {"t": 2, "wait": "connectCheckTopics.waiting", "timeout_s": 35},
+    {"wait": "connectCheckRequired.waiting", "timeout_s": 5},
+    {"shot": "{out}/topics_lost.png"},
+    {"set": "win.page", "value": 2},
+    {"shot": "{out}/connect_lost.png"}
+  ],
+  "duration_s": 38,
+  "expect": {
+    "exit_code": 0,
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [
+      {"path": "bridge.connected", "op": "==", "value": false},
+      {"path": "inspector.topicOkShownAs", "op": "==", "value": "끊김"}
+    ]
+  }
+}
