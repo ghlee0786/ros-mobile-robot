@@ -1,0 +1,48 @@
+{
+  "id": "mapflip",
+  "title": "+1 m 앞 점유 셀 지도를 위에서 본 스크린샷(뒤집힘 확인)",
+  "needs_pi": false,
+  "needs_human": false,
+  "scene": true,
+  "baseline": "mapflip_top.png",
+  "server_args": [
+    "--freeze-pose"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 1,
+      "set": "robot.mapWanted",
+      "value": true
+    },
+    {
+      "t": 2,
+      "set": "scene.cam",
+      "value": "위에서"
+    },
+    {
+      "t": 7,
+      "shot": "map_top.png"
+    }
+  ],
+  "duration_s": 10,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.hasMap",
+        "op": "==",
+        "value": true
+      }
+    ]
+  }
+}

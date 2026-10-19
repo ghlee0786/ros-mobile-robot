@@ -1,0 +1,44 @@
+{
+  "id": "replay",
+  "title": "tests/data 샘플 재생 → 대시보드 상태가 기록과 맞음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--replay",
+    "{here}/tests/data/sample.jsonl",
+    "--loop",
+    "--restamp"
+  ],
+  "dashboard_args": [],
+  "actions": [],
+  "duration_s": 8,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.missingRequired",
+        "op": "==",
+        "value": []
+      },
+      {
+        "path": "robot.x",
+        "op": "==",
+        "value": 0.5
+      },
+      {
+        "path": "robot.y",
+        "op": "==",
+        "value": 0.25
+      }
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "id": "freeze",
+  "title": "송신 6 s 멈춤 → heartbeat age>3 이면 linkLost, 풀리면 회복",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--freeze",
+    "6@5"
+  ],
+  "dashboard_args": [],
+  "actions": [],
+  "duration_s": 18,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.linkLost",
+        "op": "==",
+        "value": false
+      }
+    ],
+    "trace": [
+      {
+        "rule": "was_true_between",
+        "path": "robot.linkLost",
+        "op": "==",
+        "value": true,
+        "from_s": 8,
+        "to_s": 12
+      },
+      {
+        "rule": "final_eq",
+        "path": "robot.linkLost",
+        "value": false
+      }
+    ]
+  }
+}

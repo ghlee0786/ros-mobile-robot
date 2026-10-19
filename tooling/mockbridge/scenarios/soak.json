@@ -1,0 +1,38 @@
+{
+  "id": "soak",
+  "title": "기록 반복 재생 10 분: 메모리 증가 상한 · callsPending 0 근처",
+  "needs_pi": false,
+  "needs_human": false,
+  "requires": [
+    "P4-core"
+  ],
+  "server_args": [
+    "--replay",
+    "{here}/tests/data/sample.jsonl",
+    "--loop",
+    "--restamp"
+  ],
+  "dashboard_args": [],
+  "actions": [],
+  "duration_s": 600,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "bridge.callsPending",
+        "op": "<=",
+        "value": 2
+      }
+    ],
+    "mem_growth_max_mb": 50
+  }
+}
