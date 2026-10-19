@@ -1,11 +1,13 @@
 #include "robot.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSettings>
+#include <QtConcurrent>
 #include <QtMath>
 
 namespace {
@@ -32,68 +34,24 @@ const char *kRequired[] = {"/odom", "/scan", "/wheel_states"};
 constexpr double kSelfHide = 0.3;     // 로봇 몸체에 맞은 LiDAR 점(m 이내)은 숨김
 constexpr double kMaxAngular = 0.25;  // 펌웨어 한계 rad/s
 constexpr double kMaxLinear = 0.10;   // 펌웨어 한계 m/s
-
-double yawOf(const QJsonObject &q)
-{
-    const double x = q["x"].toDouble(), y = q["y"].toDouble(), z = q["z"].toDouble(), w = q["w"].toDouble(1);
-    return std::atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
-}
-
-QString shortType(QString t) { return t.replace("/msg/", "/"); }
-
-// 경로를 2 cm 간격 점으로 채운다(인스턴스 점으로 선처럼 보이게).
-void appendDense(QList<QVector3D> &out, QVector3D a, QVector3D b)
-{
-    const int n = qMax(1, int((b - a).length() / 0.02f));
-    for (int i = 1; i <= n; ++i)
-        out.append(a + (b - a) * (float(i) / n));
-}
-
-// 메시지를 "a.b.c" 열 이름 → 값으로 펼친다. 숫자 배열은 공백으로 이어 한 칸에 둔다.
-void flatten(const QJsonValue &v, const QString &key, QHash<QString, QString> &out)
-{
-    if (v.isObject()) {
-        const QJsonObject o = v.toObject();
-        for (auto it = o.begin(); it != o.end(); ++it)
-            flatten(it.value(), key.isEmpty() ? it.key() : key + "." + it.key(), out);
-    } else if (v.isArray()) {
-        const QJsonArray a = v.toArray();
-        if (!a.isEmpty() && a.first().isObject()) {
-            for (int i = 0; i < a.size(); ++i)
-                flatten(a[i], key + QString("[%1]").arg(i), out);
-        } else {
-            QStringList parts;
-            for (const QJsonValue &e : a)
-                parts << (e.isString() ? e.toString() : e.isNull() ? "nan" : QString::number(e.toDouble(), 'g', 9));
-            out[key] = parts.join(' ');
-        }
-    } else if (v.isString()) {
-        out[key] = v.toString();
-    } else if (v.isBool()) {
-        out[key] = v.toBool() ? "1" : "0";
-    } else if (v.isNull()) {
-        out[key] = "nan";
-    } else {
-        out[key] = QString::number(v.toDouble(), 'g', 12);
-    }
-}
-
-QString csvCell(QString s)
-{
-    if (s.contains(',') || s.contains('"') || s.contains('\n'))
-        s = '"' + s.replace("\"", "\"\"") + '"';
-    return s;
-}
+// /tf 는 throttle 200 ms · queue 1 이라 창마다 마지막 변환 하나만 온다. map→odom 은 평균 약 0.66 Hz 로
+// 불규칙하게 오므로 2 s 로 판정하면 24 % 동안 낡음으로 본다 — 10 s 안에 한 번이라도 왔으면 신선하다고 본다.
+constexpr qint64 kMapOdomFreshMs = 10000;
+constexpr int kMapBinaryThreshold = 65;
 
 } // namespace
+
+using namespace msgparse;
 
 Robot::Robot(QObject *parent) : QObject(parent)
 {
     m_clock.start();
     connect(&m_bridge, &RosBridge::message, this, &Robot::onMessage);
+    connect(&m_bridge, &RosBridge::bridgeError, this, &Robot::addEvent);
     connect(&m_bridge, &RosBridge::connectedChanged, this, [this] {
         if (m_bridge.connected()) {
             m_everConnected = true;
+            m_lastSendDropped = false;
             addEvent("연결됨 " + m_bridge.host());
             QSettings s;
             QStringList hosts = s.value("hosts").toStringList();
@@ -107,6 +65,15 @@ Robot::Robot(QObject *parent) : QObject(parent)
         }
         updateStatus();
     });
+    // 앱을 닫을 때: 0 속도를 보내고 보낼 것을 내보낸 뒤 닫는다.
+    if (QCoreApplication::instance())
+        connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, this, [this] {
+            for (int i = 0; i < 3; ++i)
+                sendTwist(0, 0);
+            m_bridge.shutdown();
+        });
+    if (m_bridge.noPublish())
+        addEvent("ROBOT_DASHBOARD_NO_PUBLISH=1 — 로봇에 명령(advertise · publish)을 보내지 않음");
 
     for (const SensorDef &d : kSensors) {
         m_sensorOn[d.key] = d.on;
@@ -119,10 +86,15 @@ Robot::Robot(QObject *parent) : QObject(parent)
     m_bridge.advertise("/straight_drive/goal", "geometry_msgs/Vector3");
     m_bridge.advertise("/straight_drive/cancel", "std_msgs/Empty");
     m_bridge.advertise("/goal_pose", "geometry_msgs/PoseStamped");
+    m_bridge.advertise("/initialpose", "geometry_msgs/PoseWithCovarianceStamped");
     m_recordTopics = {"/odom", "/scan", "/imu/data_raw", "/wheel_states"};
 
     m_ui.setInterval(33);
     connect(&m_ui, &QTimer::timeout, this, [this] {
+        if (m_scanDirty) {
+            m_scanDirty = false;
+            emit scanChanged();
+        }
         if (!m_dirty)
             return;
         m_dirty = false;
@@ -170,7 +142,38 @@ void Robot::connectTo(const QString &host, int port)
     QSettings s;
     s.setValue("host", host);
     s.setValue("port", port);
+    if (host != m_bridge.host() || port != m_bridge.port())
+        resetSession();
     m_bridge.open(host, port);
+}
+
+void Robot::resetSession()
+{
+    m_trail.clear();
+    m_distance = 0;
+    m_haveOdom = false;
+    m_plan.clear();
+    m_frames.clear();
+    m_frameCount = 0;
+    m_mounts.clear();
+    m_haveMapOdom = false;
+    m_mo = {};
+    m_moClock.invalidate();
+    m_hasMap = false;
+    m_mapImage = {};
+    m_lastMap = {};
+    m_mapApplied = m_mapJob;   // 그리는 중인 지도는 버린다
+    m_straightRunning = false;
+    m_straightResult.clear();
+    m_straightTrack.clear();
+    m_targetLine.clear();
+    m_dirty = true;
+    emit trailChanged();
+    emit planChanged();
+    emit mapChanged();
+    emit mapImageChanged();
+    emit straightChanged();
+    emit statusChanged();
 }
 
 void Robot::setSensor(const QString &key, bool on)
@@ -183,7 +186,7 @@ void Robot::setSensor(const QString &key, bool on)
         for (const auto &e : kExtra.value(key))
             m_bridge.want(e.first, e.second, "sensor", on);
         if (!on && key == "scan")
-            m_scan.clear(), m_dirty = true;
+            m_scan.clear(), m_scanCount = 0, m_scanDirty = true;
     }
     m_probed = false;
     updateStatus();
@@ -196,10 +199,23 @@ void Robot::probe()
     updateStatus();
 }
 
+QString Robot::dataDir()
+{
+    const QString env = qEnvironmentVariable("ROBOT_DASHBOARD_DIR");
+    if (!env.isEmpty())
+        return QDir(env).absolutePath();
+    const QDir up(QCoreApplication::applicationDirPath() + "/..");
+    if (up.exists("model"))
+        return up.absolutePath();
+    return QDir::current().absolutePath();
+}
+
 QUrl Robot::modelFile(const QString &name) const
 {
+    if (qEnvironmentVariableIntValue("ROBOT_DASHBOARD_NO_MODEL") == 1)
+        return {};
     for (const char *ext : {"glb", "gltf", "fbx", "obj"}) {
-        const QString p = QDir::current().absoluteFilePath(QString("model/%1.%2").arg(name, ext));
+        const QString p = QDir(dataDir()).absoluteFilePath(QString("model/%1.%2").arg(name, ext));
         if (QFile::exists(p))
             return QUrl::fromLocalFile(p);
     }
@@ -208,7 +224,7 @@ QUrl Robot::modelFile(const QString &name) const
 
 QVariantMap Robot::modelParts() const
 {
-    QFile f(QDir::current().absoluteFilePath("model/parts.json"));
+    QFile f(QDir(dataDir()).absoluteFilePath("model/parts.json"));
     return f.open(QIODevice::ReadOnly) ? QJsonDocument::fromJson(f.readAll()).object().toVariantMap() : QVariantMap{};
 }
 
@@ -217,6 +233,29 @@ void Robot::setMapWanted(bool on)
     m_mapWanted = on;
     m_bridge.want("/map", "nav_msgs/OccupancyGrid", "map", on, 2000);
     emit mapChanged();
+}
+
+void Robot::setMapScheme(const QString &s)
+{
+    if (s == m_mapScheme)
+        return;
+    m_mapScheme = s;
+    emit mapStyleChanged();
+    renderMap(0);
+}
+
+void Robot::setMapBinary(bool on)
+{
+    if (on == m_mapBinary)
+        return;
+    m_mapBinary = on;
+    emit mapStyleChanged();
+    renderMap(0);
+}
+
+bool Robot::mapOdomFresh() const
+{
+    return m_haveMapOdom && m_moClock.isValid() && m_moClock.elapsed() < kMapOdomFreshMs;
 }
 
 // ---- 메시지 해석 -----------------------------------------------------------------------
@@ -234,7 +273,7 @@ void Robot::onMessage(const QString &topic, const QJsonObject &msg)
     else if (topic == "/scan")
         onScan(msg);
     else if (topic == "/tf" || topic == "/tf_static")
-        onTf(msg);
+        onTf(msg, topic == "/tf_static");
     else if (topic == "/map")
         onMap(msg);
     else if (topic == "/plan")
@@ -306,94 +345,110 @@ void Robot::onImu(const QJsonObject &m)
     m_dirty = true;
 }
 
+static QString stripSlash(const QString &frame) { return frame.startsWith('/') ? frame.mid(1) : frame; }
+
 void Robot::onScan(const QJsonObject &m)
 {
-    const QJsonArray ranges = m["ranges"].toArray();
-    const double a0 = m["angle_min"].toDouble(), da = m["angle_increment"].toDouble();
-    const double rmin = qMax(m["range_min"].toDouble(), kSelfHide), rmax = m["range_max"].toDouble(1e9);
-    m_scan.clear();
-    m_scan.reserve(ranges.size());
-    m_nearR = 0;
-    for (int i = 0; i < ranges.size(); ++i) {
-        const double r = ranges[i].toDouble();   // inf/NaN 은 null 로 와서 0
-        if (!(r >= rmin && r <= rmax))
-            continue;
-        const double a = a0 + i * da;
-        m_scan.append(QVector3D(float(r * std::cos(a)), float(r * std::sin(a)), 0));
-        if (m_nearR == 0 || r < m_nearR)
-            m_nearR = r, m_nearA = qRadiansToDegrees(a);
-    }
+    // 레이저 프레임의 점을 /tf_static 의 base_link → 레이저 장착 변환으로 로봇 기준으로 옮긴다(없으면 그대로).
+    const QString frame = stripSlash(m["header"].toObject()["frame_id"].toString());
+    const Scan s = parseScan(m, m_mounts.value(frame), kSelfHide);
+    m_scan = s.points;
     m_scanCount = int(m_scan.size());
-    m_scanTime = m["scan_time"].toDouble();   // 한 바퀴 시간(s)
-    m_dirty = true;
+    m_nearR = s.nearestRange;
+    m_nearA = s.nearestAngle;
+    m_scanTime = s.scanTime;   // 한 바퀴 시간(s)
+    m_scanDirty = true;
 }
 
-void Robot::onTf(const QJsonObject &m)
+void Robot::onTf(const QJsonObject &m, bool isStatic)
 {
     for (const QJsonValue &v : m["transforms"].toArray()) {
         const QJsonObject t = v.toObject();
         const QString parent = t["header"].toObject()["frame_id"].toString(), child = t["child_frame_id"].toString();
         m_frames.insert(parent);
         m_frames.insert(child);
+        const QJsonObject tr = t["transform"].toObject();
+        const Pose2D p{tr["translation"].toObject()["x"].toDouble(), tr["translation"].toObject()["y"].toDouble(),
+                       yawOf(tr["rotation"].toObject())};
         if (parent == "map" && child == "odom") {
-            const QJsonObject tr = t["transform"].toObject();
-            m_moX = tr["translation"].toObject()["x"].toDouble();
-            m_moY = tr["translation"].toObject()["y"].toDouble();
-            m_moYaw = yawOf(tr["rotation"].toObject());
+            m_mo = p;
             m_haveMapOdom = true;
+            m_moClock.start();
             placeMap();
         }
+        if (isStatic && stripSlash(parent) == "base_link")
+            m_mounts[stripSlash(child)] = p;
     }
     m_frameCount = int(m_frames.size());
-}
-
-// map 프레임의 점을 odom 프레임으로: p_odom = (map->odom)^-1 * p_map
-static void mapToOdom(bool have, double mx, double my, double myaw, double &x, double &y)
-{
-    if (!have)
-        return;
-    const double dx = x - mx, dy = y - my, c = std::cos(myaw), s = std::sin(myaw);
-    x = c * dx + s * dy;
-    y = -s * dx + c * dy;
 }
 
 void Robot::placeMap()
 {
     if (!m_hasMap)
         return;
-    double x = m_mapOx, y = m_mapOy;
-    mapToOdom(m_haveMapOdom, m_moX, m_moY, m_moYaw, x, y);
-    m_mapCenter = QVector3D(float(x), float(y), 0.003f);
-    m_mapYaw = qRadiansToDegrees(m_mapOyaw - (m_haveMapOdom ? m_moYaw : 0));
-    emit mapChanged();
+    const Pose2D c = m_haveMapOdom ? mapToOdom(m_mo, m_mapO) : m_mapO;
+    m_mapCenter = QVector3D(float(c.x), float(c.y), 0.003f);
+    m_mapYaw = qRadiansToDegrees(c.yaw);
+    emit mapPoseChanged();
 }
 
 void Robot::onMap(const QJsonObject &m)
 {
-    const QJsonObject info = m["info"].toObject();
-    const int w = info["width"].toInt(), h = info["height"].toInt();
-    const double res = info["resolution"].toDouble();
-    const QJsonArray data = m["data"].toArray();
-    if (w <= 0 || h <= 0 || data.size() < qsizetype(w) * h)
-        return;
-    QImage img(w, h, QImage::Format_RGBA8888);
-    for (int r = 0; r < h; ++r)   // 지도 0 행은 아래쪽
+    m_lastMap = m;
+    renderMap(m_bridge.lastWorkerMs());
+}
 
-        for (int c = 0; c < w; ++c) {
-            const int v = data[r * w + c].toInt();
-            img.setPixelColor(c, h - 1 - r, v < 0 ? QColor(0x1A, 0x20, 0x28, 140)
-                                                  : v >= 65 ? QColor(0xE6, 0xE9, 0xEE) : QColor(0x2C, 0x36, 0x42, 220));
-        }
-    const QJsonObject o = info["origin"].toObject();
-    const double oyaw = yawOf(o["orientation"].toObject());
-    const double hw = w * res / 2, hh = h * res / 2;
-    m_mapOx = o["position"].toObject()["x"].toDouble() + std::cos(oyaw) * hw - std::sin(oyaw) * hh;
-    m_mapOy = o["position"].toObject()["y"].toDouble() + std::sin(oyaw) * hw + std::cos(oyaw) * hh;
-    m_mapOyaw = oyaw;
-    m_mapSize = QSizeF(w * res, h * res);
-    m_mapImage = img;
-    m_hasMap = true;
-    placeMap();
+// OccupancyGrid → 이미지는 다른 스레드에서 만들고, 결과는 GUI 스레드로 넘겨 받는다(2000×2000 이면 수백 ms).
+void Robot::renderMap(double bridgeWorkerMs)
+{
+    if (m_lastMap.isEmpty())
+        return;
+    QElapsedTimer gui;
+    gui.start();
+    struct Result { QImage img; Pose2D center; QSizeF size; double ms = 0; };
+    const int job = ++m_mapJob;
+    const QJsonObject m = m_lastMap;
+    const QString scheme = m_mapScheme;
+    const int threshold = m_mapBinary ? kMapBinaryThreshold : -1;
+    auto future = QtConcurrent::run([m, scheme, threshold] {
+        QElapsedTimer t;
+        t.start();
+        Result r;
+        const QJsonObject info = m["info"].toObject();
+        const int w = info["width"].toInt(), h = info["height"].toInt();
+        const double res = info["resolution"].toDouble();
+        r.img = occupancyToImage(m["data"].toArray(), w, h, scheme, threshold);
+        const QJsonObject o = info["origin"].toObject();
+        const double oyaw = yawOf(o["orientation"].toObject());
+        // 판 중심 = origin 에서 (폭/2, 높이/2) 만큼(origin 회전 적용)
+        r.center = transform2D({o["position"].toObject()["x"].toDouble(), o["position"].toObject()["y"].toDouble(), oyaw},
+                               {w * res / 2, h * res / 2, 0});
+        r.size = QSizeF(w * res, h * res);
+        r.ms = t.nsecsElapsed() / 1e6;
+        return r;
+    });
+    const double guiStart = gui.nsecsElapsed() / 1e6;
+    future.then(this, [this, job, guiStart, bridgeWorkerMs](const Result &r) {   // GUI 스레드로 queued
+        if (job <= m_mapApplied || r.img.isNull())   // 더 새 지도가 이미 들어갔거나 data 가 짧다
+            return;
+        QElapsedTimer gui;
+        gui.start();
+        m_mapApplied = job;
+        m_mapO = r.center;
+        m_mapSize = r.size;
+        m_mapImage = r.img;
+        ++m_mapImageSerial;
+        const bool had = m_hasMap;
+        m_hasMap = true;
+        emit mapImageChanged();
+        if (!had)
+            emit mapChanged();
+        placeMap();
+        qInfo().noquote() << QString("[perf] map w=%1 h=%2 gui_ms=%3 worker_ms=%4")
+                                 .arg(r.img.width()).arg(r.img.height())
+                                 .arg(guiStart + gui.nsecsElapsed() / 1e6, 0, 'f', 1)
+                                 .arg(bridgeWorkerMs + r.ms, 0, 'f', 1);
+    });
 }
 
 void Robot::onPlan(const QJsonObject &m)
@@ -403,9 +458,10 @@ void Robot::onPlan(const QJsonObject &m)
     QVector3D prev;
     for (const QJsonValue &v : m["poses"].toArray()) {
         const QJsonObject p = v.toObject()["pose"].toObject()["position"].toObject();
-        double x = p["x"].toDouble(), y = p["y"].toDouble();
-        mapToOdom(inMap && m_haveMapOdom, m_moX, m_moY, m_moYaw, x, y);
-        const QVector3D cur(float(x), float(y), 0.012f);
+        Pose2D q{p["x"].toDouble(), p["y"].toDouble(), 0};
+        if (inMap && m_haveMapOdom)
+            q = mapToOdom(m_mo, q);
+        const QVector3D cur(float(q.x), float(q.y), 0.012f);
         if (out.isEmpty())
             out.append(cur);
         else
@@ -434,9 +490,13 @@ void Robot::onStraight(const QJsonObject &m)
     } else if (state == "finished") {
         m_straightRunning = false;
         m_straightTrack.append(QPointF(st["along"].toDouble(), st["cross"].toDouble() * 100));
-        m_straightResult = {{"cross", st["cross"].toDouble() * 100}, {"heading", st["heading_err_deg"].toDouble()},
-                            {"duration", st["duration"].toDouble()}, {"reason", st["reason"].toString()},
-                            {"along", st["along"].toDouble()}};
+        // 값이 null(측정 못 함)이면 키를 넣지 않는다 — 화면은 '—' 로 보인다.
+        m_straightResult = {{"reason", st["reason"].toString()}};
+        const struct { const char *key, *src; double scale; } fields[] = {
+            {"cross", "cross", 100.0}, {"heading", "heading_err_deg", 1.0}, {"duration", "duration", 1.0}, {"along", "along", 1.0}};
+        for (const auto &f : fields)
+            if (st[f.src].isDouble())
+                m_straightResult[f.key] = st[f.src].toDouble() * f.scale;
         addEvent("직진 완료 " + st["reason"].toString());
     } else if (state == "rejected") {
         m_straightRunning = false;
@@ -453,6 +513,7 @@ void Robot::updateStatus()
     const bool conn = m_bridge.connected();
 
     m_sensorRows.clear();
+    QList<QVariantMap> sensorModelRows;
     for (const SensorDef &d : kSensors) {
         const bool on = m_sensorOn.value(d.key).toBool();
         const RosBridge::Stat s = m_bridge.stat(d.topic);
@@ -477,7 +538,11 @@ void Robot::updateStatus()
             m_lidarHz = on && fresh ? (m_scanTime > 0 ? 1 / m_scanTime : s.hz) : 0;
         m_sensorRows.append(QVariantMap{{"key", d.key}, {"label", d.label}, {"topic", d.topic}, {"on", on},
                                         {"state", state}, {"detail", detail}});
+        sensorModelRows.append(QVariantMap{{"key", d.key}, {"label", d.label}, {"topic", d.topic}, {"on", on},
+                                           {"state", state}, {"hz", std::round(s.hz * 10) / 10},
+                                           {"age", std::round(s.age * 10) / 10}});
     }
+    m_sensorModel.setRows(sensorModelRows);
 
     m_rates.clear();
     for (const auto &[topic, label] : {std::pair{"/odom", "/odom"}, {"/scan", "/scan"}, {"/imu/data_raw", "/imu"},
@@ -492,6 +557,7 @@ void Robot::updateStatus()
             names.append(t);
     names.sort();
     m_topicRows.clear();
+    QList<QVariantMap> topicModelRows;
     for (const QString &t : names) {
         const RosBridge::Stat s = m_bridge.stat(t);
         const bool sub = m_bridge.subscribed(t);
@@ -505,30 +571,48 @@ void Robot::updateStatus()
         } else if (s.age >= 0 && s.age < 0.5) {
             m_late.remove(t);
         }
+        const bool haveLat = sub && !qIsNaN(s.latencyMs) && s.age >= 0;
+        const double kbps = sub ? std::round(s.bytesPerSec * 8 / 100) / 10 : 0;   // kbit/s, 소수 1 자리
+        const QString type = shortType(types.value(t, m_bridge.wantedType(t)));
         m_topicRows.append(QVariantMap{
-            {"name", t}, {"type", shortType(types.value(t, m_bridge.wantedType(t)))},
+            {"name", t}, {"type", type},
             {"hz", sub && s.hz > 0 ? QString::number(s.hz, 'f', 1) + " Hz" : "—"},
-            {"lat", sub && !qIsNaN(s.latencyMs) && s.age >= 0 ? QString::number(qRound(s.latencyMs)) + " ms" : "—"},
+            {"lat", haveLat ? QString::number(qRound(s.latencyMs)) + " ms" : "—"},
+            {"kbps", kbps}, {"clockSkew", haveLat && s.clockSkew},
             {"state", state}, {"rec", m_recordTopics.contains(t)}});
+        topicModelRows.append(QVariantMap{
+            {"name", t}, {"type", type}, {"hz", sub ? std::round(s.hz * 10) / 10 : 0.0},
+            {"latencyMs", haveLat ? double(qRound(s.latencyMs)) : -1.0}, {"kbps", kbps}, {"state", state},
+            {"rec", m_recordTopics.contains(t)}, {"clockSkew", haveLat && s.clockSkew}});
     }
+    m_topicModel.setRows(topicModelRows);
 
     m_missing.clear();
     for (const char *t : kRequired)
         if (m_bridge.stat(t).age < 0)
             m_missing.append(t);
 
+    // 하트비트 센서를 꺼도 rosbridge 에서 3 s 넘게 아무것도 오지 않으면 링크가 끊긴 것으로 본다.
     const RosBridge::Stat beat = m_bridge.stat("/link/heartbeat");
-    m_linkLost = m_everConnected && (!conn || (m_sensorOn.value("beat").toBool() && beat.age > 3.0));
+    m_linkLost = m_everConnected
+                 && (!conn || (m_sensorOn.value("beat").toBool() && beat.age > 3.0) || m_bridge.rxAge() > 3.0);
 
-    static int n = 0;
-    if (conn && ++n % 10 == 1)   // 5 s 마다 워치독 노드가 /teleop/cmd_vel 을 듣고 있는지 확인
+    if (conn && ++m_statusTick % 10 == 1)   // 5 s 마다 워치독 노드가 /teleop/cmd_vel 을 듣고 있는지 확인
         m_bridge.call("/rosapi/subscribers", {{"topic", "/teleop/cmd_vel"}}, [this](const QJsonObject &v) {
             m_watchdogOk = false;
             for (const QJsonValue &s : v["subscribers"].toArray())
                 m_watchdogOk |= s.toString().contains("cmd_watchdog");
-        });
+        }, [this](const QString &) { m_watchdogOk = false; });
     if (!conn)
         m_watchdogOk = false;
+
+    if (m_recording && m_flushClock.elapsed() >= 1000) {   // 기록 파일은 1 s 마다 디스크로
+        m_flushClock.restart();
+        for (QFile *f : std::as_const(m_files))
+            f->flush();
+        if (m_raw)
+            m_raw->flush();
+    }
     emit statusChanged();
 }
 
@@ -548,6 +632,18 @@ void Robot::sendTwist(double v, double w)
                                          {"angular", QJsonObject{{"x", 0}, {"y", 0}, {"z", w}}}});
 }
 
+// 끊긴 채로 조종 · 정지를 누르면 조용히 버리지 않고 알린다.
+void Robot::noteDropped()
+{
+    if (m_bridge.connected() || m_bridge.noPublish())
+        return;
+    if (!m_lastSendDropped) {
+        m_lastSendDropped = true;
+        emit statusChanged();
+    }
+    addEvent("연결 끊김 — 정지 명령을 보내지 못함(파이 워치독 0.5 s 에 의존)");
+}
+
 void Robot::setMode(const QString &m)
 {
     if (m == m_mode)
@@ -562,11 +658,21 @@ void Robot::setMode(const QString &m)
     emit modeChanged();
 }
 
+void Robot::setMaxSpeed(double v)
+{
+    v = qBound(0.02, v, kMaxLinear);
+    if (v == m_maxSpeed)
+        return;
+    m_maxSpeed = v;
+    emit modeChanged();
+}
+
 void Robot::drive(double linear, double angular)
 {
     m_lin = qBound(-1.0, linear, 1.0);
     m_ang = qBound(-1.0, angular, 1.0);
-    m_maxSpeed = qBound(0.02, m_maxSpeed, kMaxLinear);
+    if (!m_lastSendDropped)   // 누를 때마다가 아니라 끊긴 동안 한 번만 알린다
+        noteDropped();
     if (m_mode == "키보드 조종")
         sendTwist(m_lin * m_maxSpeed, m_ang * kMaxAngular);   // 누르는 즉시 반응
 }
@@ -578,22 +684,41 @@ void Robot::straight(double distance)
 
 void Robot::sendGoal(double x, double y, double yaw)
 {
-    // Nav2 bt_navigator 가 듣는 /goal_pose 로 보낸다. map 프레임이 있으면 map 으로 바꿔 보낸다: p_map = (map->odom) * p_odom
+    // Nav2 bt_navigator 가 듣는 /goal_pose 로 보낸다. map→odom 이 신선하면 map 으로 바꿔 보낸다: p_map = (map->odom) * p_odom
     QString frame = "odom";
-    if (m_haveMapOdom) {
-        const double c = std::cos(m_moYaw), s = std::sin(m_moYaw), ox = x;
-        x = m_moX + c * ox - s * y;
-        y = m_moY + s * ox + c * y;
-        yaw += m_moYaw;
+    Pose2D p{x, y, yaw};
+    if (mapOdomFresh()) {
+        p = odomToMap(m_mo, p);
         frame = "map";
+    } else if (m_haveMapOdom) {
+        addEvent("map→odom 이 10 s 넘게 오지 않아 목표를 odom 프레임으로 보냄");
     }
     // Nav2 속도도 /teleop/cmd_vel 로 나오므로 키보드 조종의 10 Hz 0 속도와 겹치지 않게 자율주행으로 바꾼다.
     setMode("자율주행");
     m_bridge.publish("/goal_pose", {
         {"header", QJsonObject{{"frame_id", frame}, {"stamp", QJsonObject{{"sec", 0}, {"nanosec", 0}}}}},
-        {"pose", QJsonObject{{"position", QJsonObject{{"x", x}, {"y", y}, {"z", 0}}},
-                             {"orientation", QJsonObject{{"x", 0}, {"y", 0}, {"z", std::sin(yaw / 2)}, {"w", std::cos(yaw / 2)}}}}}});
-    addEvent(QString("이동 목표 %1 (%2, %3) %4°").arg(frame).arg(x, 0, 'f', 2).arg(y, 0, 'f', 2).arg(qRadiansToDegrees(yaw), 0, 'f', 0));
+        {"pose", QJsonObject{{"position", QJsonObject{{"x", p.x}, {"y", p.y}, {"z", 0}}},
+                             {"orientation", quatFromYaw(p.yaw)}}}});
+    addEvent(QString("이동 목표 %1 (%2, %3) %4°").arg(frame).arg(p.x, 0, 'f', 2).arg(p.y, 0, 'f', 2).arg(qRadiansToDegrees(p.yaw), 0, 'f', 0));
+}
+
+void Robot::setInitialPose(double x, double y, double yaw)
+{
+    // AMCL 이 듣는 /initialpose. map→odom 이 신선하면 map 프레임으로 바꿔 보낸다.
+    QString frame = "odom";
+    Pose2D p{x, y, yaw};
+    if (mapOdomFresh()) {
+        p = odomToMap(m_mo, p);
+        frame = "map";
+    } else {
+        addEvent("경고: map→odom 이 없거나 낡아 초기 위치를 odom 프레임으로 보냄");
+    }
+    m_bridge.publish("/initialpose", {
+        {"header", QJsonObject{{"frame_id", frame}, {"stamp", QJsonObject{{"sec", 0}, {"nanosec", 0}}}}},
+        {"pose", QJsonObject{{"pose", QJsonObject{{"position", QJsonObject{{"x", p.x}, {"y", p.y}, {"z", 0}}},
+                                                  {"orientation", quatFromYaw(p.yaw)}}},
+                             {"covariance", initialPoseCovariance()}}}});
+    addEvent(QString("초기 위치 %1 (%2, %3) %4°").arg(frame).arg(p.x, 0, 'f', 2).arg(p.y, 0, 'f', 2).arg(qRadiansToDegrees(p.yaw), 0, 'f', 0));
 }
 
 // 0 uuid · 0 stamp = 모든 Nav2 목표 취소 (rosbridge 가 액션을 몰라 액션의 숨은 서비스를 직접 부른다)
@@ -610,6 +735,7 @@ void Robot::cancelGoal()
 
 void Robot::estop()
 {
+    noteDropped();
     m_lin = m_ang = 0;
     for (int i = 0; i < 3; ++i)
         sendTwist(0, 0);
@@ -625,7 +751,7 @@ void Robot::clearTrail()
     emit trailChanged();
 }
 
-// ---- 기록 (토픽마다 CSV 하나) ---------------------------------------------------------
+// ---- 기록 (토픽마다 CSV 하나 + 원문 raw.jsonl) ------------------------------------------
 
 void Robot::setRecordTopic(const QString &topic, bool on)
 {
@@ -646,12 +772,25 @@ void Robot::toggleRecording()
         addEvent("기록 중지 " + m_recordPath);
         return;
     }
-    m_recordPath = QDir::current().absoluteFilePath("records/" + QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
+    const QDateTime now = QDateTime::currentDateTime();
+    m_recordPath = QDir(dataDir()).absoluteFilePath("records/" + now.toString("yyyyMMdd_HHmmss"));
     QDir().mkpath(m_recordPath);
+    // 원문 기록: 첫 줄 meta, 이후 한 줄에 메시지 하나 (P1 --replay 입력과 같은 형식)
+    m_raw = new QFile(m_recordPath + "/raw.jsonl");
+    if (m_raw->open(QIODevice::WriteOnly)) {
+        const QJsonObject meta{{"meta", QJsonObject{{"host", m_bridge.host()},
+                                                    {"started", now.toMSecsSinceEpoch() / 1000.0},
+                                                    {"topics", QJsonArray::fromStringList(m_recordTopics)}}}};
+        m_raw->write(QJsonDocument(meta).toJson(QJsonDocument::Compact) + "\n");
+    } else {
+        delete m_raw;
+        m_raw = nullptr;
+    }
     for (const QString &t : std::as_const(m_recordTopics))
         m_bridge.want(t, m_bridge.topicTypes().value(t), "record", true);
     m_recording = true;
     m_recordClock.start();
+    m_flushClock.start();
     addEvent("기록 시작 " + m_recordPath);
     emit recordChanged();
 }
@@ -664,7 +803,11 @@ void Robot::stopRecording()
         m_bridge.want(t, {}, "record", false);
     qDeleteAll(m_files);
     m_files.clear();
+    delete m_raw;
+    m_raw = nullptr;
     m_headers.clear();
+    m_extraKeyWarned.clear();
+    m_lastBig.clear();
     m_recording = false;
     emit recordChanged();
 }
@@ -679,13 +822,28 @@ QString Robot::recordElapsed() const
 
 void Robot::openRecords()
 {
-    const QString dir = m_recordPath.isEmpty() ? QDir::current().absoluteFilePath("records") : m_recordPath;
+    const QString dir = m_recordPath.isEmpty() ? QDir(dataDir()).absoluteFilePath("records") : m_recordPath;
     QDir().mkpath(dir);
     QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
 }
 
 void Robot::record(const QString &topic, const QJsonObject &msg)
 {
+    const QString type = m_bridge.wantedType(topic).isEmpty() ? m_bridge.topicTypes().value(topic) : m_bridge.wantedType(topic);
+    if (type.contains("OccupancyGrid")) {   // 큰 메시지는 내용(header 제외)이 바뀌었을 때만
+        QJsonObject body = msg;
+        body.remove("header");
+        if (m_lastBig.value(topic) == body)
+            return;
+        m_lastBig[topic] = body;
+    }
+    if (m_raw) {
+        const QJsonObject line{{"t", m_recordClock.nsecsElapsed() / 1e9},
+                               {"wall", QDateTime::currentMSecsSinceEpoch() / 1000.0},
+                               {"topic", topic}, {"type", type}, {"msg", msg}};
+        m_raw->write(QJsonDocument(line).toJson(QJsonDocument::Compact) + "\n");
+    }
+
     QHash<QString, QString> row;
     flatten(msg, {}, row);
     QFile *f = m_files.value(topic);
@@ -702,8 +860,19 @@ void Robot::record(const QString &topic, const QJsonObject &msg)
         m_headers[topic] = keys;
         f->write(("pc_time," + keys.join(',') + "\n").toUtf8());
     }
+    const QStringList &header = m_headers[topic];
+    if (!m_extraKeyWarned.contains(topic)) {
+        for (auto it = row.cbegin(); it != row.cend(); ++it) {
+            if (!header.contains(it.key())) {   // 배열 길이가 바뀌는 메시지 등 — 한 번만 알린다
+                m_extraKeyWarned.insert(topic);
+                addEvent(QString("경고: %1 에 CSV 헤더에 없는 열(%2)이 나옴 — CSV 에서는 빠지고 raw.jsonl 에만 남음").arg(topic, it.key()));
+                break;
+            }
+        }
+    }
     QStringList cells{QString::number(QDateTime::currentMSecsSinceEpoch() / 1000.0, 'f', 3)};
-    for (const QString &k : std::as_const(m_headers[topic]))
+    for (const QString &k : header)
         cells << csvCell(row.value(k));
     f->write((cells.join(',') + "\n").toUtf8());
 }
+
