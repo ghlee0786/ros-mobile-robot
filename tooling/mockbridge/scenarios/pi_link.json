@@ -1,0 +1,39 @@
+{
+  "id": "pi_link",
+  "title": "실기: 하트비트 · 토픽 목록 (발행 없음)",
+  "needs_pi": true,
+  "needs_human": false,
+  "server": false,
+  "dashboard_args": [
+    "--url",
+    "ws://{pi_host}:9090",
+    "--no-publish"
+  ],
+  "server_args": [],
+  "actions": [],
+  "duration_s": 30,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.linkLost",
+        "op": "==",
+        "value": false
+      },
+      {
+        "path": "bridge.topicCount",
+        "op": ">",
+        "value": 5
+      }
+    ]
+  }
+}

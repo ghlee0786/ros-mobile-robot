@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" font-family="Inter, 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" role="img" aria-label="Feature map">
+  <title>Feature map · 기능 지도</title>
+  <!-- 8 s 주기: 네 갈래가 0.4 s 간격으로 차례로 나타났다가 끝에 함께 사라진다. 애니메이션이 없으면 모두 보인다. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B0D10"/>
+      <stop offset="1" stop-color="#111318"/>
+    </linearGradient>
+    <path id="cTL" d="M540 344 C 500 300, 500 224, 464 224"/>
+    <path id="cBL" d="M540 424 C 500 468, 500 544, 464 544"/>
+    <path id="cTR" d="M660 344 C 700 300, 700 224, 736 224"/>
+    <path id="cBR" d="M660 424 C 700 468, 700 544, 736 544"/>
+    <style>
+      .card { fill: #171A20; stroke: #FFFFFF; stroke-opacity: 0.1; }
+      .h { fill: #E8EAED; font-weight: 700; }
+      .t { fill: #E8EAED; }
+      .s { fill: #A3A9B2; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="720" fill="url(#bg)"/>
+  <text x="32" y="44" font-size="22" class="h">Feature map <tspan class="s" font-weight="400">· 기능 지도</tspan></text>
+
+  <!-- 연결선 -->
+  <g fill="none" stroke-width="2" stroke-dasharray="4 6">
+    <use href="#cTL" stroke="#4C9AFF" stroke-opacity="0.6"/>
+    <use href="#cTR" stroke="#56CCB2" stroke-opacity="0.6"/>
+    <use href="#cBL" stroke="#F2994A" stroke-opacity="0.6"/>
+    <use href="#cBR" stroke="#BB86FC" stroke-opacity="0.6"/>
+    <animate attributeName="stroke-dashoffset" from="20" to="0" dur="1s" repeatCount="indefinite"/>
+  </g>
+  <circle r="4" fill="#4C9AFF"><animateMotion dur="2s" repeatCount="indefinite"><mpath href="#cTL"/></animateMotion></circle>
+  <circle r="4" fill="#56CCB2"><animateMotion dur="2s" begin="-0.5s" repeatCount="indefinite"><mpath href="#cTR"/></animateMotion></circle>
+  <circle r="4" fill="#F2994A"><animateMotion dur="2s" begin="-1s" repeatCount="indefinite"><mpath href="#cBL"/></animateMotion></circle>
+  <circle r="4" fill="#BB86FC"><animateMotion dur="2s" begin="-1.5s" repeatCount="indefinite"><mpath href="#cBR"/></animateMotion></circle>
+
+  <!-- 가운데 허브 -->
+  <circle cx="600" cy="384" r="72" fill="none" stroke="#2F6FE4" stroke-width="2">
+    <animate attributeName="r" values="72;100" dur="3s" calcMode="spline" keySplines="0.16 1 0.3 1" repeatCount="indefinite"/>
+    <animate attributeName="stroke-opacity" values="0.6;0" dur="3s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="600" cy="384" r="72" fill="#171A20" stroke="#2F6FE4" stroke-width="2"/>
+  <text x="600" y="380" font-size="18" class="h" text-anchor="middle">Dashboard</text>
+  <text x="600" y="402" font-size="12" class="s" text-anchor="middle">Qt 6.8 · Quick 3D</text>
+
+  <!-- (a) 3D 뷰 -->
+  <g>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.02;0.12;0.92;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="-16 0;-16 0;0 0;0 0;0 0" keyTimes="0;0.02;0.12;0.92;1" calcMode="spline" keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0 0 1 1" dur="8s" repeatCount="indefinite"/>
+    <rect class="card" x="32" y="80" width="432" height="288" rx="16"/>
+    <rect x="56" y="104" width="40" height="40" rx="10" fill="#4C9AFF" fill-opacity="0.15"/>
+    <path d="M76 112 L90 120 V136 L76 144 L62 136 V120 Z M62 120 L76 128 L90 120 M76 128 V144" fill="none" stroke="#4C9AFF" stroke-width="2" stroke-linejoin="round"/>
+    <text x="112" y="122" font-size="18" class="h">3D 뷰</text>
+    <text x="112" y="142" font-size="12" class="s">3D view · Qt Quick 3D</text>
+    <g font-size="13" class="t">
+      <circle cx="60" cy="180" r="3" fill="#4C9AFF"/><text x="72" y="185">Fusion 360 실제 모델</text>
+      <circle cx="60" cy="212" r="3" fill="#4C9AFF"/><text x="72" y="217">바퀴·LiDAR 회전 연동</text>
+      <circle cx="60" cy="244" r="3" fill="#4C9AFF"/><text x="72" y="249">뷰 큐브 · 직교/원근</text>
+      <circle cx="60" cy="276" r="3" fill="#4C9AFF"/><text x="72" y="281">Fusion 식 마우스 조작</text>
+      <circle cx="60" cy="308" r="3" fill="#4C9AFF"/><text x="72" y="313">거리 측정</text>
+      <circle cx="260" cy="180" r="3" fill="#4C9AFF"/><text x="272" y="185">지도 · 코스트맵 레이어</text>
+      <circle cx="260" cy="212" r="3" fill="#4C9AFF"/><text x="272" y="217">footprint · TF 축</text>
+      <circle cx="260" cy="244" r="3" fill="#4C9AFF"/><text x="272" y="249">LiDAR 잔상</text>
+      <circle cx="260" cy="276" r="3" fill="#4C9AFF"/><text x="272" y="281">추적 카메라</text>
+    </g>
+  </g>
+
+  <!-- (b) 내비게이션 -->
+  <g>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.07;0.17;0.92;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="16 0;16 0;0 0;0 0;0 0" keyTimes="0;0.07;0.17;0.92;1" calcMode="spline" keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0 0 1 1" dur="8s" repeatCount="indefinite"/>
+    <rect class="card" x="736" y="80" width="432" height="288" rx="16"/>
+    <rect x="760" y="104" width="40" height="40" rx="10" fill="#56CCB2" fill-opacity="0.15"/>
+    <path d="M780 112 C 772 112, 768 118, 768 124 C 768 132, 780 142, 780 142 C 780 142, 792 132, 792 124 C 792 118, 788 112, 780 112 Z" fill="none" stroke="#56CCB2" stroke-width="2" stroke-linejoin="round"/>
+    <circle cx="780" cy="124" r="3.5" fill="#56CCB2"/>
+    <text x="816" y="122" font-size="18" class="h">내비게이션</text>
+    <text x="816" y="142" font-size="12" class="s">Navigation · Nav2</text>
+    <g font-size="13" class="t">
+      <circle cx="764" cy="180" r="3" fill="#56CCB2"/><text x="776" y="185">Nav2 클릭 목표 <tspan class="s">— RViz 2D Goal Pose 방식</tspan></text>
+      <circle cx="764" cy="212" r="3" fill="#56CCB2"/><text x="776" y="217">초기 위치 도구 <tspan class="s">— /initialpose</tspan></text>
+      <circle cx="764" cy="244" r="3" fill="#56CCB2"/><text x="776" y="249">계획 경로 <tspan class="s">— /plan</tspan></text>
+      <circle cx="764" cy="276" r="3" fill="#56CCB2"/><text x="776" y="281">AMCL 공분산 <tspan class="s">— /amcl_pose</tspan></text>
+    </g>
+    <g transform="translate(1048 300)">
+      <path d="M0 40 C 24 40, 24 8, 56 8 S 88 -8, 96 -16" fill="none" stroke="#56CCB2" stroke-width="2" stroke-dasharray="3 5"/>
+      <path d="M96 -16 l-10 2 m10 -2 l-2 10" stroke="#56CCB2" stroke-width="2" stroke-linecap="round"/>
+      <circle cx="0" cy="40" r="4" fill="#56CCB2"/>
+    </g>
+  </g>
+
+  <!-- (c) 데이터 -->
+  <g>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.12;0.22;0.92;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="-16 0;-16 0;0 0;0 0;0 0" keyTimes="0;0.12;0.22;0.92;1" calcMode="spline" keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0 0 1 1" dur="8s" repeatCount="indefinite"/>
+    <rect class="card" x="32" y="400" width="432" height="288" rx="16"/>
+    <rect x="56" y="424" width="40" height="40" rx="10" fill="#F2994A" fill-opacity="0.15"/>
+    <polyline points="62,454 70,446 77,451 84,436 90,442" fill="none" stroke="#F2994A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="112" y="442" font-size="18" class="h">데이터</text>
+    <text x="112" y="462" font-size="12" class="s">Data · plots, topics, logs</text>
+    <g font-size="13" class="t">
+      <circle cx="60" cy="500" r="3" fill="#F2994A"/><text x="72" y="505">PlotJuggler 식 그래프</text>
+      <circle cx="60" cy="532" r="3" fill="#F2994A"/><text x="72" y="537">메시지 경로 · 변환</text>
+      <circle cx="60" cy="564" r="3" fill="#F2994A"/><text x="72" y="569">일시정지 · 확대</text>
+      <circle cx="60" cy="596" r="3" fill="#F2994A"/><text x="72" y="601">토픽 표 Hz·지연·KB/s</text>
+      <circle cx="60" cy="628" r="3" fill="#F2994A"/><text x="72" y="633">원문 메시지 트리 · 비교</text>
+      <circle cx="260" cy="500" r="3" fill="#F2994A"/><text x="272" y="505">/rosout 로그</text>
+      <circle cx="260" cy="532" r="3" fill="#F2994A"/><text x="272" y="537">진단 · diagnostics</text>
+      <circle cx="260" cy="564" r="3" fill="#F2994A"/><text x="272" y="569">노드 · 서비스 · 파라미터</text>
+    </g>
+    <g transform="translate(272 616)">
+      <rect width="168" height="48" rx="8" fill="#0B0D10" stroke="#FFFFFF" stroke-opacity="0.08"/>
+      <polyline points="8,34 24,26 40,30 56,14 72,22 88,10 104,24 120,18 136,28 160,12" fill="none" stroke="#F2994A" stroke-width="2" stroke-linejoin="round" stroke-dasharray="200" stroke-dashoffset="200">
+        <animate attributeName="stroke-dashoffset" values="200;0;0" keyTimes="0;0.5;1" dur="4s" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1" repeatCount="indefinite"/>
+      </polyline>
+    </g>
+  </g>
+
+  <!-- (d) 안전·시험 -->
+  <g>
+    <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.17;0.27;0.92;1" dur="8s" repeatCount="indefinite"/>
+    <animateTransform attributeName="transform" type="translate" values="16 0;16 0;0 0;0 0;0 0" keyTimes="0;0.17;0.27;0.92;1" calcMode="spline" keySplines="0 0 1 1;0.16 1 0.3 1;0 0 1 1;0 0 1 1" dur="8s" repeatCount="indefinite"/>
+    <rect class="card" x="736" y="400" width="432" height="288" rx="16"/>
+    <rect x="760" y="424" width="40" height="40" rx="10" fill="#BB86FC" fill-opacity="0.15"/>
+    <path d="M780 432 L792 437 V446 C 792 454, 786 458, 780 460 C 774 458, 768 454, 768 446 V437 Z M775 446 l4 4 l7 -8" fill="none" stroke="#BB86FC" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <text x="816" y="442" font-size="18" class="h">안전 · 시험</text>
+    <text x="816" y="462" font-size="12" class="s">Safety &amp; testing</text>
+    <g font-size="13" class="t">
+      <circle cx="764" cy="500" r="3" fill="#BB86FC"/><text x="776" y="505">워치독 (0.5 s)</text>
+      <circle cx="764" cy="532" r="3" fill="#BB86FC"/><text x="776" y="537">비상 정지</text>
+      <circle cx="764" cy="564" r="3" fill="#BB86FC"/><text x="776" y="569">조종 잠금</text>
+      <circle cx="764" cy="596" r="3" fill="#BB86FC"/><text x="776" y="601">끊김 감지</text>
+      <text x="776" y="619" font-size="11" class="s">반쯤 열린 연결까지</text>
+      <circle cx="964" cy="500" r="3" fill="#BB86FC"/><text x="976" y="505">모의 rosbridge 서버</text>
+      <circle cx="964" cy="532" r="3" fill="#BB86FC"/><text x="976" y="537">기록 재생</text>
+      <circle cx="964" cy="564" r="3" fill="#BB86FC"/><text x="976" y="569">시나리오 실행기</text>
+      <circle cx="964" cy="596" r="3" fill="#BB86FC"/><text x="976" y="601">자동 화면 캡처 시험</text>
+    </g>
+    <g transform="translate(1040 628)">
+      <rect width="104" height="36" rx="18" fill="#D93A40" fill-opacity="0.15" stroke="#D93A40" stroke-opacity="0.7"/>
+      <circle cx="20" cy="18" r="6" fill="#D93A40">
+        <animate attributeName="fill-opacity" values="1;0.4;1" dur="2.4s" repeatCount="indefinite"/>
+      </circle>
+      <text x="34" y="23" font-size="13" font-weight="700" fill="#E8EAED">E-STOP</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,31 @@
+{
+  "id": "watchdog_mock",
+  "title": "워치독 노드 없음 → watchdogOk false",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--no-watchdog"
+  ],
+  "dashboard_args": [],
+  "actions": [],
+  "duration_s": 9,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.watchdogOk",
+        "op": "==",
+        "value": false
+      }
+    ]
+  }
+}

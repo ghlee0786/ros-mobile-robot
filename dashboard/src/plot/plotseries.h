@@ -24,6 +24,7 @@ class PlotSeries : public QObject
     Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
     Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged)
     Q_PROPERTY(bool enabled READ enabled WRITE setEnabled NOTIFY enabledChanged)
+    Q_PROPERTY(bool steps MEMBER m_steps NOTIFY stepsChanged)   // 계단으로 그린다(목표 · 명령 값)
     Q_PROPERTY(QString timeSource READ timeSource WRITE setTimeSource NOTIFY timeSourceChanged)
     Q_PROPERTY(int throttleMs READ throttleMs WRITE setThrottleMs NOTIFY throttleMsChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
@@ -53,6 +54,7 @@ public:
     QString error() const { return m_error; }
     double lastValue() const { return data().isEmpty() ? qQNaN() : data().last().y(); }
     int count() const { return data().size(); }
+    bool steps() const { return m_steps; }
 
     QString topic() const { return m_mp.ok() ? m_mp.topic() : QString(); }
     double headerOffset() const { return m_stampOffset; } // header 기준일 때 stamp + offset = 그래프 시각
@@ -70,6 +72,7 @@ signals:
     void nameChanged();
     void colorChanged();
     void enabledChanged();
+    void stepsChanged();
     void timeSourceChanged();
     void throttleMsChanged();
     void errorChanged();
@@ -85,7 +88,7 @@ private:
     QPointer<RosBridge> m_bridge;
     QString m_path, m_transform, m_name, m_timeSource = QStringLiteral("receive");
     QColor m_color = Qt::white;
-    bool m_enabled = true;
+    bool m_enabled = true, m_steps = false;
     int m_throttleMs = -1;  // -1: 토픽별 센서 기본값(RosBridge 가 정한다)
     QString m_error, m_pathError, m_transformError;
     MessagePath m_mp;

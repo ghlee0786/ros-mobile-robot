@@ -1,0 +1,61 @@
+{
+  "id": "goal",
+  "title": "map→odom(1,2,30°)에서 sendGoal → map 프레임 /goal_pose 역변환 2 cm · 5° 안, /plan 수신",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--map-odom",
+    "1,2,30",
+    "--nav"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 6,
+      "call": "robot.sendGoal",
+      "args": [
+        0.5,
+        0.2,
+        0.3
+      ]
+    }
+  ],
+  "duration_s": 12,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.plan.count",
+        "op": ">",
+        "value": 0
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "goal_inverse",
+        "frame": "map",
+        "map_odom": [
+          1,
+          2,
+          30
+        ],
+        "odom": [
+          0.5,
+          0.2,
+          0.3
+        ],
+        "tol_m": 0.02,
+        "tol_deg": 5
+      }
+    ]
+  }
+}

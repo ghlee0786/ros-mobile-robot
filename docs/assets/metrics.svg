@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="584" viewBox="0 0 1200 584" font-family="Inter, 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" role="img" aria-label="Measured metrics">
+  <title>Measured metrics · 실측 수치 (2026-10-20)</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B0D10"/>
+      <stop offset="1" stop-color="#111318"/>
+    </linearGradient>
+    <style>
+      .card { fill: #171A20; stroke: #FFFFFF; stroke-opacity: 0.1; }
+      .track { fill: #FFFFFF; fill-opacity: 0.06; }
+      .h { fill: #E8EAED; font-weight: 700; }
+      .t { fill: #E8EAED; font-weight: 600; }
+      .s { fill: #A3A9B2; }
+      .num { fill: #E8EAED; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+      .unit { fill: #A3A9B2; font-weight: 500; letter-spacing: 0; }
+      .m { font-family: ui-monospace, 'Cascadia Mono', Consolas, Menlo, monospace; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="584" fill="url(#bg)"/>
+  <text x="32" y="44" font-size="22" class="h">Measured metrics <tspan class="s" font-weight="400">· 실측 수치</tspan></text>
+  <text x="1168" y="44" font-size="13" class="s" text-anchor="end">2026-10-20 실측 · measured</text>
+
+  <!-- 1. DDS 핑퐁 -->
+  <g transform="translate(32 80)">
+    <rect class="card" width="272" height="216" rx="14"/>
+    <text x="16" y="36" font-size="14" class="t">DDS 핑퐁 <tspan class="s" font-weight="400">· round trip</tspan></text>
+    <text x="16" y="56" font-size="11" class="s">robot-pingpong · CycloneDDS</text>
+    <text x="16" y="124" font-size="52" class="num">5.9<tspan class="unit" font-size="20"> ms</tspan></text>
+    <text x="16" y="152" font-size="12" class="s">평균 · 최대 10.9 ms</text>
+    <rect class="track" x="16" y="180" width="240" height="8" rx="4"/>
+    <rect x="16" y="180" width="40.5" height="8" rx="4" fill="#4C9AFF">
+      <animate attributeName="width" values="0;40.5;40.5;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+    </rect>
+    <rect x="90" y="176" width="2" height="16" rx="1" fill="#4C9AFF" fill-opacity="0.6"/>
+    <text x="256" y="206" font-size="10" class="s" text-anchor="end">0 — 35 ms</text>
+  </g>
+
+  <!-- 2. rosbridge 핑퐁 -->
+  <g transform="translate(320 80)">
+    <rect class="card" width="272" height="216" rx="14"/>
+    <text x="16" y="36" font-size="14" class="t">rosbridge 핑퐁 <tspan class="s" font-weight="400">· round trip</tspan></text>
+    <text x="16" y="56" font-size="11" class="s">WebSocket JSON :9090</text>
+    <text x="16" y="124" font-size="52" class="num">30.1<tspan class="unit" font-size="20"> ms</tspan></text>
+    <text x="16" y="152" font-size="12" class="s">평균 · 대시보드 경로</text>
+    <rect class="track" x="16" y="180" width="240" height="8" rx="4"/>
+    <rect x="16" y="180" width="206.4" height="8" rx="4" fill="#F2994A">
+      <animate attributeName="width" values="0;206.4;206.4;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+    </rect>
+    <text x="256" y="206" font-size="10" class="s" text-anchor="end">0 — 35 ms</text>
+  </g>
+
+  <!-- 3. 워치독 정지 -->
+  <g transform="translate(608 80)">
+    <rect class="card" width="272" height="216" rx="14"/>
+    <text x="16" y="36" font-size="14" class="t">워치독 정지 <tspan class="s" font-weight="400">· watchdog stop</tspan></text>
+    <text x="16" y="56" font-size="11" class="s">명령 끊김 → 0 발행까지</text>
+    <text x="16" y="124" font-size="52" class="num">0.45<tspan class="unit" font-size="20"> s</tspan></text>
+    <text x="16" y="152" font-size="12" class="s">rosbridge 클라이언트 강제 종료</text>
+    <text x="16" y="172" font-size="12" class="t">0.51 s <tspan class="s" font-weight="400">DDS 링크 끊김</tspan></text>
+    <rect class="track" x="16" y="186" width="240" height="4" rx="2"/>
+    <rect x="16" y="186" width="180" height="4" rx="2" fill="#2EA043">
+      <animate attributeName="width" values="0;180;180;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+    </rect>
+    <rect class="track" x="16" y="196" width="240" height="4" rx="2"/>
+    <rect x="16" y="196" width="204" height="4" rx="2" fill="#2EA043" fill-opacity="0.6">
+      <animate attributeName="width" values="0;204;204;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+
+  <!-- 4. 센서 주기 -->
+  <g transform="translate(896 80)">
+    <rect class="card" width="272" height="216" rx="14"/>
+    <text x="16" y="36" font-size="14" class="t">센서 주기 <tspan class="s" font-weight="400">· sensor rates</tspan></text>
+    <text x="16" y="56" font-size="11" class="s">로봇에서 발행되는 실제 주기</text>
+    <g font-size="12">
+      <text x="16" y="100" class="t m">/imu</text>
+      <rect class="track" x="72" y="92" width="112" height="8" rx="4"/>
+      <rect x="72" y="92" width="103.7" height="8" rx="4" fill="#F2C94C">
+        <animate attributeName="width" values="0;103.7;103.7;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+      </rect>
+      <text x="256" y="101" font-size="18" class="num" text-anchor="end">101.8<tspan class="unit" font-size="11"> Hz</tspan></text>
+      <text x="16" y="144" class="t m">/odom</text>
+      <rect class="track" x="72" y="136" width="112" height="8" rx="4"/>
+      <rect x="72" y="136" width="32.5" height="8" rx="4" fill="#56CCB2">
+        <animate attributeName="width" values="0;32.5;32.5;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+      </rect>
+      <text x="256" y="145" font-size="18" class="num" text-anchor="end">31.9<tspan class="unit" font-size="11"> Hz</tspan></text>
+      <text x="16" y="188" class="t m">/scan</text>
+      <rect class="track" x="72" y="180" width="112" height="8" rx="4"/>
+      <rect x="72" y="180" width="12" height="8" rx="4" fill="#E0457B">
+        <animate attributeName="width" values="0;12;12;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+      </rect>
+      <text x="256" y="189" font-size="18" class="num" text-anchor="end">11.8<tspan class="unit" font-size="11"> Hz</tspan></text>
+    </g>
+  </g>
+
+  <!-- 5. Nav2 활성화 -->
+  <g transform="translate(32 312)">
+    <rect class="card" width="272" height="216" rx="14"/>
+    <text x="16" y="36" font-size="14" class="t">Nav2 활성화 <tspan class="s" font-weight="400">· bring-up</tspan></text>
+    <text x="16" y="56" font-size="11" class="s">WSL · ROS 2 Jazzy</text>
+    <text x="16" y="124" font-size="52" class="num">16<tspan class="unit" font-size="20"> s</tspan></text>
+    <text x="16" y="152" font-size="12" class="s">launch → active</text>
+    <rect class="track" x="16" y="180" width="240" height="8" rx="4"/>
+    <rect x="16" y="180" width="128" height="8" rx="4" fill="#BB86FC">
+      <animate attributeName="width" values="0;128;128;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+    </rect>
+    <text x="256" y="206" font-size="10" class="s" text-anchor="end">0 — 30 s</text>
+  </g>
+
+  <!-- 6. 직진 보정 -->
+  <g transform="translate(320 312)">
+    <rect class="card" width="272" height="216" rx="14"/>
+    <text x="16" y="36" font-size="14" class="t">직진 보정 <tspan class="s" font-weight="400">· straight-line trim</tspan></text>
+    <text x="16" y="56" font-size="11" class="s">2 m 주행 옆 오차 (시뮬레이터)</text>
+    <text x="16" y="116" font-size="52" class="num"><tspan class="unit" font-size="28">≈</tspan>1<tspan class="unit" font-size="20"> cm</tspan></text>
+    <g font-size="11">
+      <text x="16" y="148" class="s">보정 전</text>
+      <rect class="track" x="72" y="140" width="184" height="8" rx="4"/>
+      <rect x="200.8" y="140" width="50.6" height="8" rx="4" fill="#D93A40">
+        <animate attributeName="width" values="0;50.6;50.6;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+      </rect>
+      <text x="200" y="166" class="s" font-size="10">28–39 cm</text>
+      <text x="16" y="186" class="s">보정 후</text>
+      <rect class="track" x="72" y="178" width="184" height="8" rx="4"/>
+      <rect x="72" y="178" width="6" height="8" rx="4" fill="#56CCB2">
+        <animate attributeName="width" values="0;6;6;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+      </rect>
+      <text x="16" y="206" class="s" font-size="10">시뮬레이터 좌우 바퀴 95% · 93%</text>
+    </g>
+  </g>
+
+  <!-- 7. 단위 시험 -->
+  <g transform="translate(608 312)">
+    <rect class="card" width="272" height="216" rx="14"/>
+    <text x="16" y="36" font-size="14" class="t">단위 시험 <tspan class="s" font-weight="400">· unit tests</tspan></text>
+    <text x="16" y="56" font-size="11" class="s">dashboard tests</text>
+    <text x="16" y="124" font-size="52" class="num"><tspan id="tests-count">16</tspan><tspan class="unit" font-size="20"> 통과</tspan></text>
+    <text x="16" y="152" font-size="12" class="s">all passing ✓</text>
+    <rect class="track" x="16" y="180" width="240" height="8" rx="4"/>
+    <rect x="16" y="180" width="240" height="8" rx="4" fill="#2EA043">
+      <animate attributeName="width" values="0;240;240;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+
+  <!-- 8. LiDAR 해상도 -->
+  <g transform="translate(896 312)">
+    <rect class="card" width="272" height="216" rx="14"/>
+    <text x="16" y="36" font-size="14" class="t">LiDAR 한 바퀴 <tspan class="s" font-weight="400">· rays per scan</tspan></text>
+    <text x="16" y="56" font-size="11" class="s">RPLIDAR A3 · /scan</text>
+    <text x="16" y="124" font-size="52" class="num">1800</text>
+    <text x="16" y="152" font-size="12" class="s">광선 / 회전 · 0.2° 간격</text>
+    <g transform="translate(216 104)">
+      <circle r="32" fill="none" stroke="#FFFFFF" stroke-opacity="0.08"/>
+      <circle r="32" fill="none" stroke="#E0457B" stroke-width="2" stroke-dasharray="2 4"/>
+      <path d="M0 0 L32 0 A32 32 0 0 0 27.7 -16 Z" fill="#E0457B" fill-opacity="0.35">
+        <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="4s" repeatCount="indefinite"/>
+      </path>
+      <circle r="4" fill="#E0457B"/>
+    </g>
+    <rect class="track" x="16" y="180" width="240" height="8" rx="4"/>
+    <rect x="16" y="180" width="240" height="8" rx="4" fill="#E0457B">
+      <animate attributeName="width" values="0;240;240;0" keyTimes="0;0.35;0.92;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1;0.4 0 1 1" dur="5s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+
+  <text x="32" y="564" font-size="12" class="s">막대는 각 카드의 척도 안에서의 상대 크기. 직진 보정만 시뮬레이터 값, 나머지는 실제 로봇·PC 측정.</text>
+</svg>
