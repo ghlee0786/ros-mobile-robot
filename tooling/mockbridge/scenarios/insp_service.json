@@ -1,0 +1,64 @@
+{
+  "id": "insp_service",
+  "title": "--no-respond /rosapi/nodes: 노드 탭이 5 s 뒤 '응답 없음' 을 보이고 경보를 올림",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--no-respond",
+    "/rosapi/nodes"
+  ],
+  "dashboard_args": [],
+  "duration_s": 9,
+  "actions": [
+    {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 0.5,
+      "set": "win.page",
+      "value": 1
+    },
+    {
+      "t": 0.6,
+      "set": "inspector.tab",
+      "value": "노드"
+    },
+    {
+      "t": 7.5,
+      "shot": "nodes.png"
+    }
+  ],
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "inspector.rosapiError",
+        "op": "contains",
+        "value": "응답 없음"
+      },
+      {
+        "path": "inspector.alertCount",
+        "op": ">=",
+        "value": 1
+      },
+      {
+        "path": "inspector.nodeCount",
+        "op": "==",
+        "value": 0
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "op": "call_service",
+        "service": "/rosapi/nodes",
+        "value": 1
+      }
+    ]
+  }
+}

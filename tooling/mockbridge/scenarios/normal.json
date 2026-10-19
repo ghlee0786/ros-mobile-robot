@@ -82,7 +82,7 @@
       {
         "rule": "count_ge",
         "op": "subscribe",
-        "topic": "/scan",
+        "topic": "/scan_compact",
         "value": 1
       },
       {

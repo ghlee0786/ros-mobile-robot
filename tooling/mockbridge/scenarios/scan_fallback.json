@@ -1,0 +1,83 @@
+{
+  "id": "scan_fallback",
+  "title": "--no-scan-compact(토픽 목록에 없음)면 LiDAR 는 /scan 을 구독 · 점 수 1488(scan_compact 와 같음)",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--freeze-pose",
+    "--scan-max",
+    "3",
+    "--self-hit",
+    "--no-scan-compact"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 6,
+      "shot": "scan.png"
+    }
+  ],
+  "duration_s": 10,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.scanTopic",
+        "op": "==",
+        "value": "/scan"
+      },
+      {
+        "path": "robot.scanCount",
+        "op": "==",
+        "value": 1488
+      },
+      {
+        "path": "robot.nearestRange",
+        "op": ">=",
+        "value": 0.3
+      },
+      {
+        "path": "robot.missingRequired",
+        "op": "==",
+        "value": []
+      },
+      {
+        "path": "robot.sensors.0.topic",
+        "op": "==",
+        "value": "/scan"
+      },
+      {
+        "path": "robot.recordTopics",
+        "op": "contains",
+        "value": "/scan"
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/scan",
+        "value": 1
+      },
+      {
+        "rule": "count_le",
+        "op": "subscribe",
+        "topic": "/scan_compact",
+        "value": 0
+      }
+    ]
+  }
+}

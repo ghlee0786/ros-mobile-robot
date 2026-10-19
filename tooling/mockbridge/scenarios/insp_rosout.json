@@ -1,0 +1,76 @@
+{
+  "id": "insp_rosout",
+  "title": "--rosout-burst 50: 로그 탭이 줄을 쌓고, 탭을 떠나면 /rosout 구독을 끔",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--rosout-burst",
+    "50"
+  ],
+  "dashboard_args": [],
+  "duration_s": 9,
+  "actions": [
+    {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 0.5,
+      "set": "win.page",
+      "value": 1
+    },
+    {
+      "t": 0.6,
+      "set": "inspector.tab",
+      "value": "로그"
+    },
+    {
+      "t": 6.5,
+      "shot": "log.png"
+    },
+    {
+      "t": 7,
+      "set": "inspector.tab",
+      "value": "토픽"
+    }
+  ],
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "inspector.logCount",
+        "op": ">=",
+        "value": 200
+      },
+      {
+        "path": "inspector.logShownCount",
+        "op": ">",
+        "value": 0
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/rosout",
+        "value": 1
+      },
+      {
+        "rule": "count_ge",
+        "op": "unsubscribe",
+        "topic": "/rosout",
+        "value": 1
+      },
+      {
+        "rule": "count_ge",
+        "dir": "tx",
+        "topic": "/rosout",
+        "value": 200
+      }
+    ]
+  }
+}

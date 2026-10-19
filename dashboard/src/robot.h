@@ -43,6 +43,8 @@ class Robot : public QObject
     Q_PROPERTY(double nearestRange READ nearestRange NOTIFY scanChanged)
     Q_PROPERTY(double nearestAngle READ nearestAngle NOTIFY scanChanged)
     Q_PROPERTY(double lidarHz READ lidarHz NOTIFY statusChanged)   // 헤드 회전수, /scan 이 끊기면 0
+    // LiDAR 센서가 실제로 구독한 토픽: 토픽 목록에 /scan_compact 가 있으면 그것, 없으면 /scan (정하기 전에는 "")
+    Q_PROPERTY(QString scanTopic READ scanTopic NOTIFY statusChanged)
     Q_PROPERTY(QList<QVector3D> trail READ trail NOTIFY trailChanged)
     Q_PROPERTY(QList<QVector3D> plan READ plan NOTIFY planChanged)
     Q_PROPERTY(int frameCount READ frameCount NOTIFY statusChanged)
@@ -116,6 +118,7 @@ public:
     double nearestRange() const { return m_nearR; }
     double nearestAngle() const { return m_nearA; }
     double lidarHz() const { return m_lidarHz; }
+    QString scanTopic() const { return m_scanTopic; }
     QList<QVector3D> trail() const { return m_trail; }
     QList<QVector3D> plan() const { return m_plan; }
     int frameCount() const { return m_frameCount; }
@@ -209,6 +212,7 @@ private:
     void onWheels(const QJsonObject &m, bool cmd);
     void onImu(const QJsonObject &m);
     void onScan(const QJsonObject &m);
+    void pickScanTopic();
     void onTf(const QJsonObject &m, bool isStatic);
     void onMap(const QJsonObject &m);
     void renderMap(double bridgeWorkerMs);
@@ -236,6 +240,8 @@ private:
     QList<QVector3D> m_scan;
     int m_scanCount = 0;
     double m_nearR = 0, m_nearA = 0, m_scanTime = 0, m_lidarHz = 0;
+    QString m_scanTopic;          // "" = 아직 정하지 않음(토픽 목록 기다림)
+    QElapsedTimer m_connClock;    // 이번 연결 뒤 경과(토픽 목록이 오지 않을 때 /scan 으로 정한다)
     QHash<QString, msgparse::Pose2D> m_mounts;   // /tf_static base_link → 센서 프레임
     QList<QVector3D> m_trail, m_plan, m_targetLine;
     QList<QPointF> m_straightTrack;

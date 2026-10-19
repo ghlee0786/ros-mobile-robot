@@ -43,6 +43,10 @@ constexpr int kMapBinaryThreshold = 65;
 // 파이의 initialpose_node 가 5 s 마다 /initialpose 에 (0,0,0) 을 내므로 대시보드는 따로 보내고,
 // PC 의 split_relay 가 이것을 Nav2 도메인의 /initialpose 로 넘긴다.
 constexpr char kInitialPoseTopic[] = "/dashboard/initialpose";
+// 파이 scan_compact_node: /scan 을 mm 정수(UInt16MultiArray)로 다시 낸다(rosbridge 송신량 약 1/4).
+// 토픽 목록에 있으면 LiDAR 센서는 /scan 대신 이것을 구독한다. throttle 하한은 /scan 과 같다(없음).
+constexpr char kScanCompact[] = "/scan_compact";
+constexpr char kScanCompactType[] = "std_msgs/UInt16MultiArray";
 
 } // namespace
 
@@ -53,9 +57,11 @@ Robot::Robot(QObject *parent) : QObject(parent)
     m_clock.start();
     connect(&m_bridge, &RosBridge::message, this, &Robot::onMessage);
     connect(&m_bridge, &RosBridge::bridgeError, this, &Robot::addEvent);
+    connect(&m_bridge, &RosBridge::topicListChanged, this, &Robot::pickScanTopic);
     connect(&m_bridge, &RosBridge::connectedChanged, this, [this] {
         armTeleop(false);   // 연결 · 재연결 · 끊김 직후에는 잠근다
         if (m_bridge.connected()) {
+            m_connClock.restart();
             m_everConnected = true;
             m_lastSendDropped = false;
             addEvent("연결됨 " + m_bridge.host());
@@ -192,7 +198,10 @@ void Robot::setSensor(const QString &key, bool on)
         if (key != d.key)
             continue;
         m_sensorOn[key] = on;
-        m_bridge.want(d.topic, d.type, "sensor", on, d.throttle);
+        if (key != "scan")
+            m_bridge.want(d.topic, d.type, "sensor", on, d.throttle);
+        else if (!m_scanTopic.isEmpty())   // 정하기 전이면 pickScanTopic 이 구독한다
+            m_bridge.want(m_scanTopic, m_scanTopic == kScanCompact ? kScanCompactType : d.type, "sensor", on, d.throttle);
         for (const auto &e : kExtra.value(key))
             m_bridge.want(e.first, e.second, "sensor", on);
         if (!on && key == "scan")
@@ -289,6 +298,8 @@ void Robot::onMessage(const QString &topic, const QJsonObject &msg)
         onImu(msg);
     else if (topic == "/scan")
         onScan(msg);
+    else if (topic == kScanCompact)
+        onScan(scanFromCompact(msg));
     else if (topic == "/tf" || topic == "/tf_static" || topic == "/map_odom")
         onTf(msg, topic == "/tf_static");
     else if (topic == "/map")
@@ -376,6 +387,32 @@ void Robot::onScan(const QJsonObject &m)
     m_nearA = s.nearestAngle;
     m_scanTime = s.scanTime;   // 한 바퀴 시간(s)
     m_scanDirty = true;
+}
+
+// 토픽 목록을 받기 전에는 LiDAR 를 구독하지 않는다 — /scan 을 잠깐이라도 구독하면 파이 rosbridge 가 큰 /scan 을
+// 보내기 시작한다. 목록이 연결 뒤 6 s(rosapi 응답 시한 5 s) 안에 오지 않으면 /scan 을 쓴다(updateStatus 가 부른다).
+void Robot::pickScanTopic()
+{
+    QString t;
+    if (m_bridge.topicListReceived())
+        t = m_bridge.topicTypes().contains(kScanCompact) ? kScanCompact : "/scan";
+    else if (m_scanTopic.isEmpty() && m_bridge.connected() && m_connClock.isValid() && m_connClock.elapsed() > 6000)
+        t = "/scan";
+    if (t.isEmpty() || t == m_scanTopic)
+        return;
+    const QString old = m_scanTopic;
+    m_scanTopic = t;
+    const bool on = m_sensorOn.value("scan").toBool();
+    if (!old.isEmpty())
+        m_bridge.want(old, {}, "sensor", false);
+    setSensor("scan", on);
+    // 기록은 받은 토픽 그대로 남긴다: 기록 목록의 LiDAR 토픽도 바꾼다.
+    const QString recorded = old.isEmpty() ? QStringLiteral("/scan") : old;
+    if (m_recordTopics.contains(recorded) && recorded != t) {
+        setRecordTopic(recorded, false);
+        setRecordTopic(t, true);
+    }
+    addEvent("LiDAR 토픽 " + t);
 }
 
 void Robot::onTf(const QJsonObject &m, bool isStatic)
@@ -525,11 +562,16 @@ void Robot::updateStatus()
     const auto types = m_bridge.topicTypes();
     const bool conn = m_bridge.connected();
 
+    if (m_scanTopic.isEmpty())
+        pickScanTopic();
+    const QString scanTopic = m_scanTopic.isEmpty() ? QStringLiteral("/scan") : m_scanTopic;
+
     m_sensorRows.clear();
     QList<QVariantMap> sensorModelRows;
     for (const SensorDef &d : kSensors) {
         const bool on = m_sensorOn.value(d.key).toBool();
-        const RosBridge::Stat s = m_bridge.stat(d.topic);
+        const QString topic = QString(d.key) == "scan" ? scanTopic : QString(d.topic);
+        const RosBridge::Stat s = m_bridge.stat(topic);
         const bool fresh = conn && s.age >= 0 && s.age < qMax(1.0, s.hz > 0 ? 3.0 / s.hz : 1.0);
         QString state, detail;
         if (!on) {
@@ -544,22 +586,22 @@ void Robot::updateStatus()
         } else {
             state = "데이터 없음";
             detail = !conn ? "연결 안 됨"
-                     : (m_bridge.topicListReceived() && !types.contains(d.topic)) ? "발행자 없음"
+                     : (m_bridge.topicListReceived() && !types.contains(topic)) ? "발행자 없음"
                      : s.age < 0 ? "1 s 동안 메시지 없음" : QString("마지막 수신 %1 s 전").arg(s.age, 0, 'f', 1);
         }
         if (QString(d.key) == "scan")   // LiDAR 헤드는 /scan 이 들어오는 동안 실제 회전수로 돈다
             m_lidarHz = on && fresh ? (m_scanTime > 0 ? 1 / m_scanTime : s.hz) : 0;
-        m_sensorRows.append(QVariantMap{{"key", d.key}, {"label", d.label}, {"topic", d.topic}, {"on", on},
+        m_sensorRows.append(QVariantMap{{"key", d.key}, {"label", d.label}, {"topic", topic}, {"on", on},
                                         {"state", state}, {"detail", detail}});
-        sensorModelRows.append(QVariantMap{{"key", d.key}, {"label", d.label}, {"topic", d.topic}, {"on", on},
+        sensorModelRows.append(QVariantMap{{"key", d.key}, {"label", d.label}, {"topic", topic}, {"on", on},
                                            {"state", state}, {"hz", std::round(s.hz * 10) / 10},
                                            {"age", std::round(s.age * 10) / 10}});
     }
     m_sensorModel.setRows(sensorModelRows);
 
     m_rates.clear();
-    for (const auto &[topic, label] : {std::pair{"/odom", "/odom"}, {"/scan", "/scan"}, {"/imu/data_raw", "/imu"},
-                                       {"/wheel_states", "/wheel_states"}}) {
+    for (const auto &[topic, label] : {std::pair<QString, QString>{"/odom", "/odom"}, {scanTopic, scanTopic},
+                                       {"/imu/data_raw", "/imu"}, {"/wheel_states", "/wheel_states"}}) {
         const RosBridge::Stat s = m_bridge.stat(topic);
         m_rates.append(QString("%1 %2").arg(label, s.hz > 0 && conn ? QString::number(s.hz, 'f', 0) + " Hz" : "—"));
     }
@@ -601,9 +643,11 @@ void Robot::updateStatus()
     m_topicModel.setRows(topicModelRows);
 
     m_missing.clear();
-    for (const char *t : kRequired)
+    for (const char *r : kRequired) {
+        const QString t = QString(r) == "/scan" ? scanTopic : QString(r);
         if (m_bridge.stat(t).age < 0)
             m_missing.append(t);
+    }
 
     // 하트비트 센서를 꺼도 rosbridge 에서 3 s 넘게 아무것도 오지 않으면 링크가 끊긴 것으로 본다.
     const RosBridge::Stat beat = m_bridge.stat("/link/heartbeat");

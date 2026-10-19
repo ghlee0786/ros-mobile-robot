@@ -18,6 +18,13 @@ FocusScope {
     property var held: ({})
     property bool lockHint: false
     readonly property bool wheelPaused: wheelGraph.paused   // 시험 상태(state.json dash)용
+    // 시험 상태용: 바퀴 그래프 시간 창 · X 폭, 멈춘 뒤 IMU 그래프보다 X 끝이 뒤처진 s, 사용자 그래프 계열 수 · 마지막 계열 경로 · 점 수
+    readonly property real wheelWindowSec: wheelGraph.windowSec
+    readonly property real wheelSpanSec: wheelGraph.feeder.xMax - wheelGraph.feeder.xMin
+    readonly property real wheelLagSec: imuGraph.feeder.xMax - wheelGraph.feeder.xMax
+    readonly property int userSeriesCount: userGraphPanel.objs.length
+    readonly property string userLastPath: userGraphPanel.objs.length ? userGraphPanel.objs[userGraphPanel.objs.length - 1].basePath : ""
+    readonly property int userLastCount: userGraphPanel.objs.length ? userGraphPanel.objs[userGraphPanel.objs.length - 1].count : 0
     function showLockHint() { if (!robot.teleopArmed) { lockHint = true; lockHintTimer.restart() } }
     Timer { id: lockHintTimer; interval: 3000; onTriggered: page.lockHint = false }
     // 입력칸에 포커스가 있으면 입력칸이 처리하지 않은 키(↑↓ 등)라도 조종으로 쓰지 않는다
@@ -241,6 +248,7 @@ FocusScope {
                             color: Theme.text2; font.family: page.mono; font.pixelSize: Theme.fsSmall
                         }
                         TimeGraph {
+                            id: imuGraph
                             objectName: "imuGraph"
                             Layout.fillWidth: true
                             graphHeight: 110
@@ -262,6 +270,8 @@ FocusScope {
                     }
 
                     UserGraphPanel {
+                        id: userGraphPanel
+                        objectName: "userGraphPanel"
                         Layout.fillWidth: true
                         robot: page.robot
                         link: graphLink
@@ -302,7 +312,7 @@ FocusScope {
                                 Text { text: "LiDAR"; color: Theme.text1; font.pixelSize: Theme.fsTitle; font.weight: Font.DemiBold }
                                 Text {
                                     color: Theme.text1; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
-                                    text: "점 <b>" + robot.scanCount.toLocaleString(Qt.locale("en_US"), 'f', 0) + "</b> · " + (robot.rates.length > 1 ? robot.rates[1].replace("/scan ", "") : "")
+                                    text: "점 <b>" + robot.scanCount.toLocaleString(Qt.locale("en_US"), 'f', 0) + "</b> · " + (robot.rates.length > 1 ? robot.rates[1].replace(/^\S+ /, "") : "")
                                 }
                                 Text {
                                     color: Theme.text1; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
