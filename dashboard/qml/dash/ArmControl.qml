@@ -2,14 +2,14 @@ import QtQuick
 import QtQuick.Controls.impl
 import RobotDashboard
 
-// 조종 잠금: 자물쇠 칩 + '잠금 해제' 버튼(0.6 s 길게 누르기, 또는 Ctrl+Enter). 켜져 있으면 버튼은 한 번 눌러 잠근다.
-Row {
+// 조종 잠금: 자물쇠 칩 위 · '잠금 해제' 버튼 아래(0.6 s 길게 누르기, 또는 Ctrl+Enter). 켜져 있으면 버튼은 한 번 눌러 잠근다.
+// 조종 바가 좁은 창(1280)에도 들어가게 위아래로 쌓는다.
+Column {
     id: arm
     required property Robot robot
     spacing: Theme.sp2
 
     Row {
-        anchors.verticalCenter: parent.verticalCenter
         spacing: Theme.sp1
         IconImage {
             anchors.verticalCenter: parent.verticalCenter
@@ -27,7 +27,6 @@ Row {
     Btn {
         id: btn
         objectName: "armButton"
-        anchors.verticalCenter: parent.verticalCenter
         size: "sm"
         kind: arm.robot.teleopArmed ? "normal" : "accent"
         icon.source: arm.robot.teleopArmed ? "qrc:/icons/lock.svg" : "qrc:/icons/unlock.svg"

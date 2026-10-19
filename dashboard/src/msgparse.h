@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QList>
+#include <QPointF>
 #include <QString>
 #include <QVector3D>
 
@@ -42,6 +43,19 @@ Scan parseScan(const QJsonObject &m, const Pose2D &mount = {}, double selfHide =
 // data 가 w*h 보다 짧으면 빈 이미지를 돌려준다.
 QImage occupancyToImage(const QJsonArray &data, int w, int h, const QString &scheme = QStringLiteral("map"),
                         int binaryThreshold = -1);
+
+// OccupancyGrid 를 그리는 판(지도 · 코스트맵 공통): 중심 · yaw(origin 의 yaw) · 크기 m.
+// 셀 (i, j) 의 중심 = origin + R(yaw)·((i + 0.5)·res, (j + 0.5)·res) 이 판 위 같은 자리에 오도록 계산한다.
+struct GridPlane {
+    Pose2D center;
+    double width = 0, height = 0;
+};
+// info = nav_msgs/MapMetaData (width · height · resolution · origin)
+GridPlane gridPlane(const QJsonObject &info);
+// 셀 (i, j) 중심의 부모 프레임(헤더 frame_id) 좌표
+Pose2D gridCellCenter(const QJsonObject &info, int i, int j);
+// 부모 프레임 점 → 판 텍스처 좌표(u = 이미지 왼쪽→오른쪽, v = 이미지 위→아래, 0..1)
+QPointF planeUv(const GridPlane &plane, double x, double y);
 
 // "pkg/msg/Type" → "pkg/Type"
 QString shortType(QString t);

@@ -26,7 +26,7 @@ Rectangle {
 
     radius: Theme.rLg
     color: Theme.hudFill
-    width: 280
+    width: root.scene.layerPanelOpen ? 280 : 120
     height: Math.min(maxHeight, body.implicitHeight + 2 * Theme.sp2)
     clip: true
 

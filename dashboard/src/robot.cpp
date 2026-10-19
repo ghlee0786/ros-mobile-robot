@@ -433,15 +433,10 @@ void Robot::renderMap(double bridgeWorkerMs)
         t.start();
         Result r;
         const QJsonObject info = m["info"].toObject();
-        const int w = info["width"].toInt(), h = info["height"].toInt();
-        const double res = info["resolution"].toDouble();
-        r.img = occupancyToImage(m["data"].toArray(), w, h, scheme, threshold);
-        const QJsonObject o = info["origin"].toObject();
-        const double oyaw = yawOf(o["orientation"].toObject());
-        // 판 중심 = origin 에서 (폭/2, 높이/2) 만큼(origin 회전 적용)
-        r.center = transform2D({o["position"].toObject()["x"].toDouble(), o["position"].toObject()["y"].toDouble(), oyaw},
-                               {w * res / 2, h * res / 2, 0});
-        r.size = QSizeF(w * res, h * res);
+        r.img = occupancyToImage(m["data"].toArray(), info["width"].toInt(), info["height"].toInt(), scheme, threshold);
+        const GridPlane plane = gridPlane(info);
+        r.center = plane.center;
+        r.size = QSizeF(plane.width, plane.height);
         r.ms = t.nsecsElapsed() / 1e6;
         return r;
     });

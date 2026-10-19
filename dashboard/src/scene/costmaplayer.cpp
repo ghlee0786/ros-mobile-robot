@@ -3,7 +3,6 @@
 #include "scenemath.h"
 
 #include <QJsonArray>
-#include <cmath>
 
 namespace {
 const char *kFootprint = "/local_costmap/published_footprint";
@@ -65,20 +64,16 @@ void CostmapLayer::handle(const QString &topic, const QJsonObject &m)
         return;
     const QJsonObject info = m["info"].toObject();
     const int w = info["width"].toInt(), h = info["height"].toInt();
-    const double res = info["resolution"].toDouble();
     const QJsonArray data = m["data"].toArray();
     if (w <= 0 || h <= 0 || data.size() < qsizetype(w) * h)
         return;
-    const QJsonObject o = info["origin"].toObject();
-    double yaw = scene::yawOf(o["orientation"].toObject());
-    const double hw = w * res / 2, hh = h * res / 2;
-    double x = o["position"].toObject()["x"].toDouble() + std::cos(yaw) * hw - std::sin(yaw) * hh;
-    double y = o["position"].toObject()["y"].toDouble() + std::sin(yaw) * hw + std::cos(yaw) * hh;
+    const msgparse::GridPlane plane = msgparse::gridPlane(info);   // 지도 판과 같은 계산
+    double x = plane.center.x, y = plane.center.y, yaw = plane.center.yaw;
     toOdom(m["header"].toObject()["frame_id"].toString(), x, y, yaw);
     m_image = toImage(w, h, data);
     m_center = QVector3D(float(x), float(y), kZ);
     m_yaw = qRadiansToDegrees(yaw);
-    m_size = QSizeF(w * res, h * res);
+    m_size = QSizeF(plane.width, plane.height);
     setReceived(true);
     emit mapChanged();
 }

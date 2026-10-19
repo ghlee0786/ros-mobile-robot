@@ -8,12 +8,13 @@ Item {
     id: joy
     required property Robot robot
     property real size: 88
+    property bool showLabel: true   // 좁은 창에서는 오른쪽 글자를 숨긴다
     readonly property bool live: robot.mode === "키보드 조종"
     property real lin: 0
     property real ang: 0
     signal blocked()   // 잠긴 채로 눌렀다
 
-    implicitWidth: size + label.implicitWidth + Theme.sp2
+    implicitWidth: size + (showLabel ? label.implicitWidth + Theme.sp2 : 0)
     implicitHeight: size
     enabled: live
     opacity: live ? (robot.teleopArmed ? 1 : 0.6) : Theme.opDisabled
@@ -65,6 +66,7 @@ Item {
     }
     Column {
         id: label
+        visible: joy.showLabel
         anchors.left: pad.right
         anchors.leftMargin: Theme.sp2
         anchors.verticalCenter: pad.verticalCenter
