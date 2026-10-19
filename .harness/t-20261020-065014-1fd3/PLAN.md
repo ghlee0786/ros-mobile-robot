@@ -32,6 +32,10 @@ tooling/mockbridge/scenarios/safety_*.json)을 남긴다. 검사: `checks\integr
 - [x] checks\integration.cmd 통과: ctest 18/18, pytest 51 passed, 시나리오 합격 31 · 건너뜀 2(파이 필요)
   (첫 회는 tst_robot reconnectClearsLinkLostQuickly 가 재연결이 3 s 안에 될 때 전제가 깨져 실패 → 끊기 전 하트비트 나이 > 3.2 s 를 기다리게 고침)
 
+- [x] 하네스 검사에서 safety_halfopen_estop 불합격: 대시보드 연결이 1.24 s 늦어 비상 정지가 반쯤 열린 지 0.26 s 만에
+      눌림(수신 공백 1 s 미만이라 경고 조건 아님). 비상 정지를 t=8 로 옮겨 서버 기준 6~8 s(공백 > 1 s 또는 이미 끊김 — 둘 다 경고해야 함),
+      trace 창을 6..10.5 s 로. 구현은 그대로.
+
 ## 남은 일 / 메모
 - tst_rosbridge 의 타이밍 시험(reconnectResends · rateAndBandwidth · halfOpenReconnects)이 부하 때 가끔 실패했다(다른 작업 빌드 동시 진행).
   이 작업이 바꾼 것은 stamp 가 있을 때의 Hz 뿐이고, 실패한 시험은 stamp 없는 토픽 · 재연결 타이머라 관련이 없다.

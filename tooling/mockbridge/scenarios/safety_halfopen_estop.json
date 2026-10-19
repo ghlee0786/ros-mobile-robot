@@ -10,7 +10,7 @@
     {"t": 1, "call": "robot.armTeleop", "args": [true]},
     {"t": 1.5, "call": "robot.straight", "args": [2.0]},
     {"t": 3, "wait": "robot.straightRunning", "timeout_s": 3},
-    {"t": 6.5, "call": "robot.estop", "args": []},
+    {"t": 8, "call": "robot.estop", "args": []},
     {"t": 12, "wait": "bridge.connected", "timeout_s": 15},
     {"t": 16, "shot": "after.png"}
   ],
@@ -24,7 +24,7 @@
       {"path": "robot.v", "op": "abs<=", "value": 0.005}
     ],
     "trace": [
-      {"rule": "was_true_between", "path": "robot.lastSendDropped", "op": "==", "value": true, "from_s": 6, "to_s": 9},
+      {"rule": "was_true_between", "path": "robot.lastSendDropped", "op": "==", "value": true, "from_s": 6, "to_s": 10.5},
       {"rule": "final_eq", "path": "robot.straightRunning", "value": false}
     ],
     "server_log": [
