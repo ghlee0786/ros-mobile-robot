@@ -1,0 +1,28 @@
+{
+  "id": "bad_json",
+  "title": "깨진 JSON · 필드 누락 5% 에도 죽지 않음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--bad-json",
+    "0.05"
+  ],
+  "dashboard_args": [],
+  "actions": [],
+  "duration_s": 20,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "exit_code": 0,
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      }
+    ]
+  }
+}

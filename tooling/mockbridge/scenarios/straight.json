@@ -1,0 +1,60 @@
+{
+  "id": "straight",
+  "title": "robot.straight(1.0) → started·running·finished 순서와 straightResult",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 3,
+      "call": "robot.straight",
+      "args": [
+        1.0
+      ]
+    }
+  ],
+  "duration_s": 25,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.straightRunning",
+        "op": "==",
+        "value": false
+      },
+      {
+        "path": "robot.straightResult.reason",
+        "op": "==",
+        "value": "reached"
+      },
+      {
+        "path": "robot.straightResult.along",
+        "op": ">",
+        "value": 0.95
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "dir": "tx",
+        "topic": "/straight_drive/status",
+        "value": 3
+      },
+      {
+        "rule": "count_ge",
+        "topic": "/straight_drive/goal",
+        "value": 1
+      }
+    ]
+  }
+}
