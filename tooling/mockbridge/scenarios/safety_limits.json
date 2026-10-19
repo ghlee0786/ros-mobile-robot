@@ -1,0 +1,34 @@
+{
+  "id": "safety_limits",
+  "title": "B8 · B9: drive 의 NaN · 무한대는 0, straight 는 ±2 m 를 넘거나 숫자가 아니면 보내지 않음(1.5 m 는 나감)",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": [],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 10},
+    {"t": 1, "call": "robot.armTeleop", "args": [true]},
+    {"t": 1.5, "call": "robot.drive", "args": ["nan", 0]},
+    {"t": 2.5, "call": "robot.drive", "args": [0, "nan"]},
+    {"t": 3.5, "call": "robot.drive", "args": ["inf", "-inf"]},
+    {"t": 4.5, "call": "robot.drive", "args": [0, 0]},
+    {"t": 5, "call": "robot.straight", "args": [100]},
+    {"t": 5.3, "call": "robot.straight", "args": [-50]},
+    {"t": 5.6, "call": "robot.straight", "args": ["nan"]},
+    {"t": 5.9, "call": "robot.straight", "args": ["inf"]},
+    {"t": 6.5, "call": "robot.straight", "args": [1.5]},
+    {"t": 8, "call": "robot.estop", "args": []}
+  ],
+  "duration_s": 10,
+  "expect": {
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [{"path": "bridge.connected", "op": "==", "value": true}],
+    "server_log": [
+      {"rule": "max_abs", "topic": "/teleop/cmd_vel", "field": "linear.x", "value": 0},
+      {"rule": "max_abs", "topic": "/teleop/cmd_vel", "field": "angular.z", "value": 0},
+      {"rule": "count_ge", "topic": "/teleop/cmd_vel", "value": 40},
+      {"rule": "count_le", "topic": "/straight_drive/goal", "value": 1},
+      {"rule": "count_ge", "topic": "/straight_drive/goal", "where": {"x": 1.5}, "value": 1}
+    ]
+  }
+}

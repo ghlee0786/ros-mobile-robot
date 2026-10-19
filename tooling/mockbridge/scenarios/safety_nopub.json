@@ -1,0 +1,29 @@
+{
+  "id": "safety_nopub",
+  "title": "B10: --no-publish 에서 정지 모드 · 자율주행 · 비상 정지 · 목표 · 직진이 advertise · publish · cancel_goal 을 하나도 보내지 않음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": ["--no-publish"],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 10},
+    {"t": 1.5, "call": "robot.armTeleop", "args": [true]},
+    {"t": 2, "set": "robot.mode", "value": "정지"},
+    {"t": 3, "set": "robot.mode", "value": "자율주행"},
+    {"t": 3.5, "set": "robot.mode", "value": "키보드 조종"},
+    {"t": 4, "call": "robot.estop", "args": []},
+    {"t": 5, "call": "robot.sendGoal", "args": [1.0, 0.0, 0.0]},
+    {"t": 6, "call": "robot.straight", "args": [1.0]}
+  ],
+  "duration_s": 9,
+  "expect": {
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [{"path": "bridge.connected", "op": "==", "value": true}],
+    "server_log": [
+      {"rule": "count_ge", "op": "subscribe", "topic": "/odom", "value": 1},
+      {"rule": "count_le", "op": "advertise", "value": 0},
+      {"rule": "count_le", "op": "publish", "value": 0},
+      {"rule": "count_le", "op": "call_service", "service": "/navigate_to_pose/_action/cancel_goal", "value": 0}
+    ]
+  }
+}

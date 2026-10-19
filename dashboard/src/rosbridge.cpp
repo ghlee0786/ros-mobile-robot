@@ -319,10 +319,10 @@ void RosBridge::dispatch(const QJsonObject &o, qint64 bytes, double workerMs)
         const qint64 now = m_mono.elapsed();
         t.last = now;
         t.total += bytes;
-        t.arrivals.append({now, bytes});
-        while (!t.arrivals.isEmpty() && t.arrivals.first().first < now - 2000)
-            t.arrivals.removeFirst();
         const QJsonObject stamp = msg["header"].toObject()["stamp"].toObject();
+        t.arrivals.append({now, bytes, stamp.isEmpty() ? qQNaN() : stamp["sec"].toDouble() * 1000.0 + stamp["nanosec"].toDouble() / 1e6});
+        while (!t.arrivals.isEmpty() && t.arrivals.first().t < now - 2000)
+            t.arrivals.removeFirst();
         if (!stamp.isEmpty()) {   // 지연은 벽시계끼리 비교한다(파이 시계와 어긋나면 clockSkew)
             t.latency = QDateTime::currentMSecsSinceEpoch()
                         - (stamp["sec"].toDouble() * 1000.0 + stamp["nanosec"].toDouble() / 1e6);
@@ -372,13 +372,16 @@ RosBridge::Stat RosBridge::stat(const QString &topic)
         return s;
     const qint64 now = m_mono.elapsed();
     auto &a = it->arrivals;
-    while (!a.isEmpty() && a.first().first < now - 2000)
+    while (!a.isEmpty() && a.first().t < now - 2000)
         a.removeFirst();
     s.recent = int(a.size());
-    if (a.size() >= 2)
-        s.hz = (a.size() - 1) * 1000.0 / qMax<qint64>(1, a.last().first - a.first().first);
+    if (a.size() >= 2) {
+        // header.stamp 가 있으면 그 간격으로 센다 — GUI 가 멈춘 뒤 몰려 받은 메시지로 Hz 가 부풀지 않게
+        const double span = a.last().stampMs - a.first().stampMs;
+        s.hz = (a.size() - 1) * 1000.0 / (span > 0 ? span : double(qMax<qint64>(1, a.last().t - a.first().t)));
+    }
     for (const auto &e : a)
-        s.bytesPerSec += e.second / 2.0;
+        s.bytesPerSec += e.bytes / 2.0;
     s.totalBytes = it->total;
     s.age = it->last ? (now - it->last) / 1000.0 : -1;
     s.latencyMs = it->latency;

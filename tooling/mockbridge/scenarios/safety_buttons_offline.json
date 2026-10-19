@@ -1,0 +1,21 @@
+{
+  "id": "safety_buttons_offline",
+  "title": "B42: 처음부터 연결이 없으면 1 m 직진 · 후진 · 기록 시작 버튼이 비활성",
+  "needs_pi": false,
+  "needs_human": false,
+  "server": false,
+  "dashboard_args": [],
+  "actions": [
+    {"t": 3, "set": "win.page", "value": 0},
+    {"t": 4, "shot": "offline.png"}
+  ],
+  "duration_s": 6,
+  "expect": {
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [
+      {"path": "bridge.connected", "op": "==", "value": false},
+      {"path": "dash.canStraight", "op": "==", "value": false},
+      {"path": "dash.canRecord", "op": "==", "value": false}
+    ]
+  }
+}

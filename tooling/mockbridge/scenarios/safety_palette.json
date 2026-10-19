@@ -1,0 +1,34 @@
+{
+  "id": "safety_palette",
+  "title": "B3: 팔레트의 1 m 직진은 버튼과 같은 조건 — 직진 중 · 비상 정지 뒤에는 실행되지 않음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": [],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 10},
+    {"t": 1.5, "call": "robot.armTeleop", "args": [true]},
+    {"t": 2, "call": "palette.open", "args": []},
+    {"t": 2.3, "set": "paletteField.text", "value": "1 m 직진"},
+    {"t": 2.6, "call": "palette.runCurrent", "args": []},
+    {"t": 3, "wait": "robot.straightRunning", "timeout_s": 3},
+    {"t": 4, "call": "palette.open", "args": []},
+    {"t": 4.3, "set": "paletteField.text", "value": "1 m 직진"},
+    {"t": 4.6, "call": "palette.runCurrent", "args": []},
+    {"t": 4.9, "call": "palette.close", "args": []},
+    {"t": 6, "call": "robot.estop", "args": []},
+    {"t": 7, "call": "palette.open", "args": []},
+    {"t": 7.3, "set": "paletteField.text", "value": "1 m 직진"},
+    {"t": 7.6, "call": "palette.runCurrent", "args": []},
+    {"t": 7.9, "call": "palette.close", "args": []}
+  ],
+  "duration_s": 10,
+  "expect": {
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [{"path": "bridge.connected", "op": "==", "value": true}],
+    "server_log": [
+      {"rule": "count_ge", "topic": "/straight_drive/goal", "value": 1},
+      {"rule": "count_le", "topic": "/straight_drive/goal", "value": 1}
+    ]
+  }
+}

@@ -222,8 +222,11 @@ private:
     void updateStatus();
     void addEvent(const QString &text);
     void sendTwist(double v, double w);
+    void sendStop();
     void noteDropped();
     void cancelGoal();
+    bool linkDown();
+    QString moveBlocked();
     void record(const QString &topic, const QJsonObject &msg);
     void stopRecording();
 
@@ -244,6 +247,7 @@ private:
     QElapsedTimer m_connClock;    // 이번 연결 뒤 경과(토픽 목록이 오지 않을 때 /scan 으로 정한다)
     QHash<QString, msgparse::Pose2D> m_mounts;   // /tf_static base_link → 센서 프레임
     QList<QVector3D> m_trail, m_plan, m_targetLine;
+    QJsonObject m_mapPlan;               // map 프레임 /plan 원문 — map→odom 이 바뀌면 다시 투영한다
     QList<QPointF> m_straightTrack;
     QSet<QString> m_frames;
     int m_frameCount = 0;
@@ -262,6 +266,7 @@ private:
 
     bool m_everConnected = false, m_linkLost = false, m_watchdogOk = false, m_probed = false;
     bool m_lastSendDropped = false;
+    QElapsedTimer m_connClock;   // 이번 연결 뒤 경과
     int m_statusTick = 0;
     QVariantList m_sensorRows, m_rates, m_topicRows;
     TopicModel m_topicModel;
