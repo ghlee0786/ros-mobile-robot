@@ -29,5 +29,9 @@ B6 B16 B17 B18 B19 B20 B25 B32 B33 B36 B38 B39 B40 B49 를 고치고, 결함마�
 - 대시보드 기록 외에 옛 record 형식은 meta.topics 가 {이름: 형식} dict 인 것도 있다(pi_idle_120s.jsonl).
 - 탐색 때 exe(04:01)는 testhooks 의 wall 기록 이전 빌드였다. 지금 소스에는 trace·actions_done 에 wall 이 있다.
 
+- 전체 검사에서 `two_clients`(17.90 Hz < 18)·`flood`(8.98 Hz < 9)의 /teleop/cmd_vel 빈도가 한 번씩 기준을 살짝 밑돌았다.
+  같은 시각 다른 작업트리 대시보드 5개가 돌고 있었고, 서버 로그상 두 대시보드가 동시에 약 300 ms 멈췄다(기계 부하).
+  따로 돌리면 둘 다 매번 합격(각 2~3회). 이 작업의 변경(점검 화면 QML, 재생 throttle)은 이 경로와 무관하다.
+
 ## 남은 일
 - 없음(검사 통과 확인 뒤 끝).
