@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" font-family="Inter, 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" role="img" aria-label="Roadmap">
+  <title>Roadmap · 로드맵</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B0D10"/>
+      <stop offset="1" stop-color="#111318"/>
+    </linearGradient>
+    <path id="done" d="M96 144 H1088 A90 90 0 0 1 1178 234"/>
+    <style>
+      .h { fill: #E8EAED; font-weight: 700; }
+      .t { fill: #E8EAED; }
+      .s { fill: #A3A9B2; }
+      .k { font-size: 12px; font-weight: 700; letter-spacing: 1px; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="440" fill="url(#bg)"/>
+  <text x="32" y="44" font-size="22" class="h">Roadmap <tspan class="s" font-weight="400">· 로드맵</tspan></text>
+  <g font-size="12" class="s" transform="translate(872 40)">
+    <circle cx="6" cy="0" r="6" fill="#2EA043"/><text x="18" y="4">완료 · done</text>
+    <circle cx="112" cy="0" r="6" fill="#D29922"/><text x="124" y="4">진행 · now</text>
+    <circle cx="210" cy="0" r="5" fill="none" stroke="#2F6FE4" stroke-width="2" stroke-dasharray="2 2"/><text x="222" y="4">다음 · next</text>
+  </g>
+  <text x="96" y="104" class="k" fill="#2EA043">완료 · DONE</text>
+  <text x="120" y="296" class="k" fill="#2F6FE4">다음 · NEXT</text>
+
+  <!-- 완료 구간: 실선, 그려지는 애니메이션 -->
+  <use href="#done" fill="none" stroke="#2EA043" stroke-opacity="0.25" stroke-width="4"/>
+  <path d="M96 144 H1088 A90 90 0 0 1 1178 234" fill="none" stroke="#2EA043" stroke-width="4" stroke-linecap="round" stroke-dasharray="1134" stroke-dashoffset="0">
+    <animate attributeName="stroke-dashoffset" values="1134;0;0" keyTimes="0;0.55;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1" dur="6s" repeatCount="indefinite"/>
+  </path>
+  <!-- 다음 구간: 점선 -->
+  <path d="M1178 234 A90 90 0 0 1 1088 324 H120" fill="none" stroke="#2F6FE4" stroke-opacity="0.6" stroke-width="3" stroke-dasharray="6 8">
+    <animate attributeName="stroke-dashoffset" from="0" to="-28" dur="1.5s" repeatCount="indefinite"/>
+  </path>
+
+  <!-- 완료 마디 -->
+  <g>
+    <g transform="translate(96 144)"><circle r="13" fill="#2EA043"/><path d="M-5 0l3.5 3.5L5.5 -4" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g transform="translate(232 144)"><circle r="13" fill="#2EA043"/><path d="M-5 0l3.5 3.5L5.5 -4" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g transform="translate(368 144)"><circle r="13" fill="#2EA043"/><path d="M-5 0l3.5 3.5L5.5 -4" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g transform="translate(504 144)"><circle r="13" fill="#2EA043"/><path d="M-5 0l3.5 3.5L5.5 -4" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g transform="translate(640 144)"><circle r="13" fill="#2EA043"/><path d="M-5 0l3.5 3.5L5.5 -4" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g transform="translate(776 144)"><circle r="13" fill="#2EA043"/><path d="M-5 0l3.5 3.5L5.5 -4" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g transform="translate(912 144)"><circle r="13" fill="#2EA043"/><path d="M-5 0l3.5 3.5L5.5 -4" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g transform="translate(1048 144)"><circle r="13" fill="#2EA043"/><path d="M-5 0l3.5 3.5L5.5 -4" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></g>
+  </g>
+  <g font-size="13" class="t" text-anchor="middle">
+    <text x="96" y="184">자동 접속</text><text x="96" y="202" class="s" font-size="12">인프라</text>
+    <text x="232" y="184">DDS · rosbridge</text><text x="232" y="202" class="s" font-size="12">링크</text>
+    <text x="368" y="184">워치독</text><text x="368" y="202" class="s" font-size="12">0.5 s 정지</text>
+    <text x="504" y="184">직진 보정</text><text x="504" y="202" class="s" font-size="12">2 m · ≈1 cm</text>
+    <text x="640" y="184">SLAM · Nav2</text><text x="640" y="202" class="s" font-size="12">WSL Jazzy</text>
+    <text x="776" y="184">3D 대시보드</text><text x="776" y="202" class="s" font-size="12">Qt 6 Quick 3D</text>
+    <text x="912" y="184">디자인 시스템</text><text x="912" y="202" class="s" font-size="12">토큰 · 모션</text>
+    <text x="1048" y="184">모의 서버</text><text x="1048" y="202" class="s" font-size="12">시험 자동화</text>
+  </g>
+
+  <!-- 로봇 점이 완료 구간을 따라 지금 위치까지 -->
+  <circle r="6" fill="#56CCB2">
+    <animateMotion dur="6s" keyPoints="0;1;1" keyTimes="0;0.55;1" calcMode="spline" keySplines="0.16 1 0.3 1;0 0 1 1" repeatCount="indefinite"><mpath href="#done"/></animateMotion>
+  </circle>
+
+  <!-- 지금 -->
+  <circle cx="1178" cy="234" r="14" fill="none" stroke="#D29922" stroke-width="2">
+    <animate attributeName="r" values="14;26" dur="2.4s" calcMode="spline" keySplines="0.16 1 0.3 1" repeatCount="indefinite"/>
+    <animate attributeName="stroke-opacity" values="0.7;0" dur="2.4s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="1178" cy="234" r="10" fill="#D29922"/>
+  <text x="1146" y="230" font-size="13" class="t" font-weight="700" text-anchor="end">지금 · now</text>
+  <text x="1146" y="248" font-size="12" class="s" text-anchor="end">2026-10 · 공개 준비</text>
+
+  <!-- 다음 마디: 점선 원 + 약하게 깜박이는 점 -->
+  <g fill="#0B0D10" stroke="#2F6FE4" stroke-width="2" stroke-dasharray="3 3">
+    <circle cx="1000" cy="324" r="12"/>
+    <circle cx="824" cy="324" r="12"/>
+    <circle cx="648" cy="324" r="12"/>
+    <circle cx="472" cy="324" r="12"/>
+    <circle cx="296" cy="324" r="12"/>
+    <circle cx="120" cy="324" r="12"/>
+  </g>
+  <g fill="#2F6FE4">
+    <circle cx="1000" cy="324" r="4"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" repeatCount="indefinite"/></circle>
+    <circle cx="824" cy="324" r="4"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" begin="-0.4s" repeatCount="indefinite"/></circle>
+    <circle cx="648" cy="324" r="4"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" begin="-0.8s" repeatCount="indefinite"/></circle>
+    <circle cx="472" cy="324" r="4"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" begin="-1.2s" repeatCount="indefinite"/></circle>
+    <circle cx="296" cy="324" r="4"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" begin="-1.6s" repeatCount="indefinite"/></circle>
+    <circle cx="120" cy="324" r="4"><animate attributeName="opacity" values="1;0.35;1" dur="2.4s" begin="-2s" repeatCount="indefinite"/></circle>
+  </g>
+  <g font-size="13" class="t" text-anchor="middle">
+    <text x="1000" y="364">펌웨어 명령 타임아웃</text><text x="1000" y="382" class="s" font-size="12">PID 피드포워드</text>
+    <text x="824" y="364">MCAP 기록</text><text x="824" y="382" class="s" font-size="12">타임라인 재생</text>
+    <text x="648" y="364">패널 레이아웃 저장</text><text x="648" y="382" class="s" font-size="12">panel layouts</text>
+    <text x="472" y="364">카메라 패널</text><text x="472" y="382" class="s" font-size="12">camera view</text>
+    <text x="296" y="364">웨이포인트 미션</text><text x="296" y="382" class="s" font-size="12">waypoint missions</text>
+    <text x="120" y="364">로봇 이전</text><text x="120" y="382" class="s" font-size="12">ROS 2 Humble/Jazzy</text>
+  </g>
+</svg>

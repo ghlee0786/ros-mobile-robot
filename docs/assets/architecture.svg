@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="728" viewBox="0 0 1200 728" font-family="Inter, 'Segoe UI', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" role="img" aria-label="System architecture">
+  <title>System architecture · 시스템 구성</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B0D10"/>
+      <stop offset="1" stop-color="#111318"/>
+    </linearGradient>
+    <marker id="aBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4C9AFF"/></marker>
+    <marker id="aOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#F2994A"/></marker>
+    <marker id="aTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#56CCB2"/></marker>
+    <marker id="aPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#BB86FC"/></marker>
+    <marker id="aPink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#E0457B"/></marker>
+    <marker id="aYellow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#F2C94C"/></marker>
+    <path id="p1" d="M448 160 H750"/>
+    <path id="p2" d="M752 184 H450"/>
+    <path id="p3" d="M752 452 H426"/>
+    <path id="p4" d="M424 476 H750"/>
+    <path id="p5" d="M790 512 V566"/>
+    <path id="p6" d="M810 568 V514"/>
+    <path id="p7" d="M996 568 V514"/>
+    <path id="p8" d="M1100 568 V514"/>
+    <style>
+      .panel { fill: #111318; stroke: #FFFFFF; stroke-opacity: 0.1; }
+      .box { fill: #171A20; stroke: #FFFFFF; stroke-opacity: 0.1; }
+      .h { fill: #E8EAED; font-weight: 700; }
+      .t { fill: #E8EAED; font-weight: 600; }
+      .s { fill: #A3A9B2; }
+      .m { font-family: ui-monospace, 'Cascadia Mono', Consolas, Menlo, monospace; }
+      .line { fill: none; stroke-width: 2; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="728" fill="url(#bg)"/>
+  <text x="32" y="44" font-size="22" class="h">System architecture <tspan class="s" font-weight="400">· 시스템 구성</tspan></text>
+
+  <!-- PC -->
+  <rect class="panel" x="32" y="72" width="440" height="560" rx="16"/>
+  <text x="56" y="104" font-size="15" class="h">PC · Windows 11</text>
+  <text x="448" y="104" font-size="12" class="s" text-anchor="end">Wi-Fi</text>
+
+  <rect class="box" x="56" y="128" width="392" height="120" rx="12" stroke="#2F6FE4" stroke-opacity="0.8"/>
+  <text x="80" y="164" font-size="17" class="h">Qt 6.8 Quick 3D Dashboard</text>
+  <text x="80" y="190" font-size="13" class="s">3D 뷰 · Nav2 목표 · 그래프 · 토픽 · 로그</text>
+  <text x="80" y="222" font-size="12" class="s m">C++ / QML · rosbridge client</text>
+
+  <rect x="56" y="280" width="392" height="328" rx="12" fill="#0B0D10" stroke="#FFFFFF" stroke-opacity="0.1" stroke-dasharray="4 4"/>
+  <text x="80" y="310" font-size="14" class="t">WSL · Ubuntu 24.04 · ROS 2 Jazzy</text>
+  <text x="80" y="330" font-size="12" class="s m">domain 8 · FastDDS · localhost</text>
+  <g font-size="13">
+    <rect class="box" x="80" y="352" width="160" height="56" rx="10"/><text x="160" y="385" class="t m" text-anchor="middle">slam_toolbox</text>
+    <rect class="box" x="256" y="352" width="168" height="56" rx="10"/><text x="340" y="385" class="t m" text-anchor="middle">Nav2</text>
+    <rect class="box" x="80" y="432" width="160" height="64" rx="10"/><text x="160" y="469" class="t m" text-anchor="middle">RViz</text>
+    <rect class="box" x="256" y="432" width="168" height="64" rx="10" stroke="#56CCB2" stroke-opacity="0.7"/><text x="340" y="460" class="t m" text-anchor="middle">split_relay</text>
+    <text x="340" y="480" font-size="11" class="s" text-anchor="middle">TCP 중계 · domain 8</text>
+  </g>
+  <g transform="translate(80 528)">
+    <circle cx="10" cy="10" r="10" fill="#D93A40" fill-opacity="0.16" stroke="#D93A40"/>
+    <path d="M6 6l8 8M14 6l-8 8" stroke="#D93A40" stroke-width="2" stroke-linecap="round"/>
+    <text x="32" y="15" font-size="12" class="t">Jazzy 노드는 로봇 도메인 7 에 직접 붙지 않음</text>
+    <text x="32" y="35" font-size="11" class="s">Foxy 가 Jazzy 발견 정보를 해석 못 함 → TCP 로 분리</text>
+    <text x="32" y="53" font-size="11" class="s">Jazzy nodes never join the robot domain</text>
+  </g>
+
+  <!-- Raspberry Pi -->
+  <rect class="panel" x="728" y="72" width="440" height="440" rx="16" stroke="#2F6FE4" stroke-opacity="0.35"/>
+  <text x="752" y="104" font-size="15" class="h">Raspberry Pi 4 · Ubuntu 20.04 · ROS 2 Foxy</text>
+  <text x="752" y="124" font-size="12" class="s m">CycloneDDS · domain 7 · systemd 자동 시작</text>
+  <g font-size="12">
+    <rect class="box" x="752" y="144" width="192" height="48" rx="10" stroke="#4C9AFF" stroke-opacity="0.7"/>
+    <text x="768" y="164" class="t m">robot-rosbridge</text><text x="768" y="182" font-size="11" class="s">:9090 WebSocket JSON</text>
+    <rect class="box" x="952" y="144" width="192" height="48" rx="10" stroke="#2EA043" stroke-opacity="0.7"/>
+    <text x="968" y="164" class="t m">robot-cmd-watchdog</text><text x="968" y="182" font-size="11" class="s m">/teleop/cmd_vel → /cmd_vel</text>
+    <rect class="box" x="752" y="208" width="192" height="48" rx="10"/>
+    <text x="768" y="228" class="t m">robot-bringup</text><text x="768" y="246" font-size="11" class="s">LiDAR · IMU · Pico · 센서 동기화</text>
+    <rect class="box" x="952" y="208" width="192" height="48" rx="10"/>
+    <text x="968" y="228" class="t m">robot-odom-tf</text><text x="968" y="246" font-size="11" class="s m">/odom → TF</text>
+    <rect class="box" x="752" y="272" width="192" height="48" rx="10"/>
+    <text x="768" y="292" class="t m">robot-straight-drive</text><text x="768" y="310" font-size="11" class="s">직진 보정 · straight trim</text>
+    <rect class="box" x="952" y="272" width="192" height="48" rx="10"/>
+    <text x="968" y="292" class="t m">robot-pingpong</text><text x="968" y="310" font-size="11" class="s">지연 측정 · latency probe</text>
+  </g>
+  <text x="752" y="368" font-size="12" class="s">바퀴 반지름 0.05 m · 간격 0.34 m</text>
+  <text x="752" y="388" font-size="12" class="s">한계 0.1 m/s · 0.25 rad/s</text>
+  <rect class="box" x="752" y="432" width="392" height="56" rx="10" stroke="#56CCB2" stroke-opacity="0.7"/>
+  <text x="768" y="456" font-size="12" class="t m">robot-nav-relay</text>
+  <text x="768" y="476" font-size="11" class="s">TCP 7701 / 7702 ↔ split_relay (PC)</text>
+
+  <!-- 하드웨어 -->
+  <rect class="box" x="752" y="568" width="184" height="72" rx="12"/>
+  <text x="768" y="596" font-size="14" class="t">Raspberry Pi Pico</text>
+  <text x="768" y="618" font-size="11" class="s">모터 PID 30 ms · 엔코더</text>
+  <rect class="box" x="952" y="568" width="88" height="72" rx="12"/>
+  <text x="996" y="598" font-size="12" class="t" text-anchor="middle">RPLIDAR</text>
+  <text x="996" y="616" font-size="12" class="t" text-anchor="middle">A3</text>
+  <rect class="box" x="1056" y="568" width="88" height="72" rx="12"/>
+  <text x="1100" y="598" font-size="12" class="t" text-anchor="middle">CMP10A</text>
+  <text x="1100" y="616" font-size="12" class="t" text-anchor="middle">IMU</text>
+  <text x="822" y="544" font-size="11" class="s">USB serial · CRC16</text>
+  <text x="1006" y="544" font-size="11" class="s m">/scan</text>
+  <text x="1110" y="544" font-size="11" class="s m">/imu</text>
+
+  <!-- 연결선 -->
+  <use href="#p1" class="line" stroke="#4C9AFF" marker-end="url(#aBlue)"/>
+  <use href="#p2" class="line" stroke="#F2994A" marker-end="url(#aOrange)"/>
+  <use href="#p3" class="line" stroke="#56CCB2" marker-end="url(#aTeal)"/>
+  <use href="#p4" class="line" stroke="#BB86FC" marker-end="url(#aPurple)"/>
+  <use href="#p5" class="line" stroke="#4C9AFF" marker-end="url(#aBlue)"/>
+  <use href="#p6" class="line" stroke="#F2994A" marker-end="url(#aOrange)"/>
+  <use href="#p7" class="line" stroke="#E0457B" marker-end="url(#aPink)"/>
+  <use href="#p8" class="line" stroke="#F2C94C" marker-end="url(#aYellow)"/>
+
+  <!-- 흐르는 패킷 -->
+  <g>
+    <circle r="4" fill="#4C9AFF"><animateMotion dur="2.4s" repeatCount="indefinite"><mpath href="#p1"/></animateMotion></circle>
+    <circle r="4" fill="#4C9AFF"><animateMotion dur="2.4s" begin="-1.2s" repeatCount="indefinite"><mpath href="#p1"/></animateMotion></circle>
+    <circle r="4" fill="#F2994A"><animateMotion dur="2s" repeatCount="indefinite"><mpath href="#p2"/></animateMotion></circle>
+    <circle r="4" fill="#F2994A"><animateMotion dur="2s" begin="-0.66s" repeatCount="indefinite"><mpath href="#p2"/></animateMotion></circle>
+    <circle r="4" fill="#F2994A"><animateMotion dur="2s" begin="-1.33s" repeatCount="indefinite"><mpath href="#p2"/></animateMotion></circle>
+    <circle r="4" fill="#56CCB2"><animateMotion dur="2.2s" repeatCount="indefinite"><mpath href="#p3"/></animateMotion></circle>
+    <circle r="4" fill="#56CCB2"><animateMotion dur="2.2s" begin="-0.73s" repeatCount="indefinite"><mpath href="#p3"/></animateMotion></circle>
+    <circle r="4" fill="#56CCB2"><animateMotion dur="2.2s" begin="-1.46s" repeatCount="indefinite"><mpath href="#p3"/></animateMotion></circle>
+    <circle r="4" fill="#BB86FC"><animateMotion dur="2.8s" repeatCount="indefinite"><mpath href="#p4"/></animateMotion></circle>
+    <circle r="4" fill="#BB86FC"><animateMotion dur="2.8s" begin="-1.4s" repeatCount="indefinite"><mpath href="#p4"/></animateMotion></circle>
+    <circle r="3.5" fill="#4C9AFF"><animateMotion dur="1.2s" repeatCount="indefinite"><mpath href="#p5"/></animateMotion></circle>
+    <circle r="3.5" fill="#F2994A"><animateMotion dur="1.2s" begin="-0.6s" repeatCount="indefinite"><mpath href="#p6"/></animateMotion></circle>
+    <circle r="3.5" fill="#E0457B"><animateMotion dur="1.2s" repeatCount="indefinite"><mpath href="#p7"/></animateMotion></circle>
+    <circle r="3.5" fill="#F2C94C"><animateMotion dur="0.8s" repeatCount="indefinite"><mpath href="#p8"/></animateMotion></circle>
+  </g>
+
+  <!-- 연결 라벨 -->
+  <g font-size="11">
+    <text x="600" y="128" text-anchor="middle" class="s">rosbridge · JSON over WebSocket</text>
+    <rect x="540" y="162" width="120" height="20" rx="10" fill="#0B0D10" stroke="#FFFFFF" stroke-opacity="0.15"/>
+    <text x="600" y="176" text-anchor="middle" class="t m">ws :9090</text>
+    <text x="488" y="212" fill="#4C9AFF" class="m">▶ /teleop/cmd_vel  /goal_pose</text>
+    <text x="504" y="228" fill="#4C9AFF" class="m">/dashboard/initialpose</text>
+    <text x="488" y="250" fill="#F2994A" class="m">◀ /scan /odom /tf /imu</text>
+    <text x="504" y="266" fill="#F2994A" class="m">/map /plan /rosout …</text>
+
+    <text x="488" y="368" fill="#56CCB2" font-weight="700">◀ robot → PC</text>
+    <text x="488" y="384" fill="#56CCB2" class="m">/scan /odom /tf /tf_static</text>
+    <text x="488" y="400" fill="#56CCB2" class="m">/goal_pose</text>
+    <text x="488" y="416" fill="#56CCB2" class="m">/dashboard/initialpose</text>
+    <text x="504" y="432" fill="#56CCB2" class="m">→ /initialpose</text>
+    <rect x="536" y="454" width="128" height="20" rx="10" fill="#0B0D10" stroke="#FFFFFF" stroke-opacity="0.15"/>
+    <text x="600" y="468" text-anchor="middle" class="t m">TCP 7701/7702</text>
+    <text x="488" y="504" fill="#BB86FC" font-weight="700">▶ PC → robot</text>
+    <text x="488" y="520" fill="#BB86FC" class="m">/teleop/cmd_vel /map /plan</text>
+    <text x="488" y="536" fill="#BB86FC" class="m">/amcl_pose /local_costmap</text>
+    <text x="488" y="552" fill="#BB86FC" class="m">/map_odom</text>
+  </g>
+
+  <!-- 범례 -->
+  <g font-size="12" class="s" transform="translate(32 672)">
+    <circle cx="6" cy="0" r="5" fill="#4C9AFF"/><text x="18" y="4">명령 · command</text>
+    <circle cx="146" cy="0" r="5" fill="#F2994A"/><text x="158" y="4">센서·상태 · telemetry</text>
+    <circle cx="318" cy="0" r="5" fill="#56CCB2"/><text x="330" y="4">TCP 중계 robot → PC</text>
+    <circle cx="486" cy="0" r="5" fill="#BB86FC"/><text x="498" y="4">TCP 중계 PC → robot</text>
+    <circle cx="654" cy="0" r="5" fill="#E0457B"/><text x="666" y="4">LiDAR</text>
+    <circle cx="734" cy="0" r="5" fill="#F2C94C"/><text x="746" y="4">IMU</text>
+    <text x="0" y="28">모든 원격 속도 명령: /teleop/cmd_vel → cmd_watchdog → /cmd_vel</text>
+  </g>
+</svg>
