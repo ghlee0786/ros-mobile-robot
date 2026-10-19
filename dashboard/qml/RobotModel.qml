@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick3D
 import QtQuick3D.AssetUtils
+import RobotDashboard
 
 // 로봇 모델 (base_link 프레임, m 단위, x 앞 · y 왼쪽 · z 위).
 // model/ 폴더에 Fusion 360 에서 내보낸 body · wheel_left · wheel_right · lidar_head (.glb/.gltf/.fbx/.obj) 가 있으면
@@ -29,12 +30,12 @@ Node {
         return p ? Qt.vector3d(p[0], p[1], p[2]) : Qt.vector3d(0, 0, 0.20)
     }
 
-    PrincipledMaterial { id: aluminum; baseColor: "#C9CFD6"; metalness: 0.55; roughness: 0.35 }
-    PrincipledMaterial { id: darkPlate; baseColor: "#2A2F36"; metalness: 0.2; roughness: 0.55 }
-    PrincipledMaterial { id: rubber; baseColor: "#1B1F25"; metalness: 0.0; roughness: 0.92 }
-    PrincipledMaterial { id: hubMetal; baseColor: "#8A939E"; metalness: 0.9; roughness: 0.25 }
-    PrincipledMaterial { id: lidarBody; baseColor: "#3C434C"; metalness: 0.4; roughness: 0.4 }
-    PrincipledMaterial { id: lidarTop; baseColor: "#5A6370"; metalness: 0.6; roughness: 0.3 }
+    PrincipledMaterial { id: aluminum; baseColor: Theme.matAluminum; metalness: 0.55; roughness: 0.35 }
+    PrincipledMaterial { id: darkPlate; baseColor: Theme.matDarkPlate; metalness: 0.2; roughness: 0.55 }
+    PrincipledMaterial { id: rubber; baseColor: Theme.matRubber; metalness: 0.0; roughness: 0.92 }
+    PrincipledMaterial { id: hubMetal; baseColor: Theme.matHub; metalness: 0.9; roughness: 0.25 }
+    PrincipledMaterial { id: lidarBody; baseColor: Theme.matLidarBody; metalness: 0.4; roughness: 0.4 }
+    PrincipledMaterial { id: lidarTop; baseColor: Theme.matLidarTop; metalness: 0.6; roughness: 0.3 }
 
     // ---- 몸체 ----
     RuntimeLoader {
