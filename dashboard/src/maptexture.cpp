@@ -14,3 +14,9 @@ void MapTexture::setImage(const QImage &img)
     setTextureData(QByteArray(reinterpret_cast<const char *>(m_image.constBits()), m_image.sizeInBytes()));
     emit imageChanged();
 }
+
+QColor MapTexture::pixelAt(qreal u, qreal v) const
+{
+    const QPoint p(int(u * m_image.width()), int(v * m_image.height()));
+    return m_image.valid(p) ? m_image.pixelColor(p) : QColor();
+}

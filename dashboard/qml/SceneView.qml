@@ -43,7 +43,8 @@ ColumnLayout {
     readonly property string mono: Theme.monoFamily
 
     // ---- 표시 레이어 (레이어 패널 · 시험 동작이 바꾸고 Settings 에 저장) ----
-    property bool layerPanelOpen: true
+    property bool layerPanelOpen: false     // 기본 접힘(3D 를 덜 가리게), 마지막 상태는 Settings 가 기억
+    property bool legendOpen: false
     property bool showScan: true
     property real scanDecay: 0              // 잔상 s (0 · 1 · 3 · 10), 0 이면 robot.scanPoints 를 그대로 그린다
     property string scanColorMode: "flat"   // flat · range · intensity
@@ -69,6 +70,16 @@ ColumnLayout {
     readonly property int tfFrameCount: tfTree.frameCount
     readonly property int scanAccumPoints: scanAcc.pointCount
     readonly property bool amclReceived: amclPose.received
+    // 지도 판 확인: 점유 셀이 있다고 알려진 점(odom m, 시험 동작이 바꾼다)을 렌더 경로(지도 판 노드 변환)로 uv 로 바꿔
+    // 그 텍스처 픽셀이 점유(검정)인지, 판 위 그 점과 같은 xy 의 라이다 높이 점이 화면에서 몇 px 떨어지는지 본다.
+    property real mapProbeX: 2.975          // 기본 = 모의 서버 기본 방 오른쪽 벽 셀(x 2.95..3.0)
+    property real mapProbeY: 1.0
+    property real mapProbeU: -1
+    property real mapProbeV: -1
+    property bool mapProbeOccupied: false
+    property real mapProbeErrPx: -1
+    // 위에서 시점: 1 m 가 몇 px 인지(직교 카메라라 높이와 상관없이 같다). 4 m 위 시야 60° 와 같은 넓이.
+    readonly property real topPxPerM: Math.max(1, view.height) / (8 * Math.tan(Math.PI / 6))
     signal clickedView()
     spacing: 10
 
@@ -141,6 +152,18 @@ ColumnLayout {
             tpDist = b.dist; tpYaw = b.yaw; tpPitch = b.pitch
         }
     }
+    function updateMapProbe() {
+        const s = world.mapPositionToScene(Qt.vector3d(mapProbeX, mapProbeY, 0))
+        const l = mapPlane.mapPositionFromScene(s)   // 판 메시 좌표 -50..50 (+y = 이미지 위)
+        mapProbeU = l.x / 100 + 0.5
+        mapProbeV = 0.5 - l.y / 100
+        mapProbeOccupied = mapProbeU >= 0 && mapProbeU < 1 && mapProbeV >= 0 && mapProbeV < 1
+                           && mapPlane.tex.pixelAt(mapProbeU, mapProbeV).hslLightness < 0.25
+        const a = view.mapFrom3DScene(mapPlane.mapPositionToScene(Qt.vector3d(l.x, l.y, 0)))
+        const b = view.mapFrom3DScene(world.mapPositionToScene(Qt.vector3d(mapProbeX, mapProbeY, model.lidarPos.z)))
+        mapProbeErrPx = Math.hypot(a.x - b.x, a.y - b.y)
+    }
+    Timer { interval: 500; repeat: true; triggeredOnStart: true; running: root.showMap && robot.hasMap; onTriggered: root.updateMapProbe() }
     function removeBookmark(i) {
         const list = bookmarkList()
         list.splice(i, 1)
@@ -171,6 +194,7 @@ ColumnLayout {
     Settings {
         category: "layers"
         property alias panelOpen: root.layerPanelOpen
+        property alias legendOpen: root.legendOpen
         property alias scanDecay: root.scanDecay
         property alias scanColorMode: root.scanColorMode
         property alias scanPointSize: root.scanPointSize
@@ -219,6 +243,33 @@ ColumnLayout {
         spacing: Theme.sp2
         Text { text: "3D 뷰"; color: Theme.text1; font.pixelSize: Theme.fsTitle; font.weight: Font.DemiBold }
         Item { Layout.fillWidth: true }
+        // 저장된 뷰(카메라 북마크): 메뉴 하나에 불러오기 · 지금 뷰 저장 · 삭제
+        Btn {
+            id: bmBtn
+            readonly property var names: root.bookmarkList().map(b => b.name)
+            text: "저장된 뷰 (" + names.length + ") ▾"
+            size: "sm"
+            onClicked: bmMenu.popup(bmBtn, 0, bmBtn.height)
+            Menu {
+                id: bmMenu
+                Repeater {
+                    model: bmBtn.names
+                    MenuItem { required property string modelData; required property int index; text: modelData; onTriggered: root.applyBookmark(index) }
+                }
+                MenuSeparator { visible: bmBtn.names.length > 0 }
+                MenuItem { text: "지금 뷰 저장"; onTriggered: root.saveBookmark("") }
+                Menu {
+                    title: "삭제"
+                    enabled: bmBtn.names.length > 0
+                    Repeater {
+                        model: bmBtn.names
+                        MenuItem { required property string modelData; required property int index; text: modelData; onTriggered: root.removeBookmark(index) }
+                    }
+                }
+            }
+        }
+        Btn { text: "기본 시점"; size: "sm"; onClicked: root.setView("홈") }
+        Item { implicitWidth: Theme.sp2 }
         Text { text: "도구"; color: Theme.text2; font.pixelSize: Theme.fsSmall }
         Seg {
             options: ["없음", "측정", "목표", "초기 위치"]
@@ -290,6 +341,7 @@ ColumnLayout {
                 component GridPlane: Model {
                     id: gp
                     property alias image: tex.image
+                    property alias tex: tex
                     property real alpha: 1
                     property bool behind: false   // Draw Behind: 깊이를 쓰지 않아 다른 것을 가리지 않는다
                     source: "#Rectangle"
@@ -307,6 +359,7 @@ ColumnLayout {
                     }
                 }
                 GridPlane {
+                    id: mapPlane
                     visible: root.showMap && robot.hasMap
                     image: robot.mapImage
                     alpha: root.mapOpacity
@@ -423,11 +476,14 @@ ColumnLayout {
                 eulerRotation: Qt.vector3d(root.tpPitch, robot.theta * 180 / Math.PI - 90 + root.tpYaw, 0)
                 PerspectiveCamera { id: tpCam; position: Qt.vector3d(0, 0, root.tpDist); clipNear: 1; clipFar: 20000 }
             }
-            // 위에서: 로봇 위 4 m, 화면 오른쪽이 로봇 앞(odom x)
-            PerspectiveCamera {
+            // 위에서: 로봇 위 4 m, 화면 오른쪽이 로봇 앞(odom x). 직교 카메라라 바닥 지도와 라이다 높이 점의 축척이 같다
+            // (원근이면 높이 0.4 m 점이 바닥보다 약 1.1 배 크게 보여 지도가 작아 보였다).
+            OrthographicCamera {
                 id: topCam
                 position: root.scenePos(robot.x, robot.y, 4)
                 eulerRotation.x: -90
+                horizontalMagnification: root.topPxPerM / 100
+                verticalMagnification: root.topPxPerM / 100
                 clipNear: 1
                 clipFar: 20000
             }
@@ -612,8 +668,7 @@ ColumnLayout {
                 anchors.verticalCenter: parent.verticalCenter
                 radius: Theme.rLg; color: Theme.hudFill
                 width: bar.width + 60; height: 36
-                readonly property real pxPerM: view.height / (2 * 4 * Math.tan(topCam.fieldOfView * Math.PI / 360))
-                Rectangle { id: bar; x: 14; anchors.verticalCenter: parent.verticalCenter; width: parent.pxPerM * 0.5; height: 4; color: Theme.hudText1 }
+                Rectangle { id: bar; x: 14; anchors.verticalCenter: parent.verticalCenter; width: root.topPxPerM * 0.5; height: 4; color: Theme.hudText1 }
                 Text { anchors.left: bar.right; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: "0.5 m"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall }
             }
         }
@@ -704,27 +759,6 @@ ColumnLayout {
             }
         }
 
-        // ---- 저장된 뷰(카메라 북마크) · Zero: 뷰 큐브 왼쪽 ----
-        Row {
-            anchors.right: cube.left
-            anchors.top: parent.top
-            anchors.margins: 14
-            spacing: Theme.sp1
-            ComboBox {
-                id: bmBox
-                width: 150; height: Theme.hSm
-                focusPolicy: Qt.NoFocus
-                font.pixelSize: Theme.fsSmall
-                model: root.bookmarkList().map(b => b.name)
-                displayText: count > 0 ? "저장된 뷰 (" + count + ")" : "저장된 뷰 없음"
-                enabled: count > 0
-                onActivated: (i) => root.applyBookmark(i)
-            }
-            Btn { text: "저장"; size: "sm"; onClicked: root.saveBookmark("") }
-            Btn { text: "삭제"; size: "sm"; kind: "ghost"; enabled: bmBox.count > 0; onClicked: root.removeBookmark(Math.max(0, bmBox.currentIndex)) }
-            Btn { text: "Zero"; size: "sm"; onClicked: root.setView("홈") }
-        }
-
         // ---- 범례 ----
         Rectangle {
             anchors.right: parent.right
@@ -736,13 +770,22 @@ ColumnLayout {
                 id: legend
                 anchors.centerIn: parent
                 spacing: 4
-                Row { spacing: 6; Rectangle { width: 18; height: 3; color: Theme.trail; anchors.verticalCenter: parent.verticalCenter } Text { text: "이동 경로"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall } }
-                Row { spacing: 6; Rectangle { width: 18; height: 3; color: Theme.plan; anchors.verticalCenter: parent.verticalCenter } Text { text: "목표 / 계획 경로"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall } }
-                Row { spacing: 6; Rectangle { width: 8; height: 8; radius: Theme.rXs; color: Theme.lidar; anchors.verticalCenter: parent.verticalCenter } Text { text: "LiDAR 점"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall } }
-                Row { spacing: 6; Rectangle { width: 18; height: 3; color: Theme.ok; anchors.verticalCenter: parent.verticalCenter } Text { text: "이동 목표 (Nav2)"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall } }
-                Row { spacing: 6; Rectangle { width: 18; height: 3; color: Theme.initialPose; anchors.verticalCenter: parent.verticalCenter } Text { text: "초기 위치 (AMCL)"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall } }
-                Text { text: "휠 확대 · 가운데 끌기 이동 · Shift+가운데 회전\n왼쪽 끌기 회전 · Ctrl 이동 · Alt 확대 · 더블클릭 Focus"; color: Theme.hudText2; font.pixelSize: Theme.fsCaption }
-                Text { visible: model.bodyUrl.toString() === ""; text: "기본 모델 (model/ 폴더에 Fusion 360 내보내기 파일을 넣으면 교체)"; color: Theme.hudText2; font.pixelSize: Theme.fsCaption }
+                Text {   // 누르면 펼치기 · 접기 (기본 접힘, 마지막 상태 기억)
+                    text: (root.legendOpen ? "▾ " : "▸ ") + "범례"
+                    color: Theme.hudText1; font.pixelSize: Theme.fsSmall
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.legendOpen = !root.legendOpen }
+                }
+                Column {
+                    visible: root.legendOpen
+                    spacing: 4
+                    Row { spacing: 6; Rectangle { width: 18; height: 3; color: Theme.trail; anchors.verticalCenter: parent.verticalCenter } Text { text: "이동 경로"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall } }
+                    Row { spacing: 6; Rectangle { width: 18; height: 3; color: Theme.plan; anchors.verticalCenter: parent.verticalCenter } Text { text: "목표 / 계획 경로"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall } }
+                    Row { spacing: 6; Rectangle { width: 8; height: 8; radius: Theme.rXs; color: Theme.lidar; anchors.verticalCenter: parent.verticalCenter } Text { text: "LiDAR 점"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall } }
+                    Row { spacing: 6; Rectangle { width: 18; height: 3; color: Theme.ok; anchors.verticalCenter: parent.verticalCenter } Text { text: "이동 목표 (Nav2)"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall } }
+                    Row { spacing: 6; Rectangle { width: 18; height: 3; color: Theme.initialPose; anchors.verticalCenter: parent.verticalCenter } Text { text: "초기 위치 (AMCL)"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall } }
+                    Text { text: "휠 확대 · 가운데 끌기 이동 · Shift+가운데 회전\n왼쪽 끌기 회전 · Ctrl 이동 · Alt 확대 · 더블클릭 Focus"; color: Theme.hudText2; font.pixelSize: Theme.fsCaption }
+                    Text { visible: model.bodyUrl.toString() === ""; text: "기본 모델 (model/ 폴더에 Fusion 360 내보내기 파일을 넣으면 교체)"; color: Theme.hudText2; font.pixelSize: Theme.fsCaption }
+                }
             }
         }
 

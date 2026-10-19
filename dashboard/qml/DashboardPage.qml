@@ -324,10 +324,12 @@ FocusScope {
             Rectangle { width: parent.width; height: 1; color: Theme.borderDefault }
             RowLayout {
                 id: foot
+                // 1280 · 1440 · 1920 모두 비상 정지까지 한 줄에 들어가게: 좁으면 조이스틱 글자를 숨긴다
+                readonly property bool narrow: width < 1300
                 anchors.fill: parent
-                anchors.leftMargin: 20
-                anchors.rightMargin: 20
-                spacing: 24
+                anchors.leftMargin: Theme.sp5
+                anchors.rightMargin: Theme.sp5
+                spacing: Theme.sp4
 
                 Seg {
                     options: ["키보드 조종", "자율주행", "정지"]
@@ -364,6 +366,7 @@ FocusScope {
                 Joystick {
                     objectName: "joystick"
                     robot: page.robot
+                    showLabel: !foot.narrow
                     onBlocked: page.showLockHint()
                 }
 
@@ -373,10 +376,11 @@ FocusScope {
                     spacing: 6
                     Text {
                         color: Theme.text2; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
-                        text: "최대 속도 <b>" + robot.maxSpeed.toFixed(2) + " m/s</b> <font color='" + Theme.text2 + "'>(펌웨어 한계 0.10)</font>"
+                        text: "최대 속도 <b>" + robot.maxSpeed.toFixed(2) + " m/s</b>"
                     }
+                    Text { text: "펌웨어 한계 0.10"; color: Theme.text3; font.pixelSize: Theme.fsSmall }
                     Slider {
-                        width: 220
+                        width: 170
                         from: 0.02; to: 0.10; stepSize: 0.01
                         value: robot.maxSpeed
                         focusPolicy: Qt.NoFocus
@@ -384,11 +388,12 @@ FocusScope {
                     }
                 }
 
-                Row {
-                    spacing: 8
-                    Btn { text: "1 m 직진 시험"; kind: "accent"; enabled: !robot.straightRunning; onClicked: robot.straight(1.0) }
-                    Btn { text: "1 m 후진"; enabled: !robot.straightRunning; onClicked: robot.straight(-1.0) }
-                    Btn { text: robot.recording ? "기록 중지 " + robot.recordElapsed : "기록 시작"; onClicked: robot.toggleRecording() }
+                ColumnLayout {   // 세 버튼을 위아래로(가로 폭을 아낀다)
+                    Layout.fillWidth: false
+                    spacing: Theme.sp1
+                    Btn { Layout.fillWidth: true; size: "sm"; text: "1 m 직진 시험"; kind: "accent"; enabled: !robot.straightRunning; onClicked: robot.straight(1.0) }
+                    Btn { Layout.fillWidth: true; size: "sm"; text: "1 m 후진"; enabled: !robot.straightRunning; onClicked: robot.straight(-1.0) }
+                    Btn { Layout.fillWidth: true; size: "sm"; text: robot.recording ? "기록 중지 " + robot.recordElapsed : "기록 시작"; onClicked: robot.toggleRecording() }
                 }
 
                 Item { Layout.fillWidth: true }
