@@ -28,7 +28,9 @@ const SensorDef kSensors[] = {
 // 센서를 켜면 함께 구독하는 토픽
 const QHash<QString, QList<QPair<QString, QString>>> kExtra = {
     {"wheel", {{"/wheel_cmd", "sensor_msgs/JointState"}}},
-    {"tf", {{"/tf_static", "tf2_msgs/TFMessage"}}},
+    // /map_odom: map→odom 만 PC 내비 스택이 5 Hz 로 보낸다(tooling/nav/map_odom_pub.py). /tf 를 통째로 되돌려
+    // 보내면 로봇 /tf 가 PC 로 갔다 다시 돌아오는 고리가 생겨, map→odom 은 이 토픽으로 따로 받는다.
+    {"tf", {{"/tf_static", "tf2_msgs/TFMessage"}, {"/map_odom", "tf2_msgs/TFMessage"}}},
 };
 const char *kRequired[] = {"/odom", "/scan", "/wheel_states"};
 constexpr double kSelfHide = 0.3;     // 로봇 몸체에 맞은 LiDAR 점(m 이내)은 숨김
@@ -275,7 +277,7 @@ void Robot::onMessage(const QString &topic, const QJsonObject &msg)
         onImu(msg);
     else if (topic == "/scan")
         onScan(msg);
-    else if (topic == "/tf" || topic == "/tf_static")
+    else if (topic == "/tf" || topic == "/tf_static" || topic == "/map_odom")
         onTf(msg, topic == "/tf_static");
     else if (topic == "/map")
         onMap(msg);

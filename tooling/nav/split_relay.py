@@ -9,7 +9,11 @@ Different RMWs cannot share a process, so each side runs on its own and serializ
   split_relay.py out --port 7701 /scan:sensor_msgs/msg/LaserScan:best_effort /odom:nav_msgs/msg/Odometry
       subscribe in this process's domain, send every message to the "in" side
   split_relay.py in  --port 7701 /scan:sensor_msgs/msg/LaserScan /odom:nav_msgs/msg/Odometry
-      listen on 127.0.0.1:port, publish what arrives in this process's domain
+      publish what arrives in this process's domain
+By default "out" connects to 127.0.0.1:port and "in" listens there. --listen ADDR / --connect HOST turn
+either side around, so the robot side can run on the Pi itself (Foxy) and the PC side connect to it over
+Wi-Fi: no Jazzy participant then joins the robot's domain, whose discovery data Foxy cannot parse (it
+corrupts the Pi's node graph and kills rosapi / stalls rosbridge).
 Topic spec: name:type[:reliable|best_effort][:volatile|transient_local]. Both sides list the same
 topics in the same order (the frame carries the index). Latched (transient_local) topics are re-sent
 when the connection comes back.
@@ -49,27 +53,52 @@ def recv_exact(sock, n):
     return buf
 
 
-def run_out(node, port, topics):
+def serve_sockets(addr, port, on_socket):
+    """Listen on addr:port and hand each accepted socket to on_socket(sock) (one peer at a time)."""
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind((addr, port))
+    srv.listen(1)
+    while rclpy.ok():
+        conn, peer = srv.accept()
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        on_socket(conn, peer)
+
+
+def connect_socket(host, port):
+    """Connect to host:port, retrying every second until it works."""
+    while rclpy.ok():
+        try:
+            s = socket.create_connection((host, port), timeout=2)
+            s.settimeout(None)
+            s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            return s
+        except OSError:
+            time.sleep(1.0)
+
+
+def run_out(node, port, topics, listen=None, connect='127.0.0.1'):
     state = {'sock': None, 'n': [0] * len(topics), 'latched': {}}
     lock = threading.Lock()
 
     def send(sock, idx, data):
         sock.sendall(HEADER.pack(idx, len(data)) + data)
 
-    def connect():
-        while rclpy.ok():
+    def attach(s, peer):
+        with lock:
             try:
-                s = socket.create_connection(('127.0.0.1', port), timeout=2)
-                s.settimeout(None)
-                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                with lock:
-                    for idx, data in state['latched'].items():
-                        send(s, idx, data)
-                    state['sock'] = s
-                node.get_logger().info(f'connected to :{port}')
-                return
+                for idx, data in state['latched'].items():
+                    send(s, idx, data)
             except OSError:
-                time.sleep(1.0)
+                s.close()
+                return
+            if state['sock'] is not None:
+                state['sock'].close()
+            state['sock'] = s
+        node.get_logger().info(f'connected {peer}:{port}')
+
+    def dial():
+        attach(connect_socket(connect, port), connect)
 
     def make_cb(idx, latched):
         def cb(data):
@@ -84,40 +113,47 @@ def run_out(node, port, topics):
                     state['n'][idx] += 1
                 except OSError:
                     state['sock'] = None
-                    threading.Thread(target=connect, daemon=True).start()
+                    s.close()
+                    if listen is None:
+                        threading.Thread(target=dial, daemon=True).start()
         return cb
 
     for idx, t in enumerate(topics):
         node.create_subscription(t['msg'], t['name'], make_cb(idx, t['latched']), t['qos'], raw=True)
     node.create_timer(10.0, lambda: node.get_logger().info(
         'forwarded ' + ', '.join(f"{t['name']}={n}" for t, n in zip(topics, state['n']))))
-    threading.Thread(target=connect, daemon=True).start()
+    if listen is None:
+        threading.Thread(target=dial, daemon=True).start()
+    else:
+        threading.Thread(target=serve_sockets, args=(listen, port, attach), daemon=True).start()
     rclpy.spin(node)
 
 
-def run_in(node, port, topics):
+def run_in(node, port, topics, listen='127.0.0.1', connect=None):
     pubs = [node.create_publisher(t['msg'], t['name'], t['qos']) for t in topics]
     count = [0] * len(topics)
-    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(('127.0.0.1', port))
-    srv.listen(1)
 
-    def serve():
+    def read(conn, peer):
+        node.get_logger().info(f'sender connected {peer}')
+        try:
+            while True:
+                idx, n = HEADER.unpack(recv_exact(conn, HEADER.size))
+                pubs[idx].publish(recv_exact(conn, n))
+                count[idx] += 1
+        except (ConnectionError, OSError):
+            conn.close()
+
+    def dial():
         while rclpy.ok():
-            conn, _ = srv.accept()
-            node.get_logger().info('sender connected')
-            try:
-                while True:
-                    idx, n = HEADER.unpack(recv_exact(conn, HEADER.size))
-                    pubs[idx].publish(recv_exact(conn, n))
-                    count[idx] += 1
-            except (ConnectionError, OSError):
-                conn.close()
+            read(connect_socket(connect, port), connect)
+            time.sleep(1.0)
 
     node.create_timer(10.0, lambda: node.get_logger().info(
         'published ' + ', '.join(f"{t['name']}={n}" for t, n in zip(topics, count))))
-    threading.Thread(target=serve, daemon=True).start()
+    if connect is None:
+        threading.Thread(target=serve_sockets, args=(listen, port, read), daemon=True).start()
+    else:
+        threading.Thread(target=dial, daemon=True).start()
     rclpy.spin(node)
 
 
@@ -125,13 +161,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('role', choices=['out', 'in'])
     ap.add_argument('--port', type=int, required=True)
+    side = ap.add_mutually_exclusive_group()
+    side.add_argument('--listen', metavar='ADDR', help='wait for the other side on ADDR:port')
+    side.add_argument('--connect', metavar='HOST', help='connect to the other side at HOST:port')
     ap.add_argument('topics', nargs='+')
     args = ap.parse_args()
     topics = [parse_spec(s) for s in args.topics]
     rclpy.init()
     node = rclpy.create_node(f'split_relay_{args.role}_{args.port}')
     try:
-        (run_out if args.role == 'out' else run_in)(node, args.port, topics)
+        if args.role == 'out':
+            run_out(node, args.port, topics, listen=args.listen, connect=args.connect or '127.0.0.1')
+        else:
+            run_in(node, args.port, topics, listen=args.listen or '127.0.0.1', connect=args.connect)
     except KeyboardInterrupt:
         pass
 

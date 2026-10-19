@@ -1,0 +1,15 @@
+[Unit]
+Description=Robot side of the PC navigation link (split_relay over TCP 7701/7702)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+ExecStart=/bin/bash /home/ubuntu/robot_link/nav_relay.sh
+KillSignal=SIGINT
+TimeoutStopSec=5
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
