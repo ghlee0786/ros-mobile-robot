@@ -62,7 +62,6 @@ Robot::Robot(QObject *parent) : QObject(parent)
     connect(&m_bridge, &RosBridge::connectedChanged, this, [this] {
         armTeleop(false);   // 연결 · 재연결 · 끊김 직후에는 잠근다
         if (m_bridge.connected()) {
-            m_connClock.restart();
             m_everConnected = true;
             m_lastSendDropped = false;
             m_connClock.start();

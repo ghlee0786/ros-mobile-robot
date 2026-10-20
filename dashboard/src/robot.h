@@ -244,7 +244,6 @@ private:
     int m_scanCount = 0;
     double m_nearR = 0, m_nearA = 0, m_scanTime = 0, m_lidarHz = 0;
     QString m_scanTopic;          // "" = 아직 정하지 않음(토픽 목록 기다림)
-    QElapsedTimer m_connClock;    // 이번 연결 뒤 경과(토픽 목록이 오지 않을 때 /scan 으로 정한다)
     QHash<QString, msgparse::Pose2D> m_mounts;   // /tf_static base_link → 센서 프레임
     QList<QVector3D> m_trail, m_plan, m_targetLine;
     QJsonObject m_mapPlan;               // map 프레임 /plan 원문 — map→odom 이 바뀌면 다시 투영한다
@@ -266,7 +265,7 @@ private:
 
     bool m_everConnected = false, m_linkLost = false, m_watchdogOk = false, m_probed = false;
     bool m_lastSendDropped = false;
-    QElapsedTimer m_connClock;   // 이번 연결 뒤 경과
+    QElapsedTimer m_connClock;   // 이번 연결 뒤 경과(링크 판정 · 토픽 목록이 오지 않을 때 /scan 으로 정하기)
     int m_statusTick = 0;
     QVariantList m_sensorRows, m_rates, m_topicRows;
     TopicModel m_topicModel;
