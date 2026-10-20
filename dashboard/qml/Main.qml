@@ -120,8 +120,24 @@ ApplicationWindow {
         text: "연결 끊김"
     }
 
+    // 새 버전 알림(GitHub Releases). 조종 중(잠금 해제 · 자율주행 · 직진)에는 설치를 막는다.
+    Updater {
+        id: updater
+        objectName: "updater"
+        driving: robot.teleopArmed || robot.straightRunning || robot.mode === "자율주행"
+    }
+    UpdateBanner {
+        parent: win.contentItem
+        z: 1001
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: robot.linkLost ? 2 * Theme.sp3 + Theme.hSm : Theme.sp3
+        updater: updater
+    }
+
     CommandPalette {
         robot: robot
+        updater: updater
         onPageRequested: (i) => win.page = i
     }
 

@@ -48,7 +48,15 @@ dashboard\run_test.cmd --url ws://127.0.0.1:9091
   단위 시험은 `dashboard/tests/tst_<묶음>_*.cpp` 를 만들면 자동으로 등록됩니다.
 - 커밋 메시지는 한국어 · 영어 모두 좋습니다. "무엇을 왜" 를 써 주세요.
 
-## 5. 처음 해 보기 좋은 일 · Good first issues
+## 5. 릴리스 만들기 · Making a release
+
+1. `dashboard/CMakeLists.txt` 의 `project(robot_dashboard VERSION x.y.z …)` 를 올리고 `CHANGELOG.md` 에 `## [x.y.z] - YYYY-MM-DD` 항목을 써서 커밋합니다.
+2. `uv run --no-project python tooling/release/release.py x.y.z` — 확인 후 `dist\RobotDashboard-Setup-x.y.z.exe` 를 만들고 올릴 내용을 보여 줍니다(dry run).
+   설치 파일 시험은 `checks\installer.cmd`(무인 설치 · 업그레이드 · 제거).
+3. `… release.py x.y.z --publish` — 태그 `vx.y.z` 를 만들고(push 명령을 알려 줌) GitHub 릴리스(본문 = CHANGELOG 항목)와 설치 파일을 올립니다.
+   토큰은 `git credential fill` 로 얻습니다. 설치된 대시보드는 이 릴리스를 보고 업데이트를 알립니다.
+
+## 6. 처음 해 보기 좋은 일 · Good first issues
 
 - 대시보드 패널 레이아웃 저장 · 불러오기
 - 카메라(CompressedImage) 패널

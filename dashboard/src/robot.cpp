@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QtConcurrent>
 #include <QtMath>
 
@@ -242,15 +243,24 @@ QString Robot::dataDir()
     const QString env = qEnvironmentVariable("ROBOT_DASHBOARD_DIR");
     if (!env.isEmpty())
         return QDir(env).absolutePath();
+    if (installed())
+        return QCoreApplication::applicationDirPath();
     const QDir up(QCoreApplication::applicationDirPath() + "/..");
     if (up.exists("model"))
         return up.absolutePath();
     return QDir::current().absolutePath();
 }
 
+bool Robot::installed()
+{
+    return qEnvironmentVariableIsEmpty("ROBOT_DASHBOARD_DIR") && QDir(QCoreApplication::applicationDirPath()).exists("model");
+}
+
 QString Robot::recordsDir() const
 {
-    const QString d = QDir(dataDir()).absoluteFilePath("records");
+    // 설치본은 설치 폴더(Program Files 일 수 있음)가 아니라 문서/RobotDashboard/records 에 쓴다
+    const QString base = installed() ? QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/RobotDashboard" : dataDir();
+    const QString d = QDir(base).absoluteFilePath("records");
     QDir().mkpath(d);
     return d;
 }
@@ -951,7 +961,7 @@ void Robot::toggleRecording()
         return;
     }
     const QDateTime now = QDateTime::currentDateTime();
-    m_recordPath = QDir(dataDir()).absoluteFilePath("records/" + now.toString("yyyyMMdd_HHmmss"));
+    m_recordPath = QDir(recordsDir()).absoluteFilePath(now.toString("yyyyMMdd_HHmmss"));
     QDir().mkpath(m_recordPath);
     // 원문 기록: 첫 줄 meta, 이후 한 줄에 메시지 하나 (P1 --replay 입력과 같은 형식)
     m_raw = new QFile(m_recordPath + "/raw.jsonl");
@@ -1000,7 +1010,7 @@ QString Robot::recordElapsed() const
 
 void Robot::openRecords()
 {
-    const QString dir = m_recordPath.isEmpty() ? QDir(dataDir()).absoluteFilePath("records") : m_recordPath;
+    const QString dir = m_recordPath.isEmpty() ? recordsDir() : m_recordPath;
     QDir().mkpath(dir);
     QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
 }

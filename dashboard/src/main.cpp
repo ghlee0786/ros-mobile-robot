@@ -15,6 +15,7 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     QCoreApplication::setOrganizationName("RobotDashboard");
     QCoreApplication::setApplicationName("RobotDashboard");
+    QCoreApplication::setApplicationVersion(ROBOT_DASHBOARD_VERSION);   // cmake/update.cmake 가 project(VERSION) 으로 정한다
     QGuiApplication::setWindowIcon(QIcon(":/icons/app.png"));
 
     QCommandLineParser p;

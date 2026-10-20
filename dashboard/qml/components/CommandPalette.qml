@@ -8,6 +8,7 @@ Popup {
     id: pal
     objectName: "palette"
     required property Robot robot
+    property Updater updater
     property var pageNames: ["대시보드", "데이터 점검", "연결"]
     signal pageRequested(int index)
 
@@ -48,6 +49,13 @@ Popup {
         out.push({ label: Theme.largeText ? "큰 글자 끄기" : "큰 글자 켜기", hint: "보기", keys: "", run: () => Theme.largeText = !Theme.largeText })
         out.push({ label: Theme.reduceMotion ? "움직임 줄이기 끄기" : "움직임 줄이기", hint: "보기", keys: "", run: () => Theme.reduceMotion = !Theme.reduceMotion })
         out.push({ label: Theme.dark ? "라이트 테마로 전환" : "다크 테마로 전환", hint: "보기", keys: "", run: () => Theme.toggleDark() })
+        if (updater) {
+            const u = updater
+            out.push({ label: "업데이트 확인", hint: "현재 v" + u.currentVersion, keys: "", run: () => u.check(true) })
+            out.push({ label: u.checkEnabled ? "시작할 때 업데이트 확인 끄기" : "시작할 때 업데이트 확인 켜기", hint: "업데이트", keys: "",
+                       run: () => u.checkEnabled = !u.checkEnabled })
+        }
+        out.push({ label: "정보 · 로봇 대시보드 v" + Qt.application.version, hint: "버전", keys: "", run: () => {} })
         return out
     }
     // 글자가 순서대로 다 들어 있으면 맞는 것으로 보고, 붙어 있을수록 · 앞쪽일수록 점수를 준다.

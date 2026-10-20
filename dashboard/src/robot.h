@@ -167,7 +167,9 @@ public:
     QString recordElapsed() const;
 
     // 데이터 폴더(model/ · records/): env ROBOT_DASHBOARD_DIR → 실행 파일 위 폴더(model/ 이 있으면) → 현재 폴더
+    // 설치본(exe 옆에 model/): model 은 exe 옆, records 는 문서/RobotDashboard/records
     static QString dataDir();
+    static bool installed();
     Q_INVOKABLE QString recordsDir() const;   // dataDir/records (없으면 만든다) — 그래프 CSV · PNG 저장
 
     Q_INVOKABLE void connectTo(const QString &host, int port);
