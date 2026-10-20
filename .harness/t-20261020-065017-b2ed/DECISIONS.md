@@ -21,3 +21,9 @@
 - chosen: `--foxy-param-bug` 만 새로 더함. /diagnostics 없음은 기존 `--hide-topic /diagnostics --drop /diagnostics:1`, stamp 차는 기존 `--stamp-skew-ms -130` 으로 된다. /scan_compact 는 INT2 가 sim.py 에 더한다.
 - why: sim.py 는 INT2 와 겹치고, 목표가 B6 시험에 필요한 describe 흉내를 콕 집어 요구했다.
 - effect: rosbridge 오류 동작 · CPU 포화 흉내는 아직 없다. 필요하면 별도 작업으로.
+
+## 5. 검사의 flood · two_clients 조종 빈도 흔들림을 어떻게 다룰지
+- options: 다시 돌려 운에 맡김 / 판정 기준 완화 / 조종 타이머를 PreciseTimer 로
+- chosen: robot.cpp 의 m_teleop 을 Qt::PreciseTimer 로(한 줄, 이 작업 파일 범위 밖이지만 검사 통과에 꼭 필요한 최소 줄)
+- why: coarse 타이머는 Windows 에서 WM_TIMER 라 수신이 몰리면 늦게 오고, 조종 명령이 끊기면 파이 워치독이 로봇을 세운다. 기준 완화는 금지.
+- effect: 조종 명령 간격이 부하에도 고르다. 되돌리려면 그 줄을 지운다.

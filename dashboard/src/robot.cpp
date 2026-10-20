@@ -115,6 +115,7 @@ Robot::Robot(QObject *parent) : QObject(parent)
 
     // 키보드 조종 중에는 0 을 포함해 10 Hz 로 계속 보낸다 — 끊기면 파이 워치독이 0.5 s 안에 세운다.
     m_teleop.setInterval(100);
+    m_teleop.setTimerType(Qt::PreciseTimer);   // Windows 의 coarse 타이머(WM_TIMER)는 수신이 몰리면 굶는다(flood 시나리오)
     connect(&m_teleop, &QTimer::timeout, this, [this] {
         if (m_armed && (m_lin != 0 || m_ang != 0))
             m_armInput.restart();   // 누르고 있는 동안은 입력 중
