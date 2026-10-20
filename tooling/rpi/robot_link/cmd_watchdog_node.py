@@ -10,6 +10,9 @@ crashed PC teleop would leave the robot driving. Remote teleop therefore publish
                                    or tip the robot; with ramp_enabled=false it is relayed as is
   * command becomes zero        -> the output decelerates to zero, a few zeros, then the node goes quiet
   * no message for `timeout` s  -> treated as zero (link lost): decelerate and stop
+  * slow turn in place           -> |angular| raised to min_turn_w when |linear| < 0.02 m/s: below about
+                                   0.12 rad/s a wheel stalls (Pico P-only PID + static friction), so Nav2's
+                                   final heading alignment (it asks ~0.10 rad/s) never turned the robot
   * /teleop/estop (any message) -> output set to zero at once, ignoring the ramp; commands are
                                    ignored for `estop_hold` s
 Going quiet while idle keeps it from fighting other /cmd_vel sources such as straight_drive.
@@ -50,6 +53,7 @@ class CmdWatchdog(Node):
         self.declare_parameter('ang_acc', 0.80)    # rad/s^2 (0 -> 0.25 rad/s in 0.31 s)
         self.declare_parameter('ang_dec', 1.20)    # rad/s^2
         self.declare_parameter('estop_hold', 1.0)  # s
+        self.declare_parameter('min_turn_w', 0.20)  # rad/s, smallest in-place turn the wheels follow (0 = off)
         self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.create_subscription(Twist, '/teleop/cmd_vel', self.on_cmd, 10)
         self.create_subscription(Empty, '/teleop/estop', self.on_estop, 10)
@@ -78,6 +82,9 @@ class CmdWatchdog(Node):
     def step(self):
         fresh = time.monotonic() - self.last_t < self.timeout
         tv, tw = (self.target.linear.x, self.target.angular.z) if fresh else (0.0, 0.0)
+        mw = self.get_parameter('min_turn_w').value
+        if mw > 0 and abs(tv) < 0.02 and 0.01 <= abs(tw) < mw:
+            tw = mw if tw > 0 else -mw
         if self.moving and not fresh and (self.out_v or self.out_w):
             if not getattr(self, '_warned', False):
                 self.get_logger().warn(f'/teleop/cmd_vel silent for {self.timeout}s: stopping robot')
