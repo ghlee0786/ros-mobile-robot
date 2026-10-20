@@ -146,6 +146,9 @@ class Services:
             elif rng and t == 2:
                 d["integer_range"] = [{"from_value": rng[0], "to_value": rng[1], "step": 1}]
             out.append(d)
+        if getattr(self.args, "foxy_param_bug", False) and out:
+            # 실기 Foxy rclpy: 모든 descriptor 가 마지막 파라미터의 이름 · 형식(· 범위)을 갖는다(param_check_multi.txt)
+            out = [dict(out[-1]) for _ in out]
         return {"descriptors": out}
 
     def param_get_parameters(self, p, a):

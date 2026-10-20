@@ -29,6 +29,17 @@ Item {
     readonly property int paramCount: paramClient.count
     readonly property bool paramLastSuccessful: paramClient.lastSuccessful
     readonly property int callsPending: rosApi.callsPending
+    readonly property string topicOkShownAs: topicsTab.shownState("정상")   // 끊기면 "끊김"
+    readonly property int diagDetailCount: diagTab.detailCount
+    // 파라미터 행 "이름:형식" 목록(정렬됨). 역할 번호는 ParamClient::NameRole(UserRole+1) · TypeNameRole(+3)
+    readonly property string paramRows: {
+        const rows = []
+        for (let i = 0; i < paramClient.count; ++i) {
+            const ix = paramClient.index(i, 0)
+            rows.push(paramClient.data(ix, Qt.UserRole + 1) + ":" + paramClient.data(ix, Qt.UserRole + 3))
+        }
+        return rows.join(",")
+    }
 
     function shows(name) { return page.visible && page.tab === name }
 
@@ -125,9 +136,9 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             currentIndex: page.tabs.indexOf(page.tab)
-            TopicsTab { robot: page.robot; tree: msgTree; active: page.shows("토픽") }
+            TopicsTab { id: topicsTab; robot: page.robot; tree: msgTree; active: page.shows("토픽") }
             LogTab { log: logModel; filter: logFilter }
-            DiagTab { robot: page.robot; diag: diagModel }
+            DiagTab { id: diagTab; robot: page.robot; diag: diagModel }
             NodesTab { robot: page.robot; api: rosApi; active: page.shows("노드") }
             ServicesTab { api: rosApi; response: responseTree; active: page.shows("서비스") }
             ParamsTab { params: paramClient; api: rosApi; active: page.shows("파라미터") }

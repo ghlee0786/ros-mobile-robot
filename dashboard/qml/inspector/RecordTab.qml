@@ -25,10 +25,11 @@ RowLayout {
                 color: Theme.text2; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
                 text: "선택한 토픽 <b>" + tab.robot.recordTopics.length + "개</b> · 경과 <b>" + tab.robot.recordElapsed + "</b>"
             }
-            Text {
-                Layout.fillWidth: true; wrapMode: Text.WrapAnywhere
-                text: tab.robot.recordPath === "" ? "records/<시각>/<토픽>.csv 로 저장 · 토픽 탭의 기록 칸으로 고른다" : tab.robot.recordPath
-                color: Theme.text2; font.family: tab.mono; font.pixelSize: Theme.fsSmall
+            Text {   // 안내문은 낱말 단위로, 경로는 아무 데서나 줄바꿈
+                readonly property bool hint: tab.robot.recordPath === ""
+                Layout.fillWidth: true; wrapMode: hint ? Text.WordWrap : Text.WrapAnywhere
+                text: hint ? "records/<시각>/<토픽>.csv 로 저장 · 토픽 탭의 기록 칸으로 고른다" : tab.robot.recordPath
+                color: Theme.text2; font.family: hint ? Theme.fontFamily : tab.mono; font.pixelSize: Theme.fsSmall
             }
             Row {
                 spacing: 8

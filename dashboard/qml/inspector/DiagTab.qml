@@ -11,6 +11,7 @@ RowLayout {
     required property DiagnosticsModel diag
     property string selectedKey
     property var selectedValues: []
+    readonly property int detailCount: detail.count   // 시험 훅 요약(inspector.diagDetailCount)
     spacing: Theme.sp4
 
     function kindOf(level) { return ["ok", "warn", "danger", "stale"][level] ?? "neutral" }
@@ -39,6 +40,7 @@ RowLayout {
         ListView {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            visible: tab.diag.count > 0
             clip: true
             model: tab.diag
             boundsBehavior: Flickable.StopAtBounds
@@ -63,7 +65,8 @@ RowLayout {
                 required property string message
                 required property var values
                 required property bool pinned
-                readonly property bool sel: tab.selectedKey === key
+                // 만들어지는 중(key 가 아직 "")인 행이 '선택 없음'("")과 같다고 보지 않는다
+                readonly property bool sel: key !== "" && tab.selectedKey === key
                 width: ListView.view.width
                 height: 36
                 color: sel ? Theme.accentSubtle : "transparent"
@@ -92,11 +95,15 @@ RowLayout {
                 }
             }
         }
-        EmptyState {
-            Layout.alignment: Qt.AlignHCenter
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
             visible: tab.diag.count === 0
-            title: "진단 항목이 없음"
-            description: "/diagnostics 도 센서 상태도 아직 없음"
+            EmptyState {
+                anchors.centerIn: parent
+                title: "진단 항목 없음"
+                description: "/diagnostics 도 센서 상태도 아직 오지 않았습니다"
+            }
         }
     }
 
@@ -106,10 +113,12 @@ RowLayout {
         title: "상세"
         subtitle: tab.selectedKey
         ListView {
+            id: detail
             Layout.fillWidth: true
             Layout.fillHeight: true
+            visible: tab.selectedKey !== ""
             clip: true
-            model: tab.selectedValues
+            model: tab.selectedKey !== "" ? tab.selectedValues : []
             delegate: RowLayout {
                 required property var modelData
                 width: ListView.view.width
@@ -125,10 +134,15 @@ RowLayout {
                 }
             }
         }
-        EmptyState {
-            Layout.alignment: Qt.AlignHCenter
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
             visible: tab.selectedKey === ""
-            title: "항목을 고르면 key/value 를 보인다"
+            EmptyState {
+                anchors.centerIn: parent
+                title: "고른 항목 없음"
+                description: "왼쪽 목록에서 항목을 고르면 key/value 를 보입니다"
+            }
         }
     }
 }

@@ -1,0 +1,152 @@
+{
+  "id": "dash_arm",
+  "title": "조종 잠금: 잠긴 동안 drive 무시(1) · 해제(2) 뒤 동작(3) · armIdleMs 1 s 무입력 자동 잠금 뒤 drive 무시(6) · 잠긴 채 비상 정지",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": [],
+  "duration_s": 10,
+  "actions": [
+    {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 1,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 2,
+      "call": "robot.armTeleop",
+      "args": [
+        true
+      ]
+    },
+    {
+      "t": 2.5,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 3,
+      "set": "robot.armIdleMs",
+      "value": 1000
+    },
+    {
+      "t": 3.5,
+      "call": "robot.drive",
+      "args": [
+        0,
+        0
+      ]
+    },
+    {
+      "t": 6,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 7,
+      "call": "robot.estop",
+      "args": []
+    },
+    {
+      "t": 8,
+      "shot": "arm.png"
+    }
+  ],
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.teleopArmed",
+        "op": "==",
+        "value": false
+      },
+      {
+        "path": "robot.armIdleMs",
+        "op": "==",
+        "value": 1000
+      },
+      {
+        "path": "robot.mode",
+        "op": "==",
+        "value": "정지"
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "zero_after_action",
+        "action": 1,
+        "until_action": 2,
+        "topic": "/teleop/cmd_vel",
+        "fields": [
+          "linear.x",
+          "angular.z"
+        ]
+      },
+      {
+        "rule": "within_ms_after_action",
+        "action": 3,
+        "topic": "/teleop/cmd_vel",
+        "where": {
+          "linear.x": 0.08
+        },
+        "ms": 200,
+        "min_count": 1
+      },
+      {
+        "rule": "zero_after_action",
+        "action": 6,
+        "topic": "/teleop/cmd_vel",
+        "fields": [
+          "linear.x",
+          "angular.z"
+        ]
+      },
+      {
+        "rule": "within_ms_after_action",
+        "action": "robot.estop",
+        "topic": "/teleop/cmd_vel",
+        "where": {
+          "linear.x": 0,
+          "angular.z": 0
+        },
+        "ms": 100,
+        "min_count": 3
+      },
+      {
+        "rule": "within_ms_after_action",
+        "action": "robot.estop",
+        "topic": "/straight_drive/cancel",
+        "ms": 100
+      },
+      {
+        "rule": "within_ms_after_action",
+        "action": "robot.estop",
+        "op": "call_service",
+        "service": "/navigate_to_pose/_action/cancel_goal",
+        "ms": 100
+      }
+    ]
+  }
+}

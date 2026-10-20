@@ -11,6 +11,7 @@
   환경변수 ROBOT_DASHBOARD_TEST=1 을 주고 PATH 앞에 E:\\Qt\\6.8.3\\mingw_64\\bin 을 넣는다.
   종료 코드: 0 정상, 1 QML 로드 실패, 2 --fail-on-warning 경고, 3 actions 실패.
 - 결과는 E:\\Temp\\dashtest\\<시각>\\<id>\\ 에 모이고 summary.json 과 콘솔 표를 낸다. 모두 합격이면 종료 코드 0.
+- 대시보드 exe 가 옆 소스(<exe>/../../src · qml)보다 오래됐으면 실행하지 않고 종료 코드 2 로 끝난다(다시 빌드).
 
 시나리오 형식(JSON):
   {"id","title","needs_pi","needs_human","requires":["P4-core"],"server":true,"dashboards":1,"scene":false,
@@ -25,7 +26,8 @@
              "log_forbid":["TypeError"], "log_regex_max":[{"regex":"gui_ms=([0-9.]+)","max":50}],
              "mem_growth_max_mb":50, "mem_warmup_s":30}}
   state op 는 compare() 의 것 + exists · missing. trace 의 t 는 서버의 첫 연결 기준 초로 바꿔 판정한다(장애 시각도 첫 연결 기준).
-  인자 안의 {here}(이 폴더) · {out}(시나리오 결과 폴더) · {pi_host} 는 바꿔 넣는다.
+  server_args · dashboard_args · actions 의 문자열 값(shot · value · args 안의 문자열) 안의 {here}(이 폴더) ·
+  {out}(시나리오 결과 폴더, 대시보드 둘째부터는 그 dash<i> 폴더) · {pi_host} 는 바꿔 넣는다.
   server_log 규칙: max_abs · count_ge · count_le · within_ms_after_action · zero_after_action · throttle_eq ·
   rate_between · resubscribe_within · goal_inverse (각 함수 docstring 참고).
 """
@@ -81,6 +83,22 @@ def subst(args, **kw):
             x = x.replace("{" + k + "}", v)
         out.append(x)
     return out
+
+
+def subst_action(x, **kw):
+    out = {k: subst([v], **kw)[0] if isinstance(v, str) else v for k, v in x.items()}
+    if isinstance(out.get("args"), list):
+        out["args"] = [subst([v], **kw)[0] if isinstance(v, str) else v for v in out["args"]]
+    return out
+
+
+def stale_exe(exe):
+    """exe 가 옆 소스(<exe>/../../src · qml)의 가장 새 파일보다 오래됐으면 그 파일 경로, 아니면 None."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(exe)))
+    files = [f for d in ("src", "qml") for f in glob.glob(os.path.join(root, d, "**", "*"), recursive=True)
+             if os.path.isfile(f)]
+    newest = max(files, key=os.path.getmtime, default=None)
+    return newest if newest and os.path.getmtime(newest) > os.path.getmtime(exe) else None
 
 
 # ---- 값 꺼내기 · 비교 ------------------------------------------------------------------------
@@ -244,17 +262,21 @@ def check_server_log(recs, rules, actions_done=None):
                 fails.append(f"{r.get('action')} 뒤 {r['ms']} ms 안 {r.get('op', 'publish')} {r.get('topic', r.get('service', ''))}"
                              f" {n} 개 (기준 {r.get('min_count', 1)})")
         elif rule == "zero_after_action":
-            # action + after_ms 뒤로 topic 의 fields 가 모두 0 이어야 한다(비0 명령 없음)
+            # action + after_ms 뒤로(until_action 이 있으면 그 action 전까지) topic 의 fields 가 모두 0 이어야 한다(비0 명령 없음)
             w = _action_wall(actions_done, r)
             if w is None:
                 fails.append(f"zero_after_action: actions_done 에 {r.get('action')!r} 없음")
+                continue
+            until = _action_wall(actions_done, {"action": r["until_action"]}) if "until_action" in r else math.inf
+            if until is None:
+                fails.append(f"zero_after_action: actions_done 에 {r['until_action']!r} 없음")
                 continue
             def nonzero(x):
                 return any(abs(_field(x.get("msg", {}), f) or 0) > 1e-9 for f in r["fields"])
             # action 직전에 보낸 명령은 action 의 첫 0 명령과 같은 TCP 묶음으로 와 wall 이 action 보다 늦을 수 있다.
             # wall >= action 이어도 스트림 순서로 그 첫 0 명령보다 앞선 것은 action 전에 보낸 것이다.
             first_zero = next((i for i, x in enumerate(recs) if _match(x, r) and x["wall"] >= w and not nonzero(x)), None)
-            bad = [x for i, x in enumerate(recs) if _match(x, r) and x["wall"] > w + r.get("after_ms", 0) / 1000.0
+            bad = [x for i, x in enumerate(recs) if _match(x, r) and w + r.get("after_ms", 0) / 1000.0 < x["wall"] < until
                    and nonzero(x) and not (first_zero is not None and x["wall"] >= w and i < first_zero)]
             if bad:
                 fails.append(f"{r.get('action')} 뒤 {r['topic']} 비0 명령 {len(bad)} 개")
@@ -294,17 +316,20 @@ def check_server_log(recs, rules, actions_done=None):
                 if subs != first or adv < r.get("min_advertise", 4):
                     fails.append(f"연결 {c['conn']}: {r['within_s']} s 안 subscribe 차이 {sorted(first ^ subs)}, advertise {adv}")
         elif rule == "goal_inverse":
-            # /goal_pose 가 frame 이고, map_odom(x,y,yaw_deg) 역변환이 odom(x,y,yaw_rad) 과 tol_m · tol_deg 안
-            goals = [x for x in recs if _match(x, {"topic": "/goal_pose"})]
+            # topic(기본 /goal_pose, PoseWithCovarianceStamped 도 됨)의 마지막 rx 가 frame 이고,
+            # map_odom(x,y,yaw_deg) 역변환이 odom(x,y,yaw_rad) 과 tol_m · tol_deg 안
+            topic = r.get("topic", "/goal_pose")
+            goals = [x for x in recs if _match(x, {"topic": topic})]
             if not goals:
-                fails.append("goal_inverse: /goal_pose 없음")
+                fails.append(f"goal_inverse: {topic} 없음")
                 continue
             m = goals[-1]["msg"]
             if m.get("header", {}).get("frame_id") != r.get("frame", "map"):
-                fails.append(f"/goal_pose 프레임 {m.get('header', {}).get('frame_id')!r} != {r.get('frame', 'map')!r}")
+                fails.append(f"{topic} 프레임 {m.get('header', {}).get('frame_id')!r} != {r.get('frame', 'map')!r}")
                 continue
             mx, my, myaw = r["map_odom"][0], r["map_odom"][1], math.radians(r["map_odom"][2])
-            p, q = m["pose"]["position"], m["pose"]["orientation"]
+            pose = m["pose"].get("pose", m["pose"])
+            p, q = pose["position"], pose["orientation"]
             dx, dy, c, s = p["x"] - mx, p["y"] - my, math.cos(myaw), math.sin(myaw)
             ox, oy = c * dx + s * dy, -s * dx + c * dy
             oyaw = math.atan2(2 * (q["w"] * q["z"] + q["x"] * q["y"]), 1 - 2 * (q["y"] ** 2 + q["z"] ** 2)) - myaw
@@ -332,6 +357,20 @@ def check_dash_log(text, expect):
 
 
 # ---- 프로세스 ----------------------------------------------------------------------------
+# 띄운 서버 · 대시보드. 실행기가 예외 · Ctrl+C 로 끊겨도 main 이 남은 것을 모두 끝낸다(창 · 서버를 남기지 않는다).
+LIVE = set()
+_live_lock = threading.Lock()
+_stopping = threading.Event()
+
+
+def track(proc):
+    with _live_lock:
+        LIVE.add(proc)
+    if _stopping.is_set():   # 정리가 시작된 뒤 일꾼 스레드가 띄운 것
+        kill_tree(proc)
+    return proc
+
+
 def kill_tree(proc):
     """프로세스와 자식까지 끝낸다(uv 가상환경 python.exe 는 진짜 python 을 자식으로 띄우는 런처다)."""
     if proc.poll() is None:
@@ -343,6 +382,16 @@ def kill_tree(proc):
         proc.wait(5)
     except subprocess.TimeoutExpired:
         pass
+    with _live_lock:
+        LIVE.discard(proc)
+
+
+def kill_all():
+    _stopping.set()
+    with _live_lock:
+        procs = list(LIVE)
+    for p in procs:
+        kill_tree(p)
 
 
 class ServerProc:
@@ -353,7 +402,7 @@ class ServerProc:
         out = open(os.path.join(self.sdir, "server.out"), "a", encoding="utf-8")
         cmd = [sys.executable, MOCK, "--port", str(self.port), "--log", os.path.join(self.sdir, "server.jsonl"),
                "--log-tx", *self.args]
-        self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=out, text=True, encoding="utf-8")
+        self.proc = track(subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=out, text=True, encoding="utf-8"))
         deadline = time.time() + timeout
         while time.time() < deadline:
             line = self.proc.stdout.readline()
@@ -418,6 +467,7 @@ def run_one(sc, a, root, port):
     server = None
     dashes = []
     runner_done = []
+    mem = []
     try:
         if sc.get("server", True):
             server = ServerProc(sdir, subst(sc.get("server_args", []), here=HERE, out=sdir, pi_host=a.pi_host or ""), port)
@@ -430,22 +480,22 @@ def run_one(sc, a, root, port):
             ddir = sdir if i == 0 else os.path.join(sdir, f"dash{i}")
             os.makedirs(ddir, exist_ok=True)
             # 상대 shot 경로는 대시보드 작업 폴더(저장소 루트)가 아니라 결과 폴더에 쓴다
+            acts = [subst_action(x, here=HERE, out=ddir, pi_host=a.pi_host or "") for x in dash_actions]
             acts = [dict(x, shot=os.path.join(ddir, x["shot"])) if "shot" in x and not os.path.isabs(x["shot"]) else x
-                    for x in dash_actions]
+                    for x in acts]
             with open(os.path.join(ddir, "actions.json"), "w", encoding="utf-8") as f:
                 json.dump(acts, f, ensure_ascii=False, indent=1)
             cmd = dashboard_cmd(a, sc, ddir, port)
             with open(os.path.join(ddir, "cmd.txt"), "w", encoding="utf-8") as f:
                 f.write(subprocess.list2cmdline(cmd))
             out = open(os.path.join(ddir, "dash.out"), "w", encoding="utf-8")
-            dashes.append({"dir": ddir, "proc": subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, env=env),
+            dashes.append({"dir": ddir, "proc": track(subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, env=env)),
                            "killed": False})
         if a.no_dashboard:
             print(f"[{sid}] 서버 ws://127.0.0.1:{port} — {duration} s 동안 다른 클라이언트를 기다림", flush=True)
         # 실행기 동작 · 메모리 표본
         t0 = time.perf_counter()
         pending = sorted((x for x in sc.get("actions", []) if "runner" in x), key=lambda x: x["t"])
-        mem = []
         next_mem = 0.0
         while True:
             el = time.perf_counter() - t0
@@ -573,6 +623,10 @@ def main(argv=None):
     if not (a.no_dashboard or a.dashboard_cmd or os.path.exists(a.exe)):
         print(f"대시보드 실행 파일 없음: {a.exe} (--exe · --dashboard-cmd · --no-dashboard)", file=sys.stderr)
         return 2
+    if not (a.no_dashboard or a.dashboard_cmd) and (newer := stale_exe(a.exe)):
+        print(f"대시보드 실행 파일이 소스보다 오래됨: {a.exe} < {newer} — dashboard/build.cmd 로 다시 빌드한다",
+              file=sys.stderr)
+        return 2
     root = a.out or os.path.join(r"E:\Temp\dashtest", datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))
     os.makedirs(root, exist_ok=True)
     results, todo = [], []
@@ -583,9 +637,17 @@ def main(argv=None):
                 results.append({"id": sc["id"], "title": sc.get("title", ""), "status": "skip", "failures": [why]})
         else:
             todo.append(sc)
-    with cf.ThreadPoolExecutor(max_workers=max(1, a.jobs)) as ex:
+    ex = cf.ThreadPoolExecutor(max_workers=max(1, a.jobs))
+    finished = False
+    try:
         futs = [ex.submit(run_one, sc, a, root, a.port + i if a.port else 0) for i, sc in enumerate(todo)]
         results += [f.result() for f in futs]
+        finished = True
+    finally:   # 정상 종료면 이미 다 끝났고, 끊겼으면 아직 돌지 않은 시나리오를 버리고 띄운 것을 모두 끝낸다
+        ex.shutdown(wait=False, cancel_futures=True)
+        kill_all()
+        if finished:
+            _stopping.clear()
     results.sort(key=lambda r: r["id"])
     with open(os.path.join(root, "summary.json"), "w", encoding="utf-8") as f:
         json.dump({"root": root, "results": results}, f, ensure_ascii=False, indent=1)

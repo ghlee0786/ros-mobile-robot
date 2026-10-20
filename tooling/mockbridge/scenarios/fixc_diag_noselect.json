@@ -1,0 +1,23 @@
+{
+  "id": "fixc_diag_noselect",
+  "title": "B39·B38: 진단 탭에서 아무것도 고르지 않으면 상세가 비어 있음(빈 상태 안내만)",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": ["--no-publish"],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 15},
+    {"t": 0.5, "set": "win.page", "value": 1},
+    {"t": 0.5, "set": "inspector.tab", "value": "진단"},
+    {"t": 6, "shot": "{out}/diag.png"}
+  ],
+  "duration_s": 8,
+  "expect": {
+    "exit_code": 0,
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [
+      {"path": "inspector.diagCount", "op": ">", "value": 0},
+      {"path": "inspector.diagDetailCount", "op": "==", "value": 0}
+    ]
+  }
+}

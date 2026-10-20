@@ -1,0 +1,27 @@
+{
+  "id": "safety_nav_conflict",
+  "title": "B11 · B12: Nav2 목표 진행 중 직진은 막고, 키보드 조종으로 바꾸면 곧바로 cancel_goal",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": ["--nav"],
+  "dashboard_args": [],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 10},
+    {"t": 1.5, "call": "robot.armTeleop", "args": [true]},
+    {"t": 2, "call": "robot.sendGoal", "args": [1.5, 0.0, 0.0]},
+    {"t": 4, "call": "robot.straight", "args": [1.0]},
+    {"t": 5, "set": "robot.mode", "value": "키보드 조종"},
+    {"t": 8, "call": "robot.estop", "args": []}
+  ],
+  "duration_s": 10,
+  "expect": {
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [{"path": "bridge.connected", "op": "==", "value": true}],
+    "server_log": [
+      {"rule": "count_ge", "topic": "/goal_pose", "value": 1},
+      {"rule": "count_le", "topic": "/straight_drive/goal", "value": 0},
+      {"rule": "within_ms_after_action", "action": "robot.mode", "op": "call_service",
+       "service": "/navigate_to_pose/_action/cancel_goal", "ms": 150}
+    ]
+  }
+}

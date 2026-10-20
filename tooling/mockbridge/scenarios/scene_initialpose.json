@@ -1,0 +1,94 @@
+{
+  "id": "scene_initialpose",
+  "title": "초기 위치 도구 · map→odom(1,2,30°)에서 odom (0.5,0,0) → /dashboard/initialpose map 프레임 역변환 2 cm · 5° 안 · 공분산",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--nav",
+    "--map-odom",
+    "1,2,30",
+    "--freeze-pose"
+  ],
+  "dashboard_args": [],
+  "duration_s": 7,
+  "actions": [
+    {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 0.5,
+      "set": "scene.cam",
+      "value": "위에서"
+    },
+    {
+      "wait": "robot.mapOdomFresh",
+      "timeout_s": 10
+    },
+    {
+      "t": 2,
+      "set": "scene.tool",
+      "value": "초기 위치"
+    },
+    {
+      "t": 2.5,
+      "call": "robot.setInitialPose",
+      "args": [
+        0.5,
+        0,
+        0
+      ]
+    },
+    {
+      "t": 4,
+      "shot": "initialpose.png"
+    }
+  ],
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "robot.mapOdomFresh",
+        "op": "==",
+        "value": true
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "goal_inverse",
+        "topic": "/dashboard/initialpose",
+        "frame": "map",
+        "map_odom": [
+          1,
+          2,
+          30
+        ],
+        "odom": [
+          0.5,
+          0,
+          0
+        ],
+        "tol_m": 0.02,
+        "tol_deg": 5
+      },
+      {
+        "rule": "count_ge",
+        "topic": "/dashboard/initialpose",
+        "where": {
+          "pose.covariance.0": 0.25,
+          "pose.covariance.7": 0.25
+        },
+        "value": 1
+      },
+      {
+        "rule": "count_le",
+        "topic": "/initialpose",
+        "value": 0
+      }
+    ]
+  }
+}

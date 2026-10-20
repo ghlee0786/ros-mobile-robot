@@ -23,7 +23,79 @@
       "value": "키보드 조종"
     },
     {
-      "t": 3,
+      "t": 3.0,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 3.5,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 4.0,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 4.5,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 5.0,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 5.5,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 6.0,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 6.5,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 7.0,
+      "call": "robot.drive",
+      "args": [
+        1,
+        0
+      ]
+    },
+    {
+      "t": 7.5,
       "call": "robot.drive",
       "args": [
         1,
@@ -82,7 +154,7 @@
       {
         "rule": "count_ge",
         "op": "subscribe",
-        "topic": "/scan",
+        "topic": "/scan_compact",
         "value": 1
       },
       {

@@ -1,0 +1,174 @@
+{
+  "id": "scene_layers",
+  "title": "--nav: 지도 · 코스트맵 2 · footprint · TF · AMCL · 잔상 3 s 레이어를 켜면 각자 구독하고 데이터를 받음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--nav",
+    "--map-odom",
+    "1,2,30"
+  ],
+  "dashboard_args": [],
+  "duration_s": 10,
+  "actions": [
+    {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 0.5,
+      "set": "scene.cam",
+      "value": "위에서"
+    },
+    {
+      "t": 0.5,
+      "set": "scene.layerPanelOpen",
+      "value": true
+    },
+    {
+      "t": 0.5,
+      "set": "scene.showMap",
+      "value": true
+    },
+    {
+      "t": 0.5,
+      "set": "scene.showGlobalCostmap",
+      "value": true
+    },
+    {
+      "t": 0.5,
+      "set": "scene.showLocalCostmap",
+      "value": true
+    },
+    {
+      "t": 0.5,
+      "set": "scene.showFootprint",
+      "value": true
+    },
+    {
+      "t": 0.5,
+      "set": "scene.showTf",
+      "value": true
+    },
+    {
+      "t": 0.5,
+      "set": "scene.showAmcl",
+      "value": true
+    },
+    {
+      "t": 0.5,
+      "set": "scene.scanDecay",
+      "value": 3
+    },
+    {
+      "t": 8,
+      "shot": "layers.png"
+    }
+  ],
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "scene.costmapReceived",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.footprintReceived",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.amclReceived",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.tfFrameCount",
+        "op": ">=",
+        "value": 5
+      },
+      {
+        "path": "scene.scanAccumPoints",
+        "op": ">=",
+        "value": 5000
+      },
+      {
+        "path": "scene.showMap",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.hasMap",
+        "op": "==",
+        "value": true
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/global_costmap/costmap",
+        "value": 1
+      },
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/local_costmap/costmap",
+        "value": 1
+      },
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/local_costmap/published_footprint",
+        "value": 1
+      },
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/amcl_pose",
+        "value": 1
+      },
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/map",
+        "value": 1
+      },
+      {
+        "rule": "count_ge",
+        "dir": "tx",
+        "topic": "/global_costmap/costmap",
+        "value": 1
+      },
+      {
+        "rule": "count_ge",
+        "dir": "tx",
+        "topic": "/local_costmap/costmap",
+        "value": 1
+      },
+      {
+        "rule": "count_ge",
+        "dir": "tx",
+        "topic": "/local_costmap/published_footprint",
+        "value": 1
+      },
+      {
+        "rule": "count_ge",
+        "dir": "tx",
+        "topic": "/amcl_pose",
+        "value": 1
+      },
+      {
+        "rule": "count_ge",
+        "dir": "tx",
+        "topic": "/map",
+        "value": 1
+      }
+    ]
+  }
+}

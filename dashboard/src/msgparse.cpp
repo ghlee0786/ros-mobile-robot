@@ -38,17 +38,36 @@ Scan parseScan(const QJsonObject &m, const Pose2D &mount, double selfHide)
     const double rmin = qMax(m["range_min"].toDouble(), selfHide), rmax = m["range_max"].toDouble(1e9);
     out.points.reserve(ranges.size());
     for (int i = 0; i < ranges.size(); ++i) {
-        const double r = ranges[i].toDouble();   // inf/NaN 은 null 로 와서 0
+        const double r = ranges[i].toDouble(qQNaN());   // inf/NaN(rosbridge null) · /scan_compact 0 은 NaN → 버림
         if (!(r >= rmin && r <= rmax))
             continue;
         const double a = a0 + i * da;
         const Pose2D p = transform2D(mount, {r * std::cos(a), r * std::sin(a), 0});
         out.points.append(QVector3D(float(p.x), float(p.y), 0));
-        if (out.nearestRange == 0 || r < out.nearestRange)
-            out.nearestRange = r, out.nearestAngle = qRadiansToDegrees(std::atan2(p.y, p.x));
+        const double d = std::hypot(p.x, p.y);   // 거리도 각도와 같은 로봇(base_link) 기준
+        if (out.nearestRange == 0 || d < out.nearestRange)
+            out.nearestRange = d, out.nearestAngle = qRadiansToDegrees(std::atan2(p.y, p.x));
     }
     out.scanTime = m["scan_time"].toDouble();
     return out;
+}
+
+QJsonObject scanFromCompact(const QJsonObject &m)
+{
+    const QJsonArray dims = m["layout"].toObject()["dim"].toArray();
+    const QStringList f = dims.isEmpty() ? QStringList() : dims[0].toObject()["label"].toString().split(' ');
+    if (f.size() < 7)
+        return {};
+    const qsizetype n = f.size() - 6;   // frame_id 가 비었거나 공백을 품어도 뒤 6 칸은 숫자
+    const QJsonArray data = m["data"].toArray();
+    QJsonArray ranges;
+    for (const QJsonValue &v : data)
+        ranges.append(v.toInt() > 0 ? QJsonValue(v.toInt() / 1000.0) : QJsonValue(QJsonValue::Null));
+    const double a0 = f[n].toDouble(), da = f[n + 1].toDouble();
+    return {{"header", QJsonObject{{"frame_id", f.mid(0, n).join(' ')},
+                                   {"stamp", QJsonObject{{"sec", f[n + 4].toLongLong()}, {"nanosec", f[n + 5].toLongLong()}}}}},
+            {"angle_min", a0}, {"angle_increment", da}, {"angle_max", a0 + (data.size() - 1) * da},
+            {"range_min", f[n + 2].toDouble()}, {"range_max", f[n + 3].toDouble()}, {"ranges", ranges}};
 }
 
 namespace {

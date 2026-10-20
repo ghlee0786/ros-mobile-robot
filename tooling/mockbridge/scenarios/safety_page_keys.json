@@ -1,0 +1,30 @@
+{
+  "id": "safety_page_keys",
+  "title": "B4: 조종 키는 대시보드 페이지에서만 — W 를 누른 채 페이지를 바꾸면 곧바로 0, 다른 페이지의 ↓ → ↑ 는 무시",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": [],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 10},
+    {"t": 0.6, "call": "win.requestActivate", "args": []},
+    {"wait": "win.active", "timeout_s": 5},
+    {"t": 2, "key": "Ctrl+Return", "hold_ms": 50},
+    {"t": 2.5, "key": "W", "hold_ms": 1500},
+    {"t": 3.2, "set": "win.page", "value": 1},
+    {"t": 4.5, "key": "Down", "hold_ms": 1000},
+    {"t": 6, "key": "Right", "hold_ms": 1000},
+    {"t": 7.5, "set": "win.page", "value": 2},
+    {"t": 8, "key": "Up", "hold_ms": 1000},
+    {"t": 9.5, "call": "robot.estop", "args": []}
+  ],
+  "duration_s": 11,
+  "expect": {
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [{"path": "bridge.connected", "op": "==", "value": true}],
+    "server_log": [
+      {"rule": "count_ge", "topic": "/teleop/cmd_vel", "where": {"linear.x": 0.08}, "value": 3},
+      {"rule": "zero_after_action", "action": "win.page", "topic": "/teleop/cmd_vel", "fields": ["linear.x", "angular.z"], "after_ms": 0}
+    ]
+  }
+}

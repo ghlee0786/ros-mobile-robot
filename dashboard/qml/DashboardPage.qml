@@ -10,14 +10,26 @@ FocusScope {
     property bool active: true
     readonly property string mono: Theme.monoFamily
     focus: true
-    onActiveChanged: if (active) forceActiveFocus()
+    // 페이지를 떠나면 누르고 있던 키를 놓은 것으로 본다(StackLayout 은 포커스를 그대로 둔다)
+    onActiveChanged: if (active) forceActiveFocus(); else { held = {}; robot.drive(0, 0) }
     Component.onCompleted: forceActiveFocus()
+    // 직진 · 기록 버튼(팔레트도 같은 조건): 연결이 정상이고, 직진은 키보드 조종 모드에서 진행 중이 아닐 때
+    readonly property bool linkOk: robot.bridge.connected && !robot.linkLost
+    readonly property bool canStraight: linkOk && !robot.straightRunning && robot.mode === "키보드 조종"
+    readonly property bool canRecord: robot.recording || robot.bridge.connected
 
     // ---- 키보드 조종: 누르고 있는 동안만 움직인다 (↑↓←→ / WASD, K · 스페이스 정지) ----
     // 조종이 잠겨 있으면(robot.teleopArmed false) Robot 이 입력을 버린다. Ctrl+Enter 로 바로 풀 수 있다.
     property var held: ({})
     property bool lockHint: false
     readonly property bool wheelPaused: wheelGraph.paused   // 시험 상태(state.json dash)용
+    // 시험 상태용: 바퀴 그래프 시간 창 · X 폭, 멈춘 뒤 IMU 그래프보다 X 끝이 뒤처진 s, 사용자 그래프 계열 수 · 마지막 계열 경로 · 점 수
+    readonly property real wheelWindowSec: wheelGraph.windowSec
+    readonly property real wheelSpanSec: wheelGraph.feeder.xMax - wheelGraph.feeder.xMin
+    readonly property real wheelLagSec: imuGraph.feeder.xMax - wheelGraph.feeder.xMax
+    readonly property int userSeriesCount: userGraphPanel.objs.length
+    readonly property string userLastPath: userGraphPanel.objs.length ? userGraphPanel.objs[userGraphPanel.objs.length - 1].basePath : ""
+    readonly property int userLastCount: userGraphPanel.objs.length ? userGraphPanel.objs[userGraphPanel.objs.length - 1].count : 0
     function showLockHint() { if (!robot.teleopArmed) { lockHint = true; lockHintTimer.restart() } }
     Timer { id: lockHintTimer; interval: 3000; onTriggered: page.lockHint = false }
     // 입력칸에 포커스가 있으면 입력칸이 처리하지 않은 키(↑↓ 등)라도 조종으로 쓰지 않는다
@@ -34,7 +46,7 @@ FocusScope {
         return ""
     }
     Keys.onPressed: (e) => {
-        if (typing()) return
+        if (!page.active || typing()) return   // 데이터 점검 · 연결 페이지에서는 조종 키를 쓰지 않는다
         if (e.isAutoRepeat) { e.accepted = true; return }
         if ((e.key === Qt.Key_Return || e.key === Qt.Key_Enter) && (e.modifiers & Qt.ControlModifier)) {
             robot.armTeleop(true); e.accepted = true; return
@@ -44,7 +56,7 @@ FocusScope {
         else if (e.key === Qt.Key_K || e.key === Qt.Key_Space) { held = {}; robot.drive(0, 0); e.accepted = true }
     }
     Keys.onReleased: (e) => {
-        if (e.isAutoRepeat || typing()) return
+        if (!page.active || e.isAutoRepeat || typing()) return
         const d = keyDir(e.key)
         if (d) { held[d] = false; applyKeys(); e.accepted = true }
     }
@@ -244,6 +256,7 @@ FocusScope {
                             color: Theme.text2; font.family: page.mono; font.pixelSize: Theme.fsSmall
                         }
                         TimeGraph {
+                            id: imuGraph
                             objectName: "imuGraph"
                             Layout.fillWidth: true
                             graphHeight: 110
@@ -265,6 +278,8 @@ FocusScope {
                     }
 
                     UserGraphPanel {
+                        id: userGraphPanel
+                        objectName: "userGraphPanel"
                         Layout.fillWidth: true
                         robot: page.robot
                         link: graphLink
@@ -305,7 +320,7 @@ FocusScope {
                                 Text { text: "LiDAR"; color: Theme.text1; font.pixelSize: Theme.fsTitle; font.weight: Font.DemiBold }
                                 Text {
                                     color: Theme.text1; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
-                                    text: "점 <b>" + robot.scanCount.toLocaleString(Qt.locale("en_US"), 'f', 0) + "</b> · " + (robot.rates.length > 1 ? robot.rates[1].replace("/scan ", "") : "")
+                                    text: "점 <b>" + robot.scanCount.toLocaleString(Qt.locale("en_US"), 'f', 0) + "</b> · " + (robot.rates.length > 1 ? robot.rates[1].replace(/^\S+ /, "") : "")
                                 }
                                 Text {
                                     color: Theme.text1; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
@@ -394,9 +409,9 @@ FocusScope {
                 ColumnLayout {   // 세 버튼을 위아래로(가로 폭을 아낀다)
                     Layout.fillWidth: false
                     spacing: Theme.sp1
-                    Btn { Layout.fillWidth: true; size: "sm"; text: "1 m 직진 시험"; kind: "accent"; enabled: !robot.straightRunning; onClicked: robot.straight(1.0) }
-                    Btn { Layout.fillWidth: true; size: "sm"; text: "1 m 후진"; enabled: !robot.straightRunning; onClicked: robot.straight(-1.0) }
-                    Btn { Layout.fillWidth: true; size: "sm"; text: robot.recording ? "기록 중지 " + robot.recordElapsed : "기록 시작"; onClicked: robot.toggleRecording() }
+                    Btn { Layout.fillWidth: true; size: "sm"; text: "1 m 직진 시험"; kind: "accent"; enabled: page.canStraight; onClicked: { page.showLockHint(); robot.straight(1.0) } }
+                    Btn { Layout.fillWidth: true; size: "sm"; text: "1 m 후진"; enabled: page.canStraight; onClicked: { page.showLockHint(); robot.straight(-1.0) } }
+                    Btn { Layout.fillWidth: true; size: "sm"; text: robot.recording ? "기록 중지 " + robot.recordElapsed : "기록 시작"; enabled: page.canRecord; onClicked: robot.toggleRecording() }
                 }
 
                 Item { Layout.fillWidth: true }

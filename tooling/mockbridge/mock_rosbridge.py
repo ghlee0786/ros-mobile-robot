@@ -39,6 +39,8 @@ def parser():
     g.add_argument("--hide-topic", action="append", help="/rosapi/topics 에서 숨길 토픽(여러 번)")
     g.add_argument("--no-respond", action="append", help="응답하지 않을 서비스(여러 번)")
     g.add_argument("--clients", type=int, help="/client_count 값을 고정")
+    g.add_argument("--foxy-param-bug", action="store_true",
+                   help="실기 Foxy rclpy 처럼 describe_parameters 의 모든 descriptor 에 마지막 파라미터의 이름 · 형식을 넣는다")
 
     g = p.add_argument_group("시뮬레이션")
     g.add_argument("--room", default=os.path.join(HERE, "rooms", "default.json"), help="방 JSON")
@@ -54,6 +56,8 @@ def parser():
                    help="/scan frame_id (실기는 base_link: 로봇 중심에서 잰다. 다른 값이면 laser 장착 위치에서 잰다)")
     g.add_argument("--pi-initialpose", action="store_true",
                    help="파이 initialpose_node 처럼 5 s 마다 /initialpose(map 원점)를 발행하고 적용한다")
+    g.add_argument("--no-scan-compact", action="store_true",
+                   help="/scan_compact(UInt16MultiArray, 거리 mm)를 내지 않는다(/rosapi/topics 에서도 빠진다)")
     g.add_argument("--scan-rays", type=int, default=1800, help="/scan 광선 수")
     g.add_argument("--scan-rays-from", help="기록 JSONL 의 첫 /scan 광선 수로 맞춘다")
     g.add_argument("--scan-max", type=float, default=25.0, help="/scan range_max(m)")
@@ -68,7 +72,7 @@ def parser():
     g.add_argument("--plan-frame", choices=["map", "odom"], default="map", help="/plan 프레임")
     g.add_argument("--null-heading", action="store_true", help="직진 status 의 heading_err_deg 를 null 로")
     g.add_argument("--rosout-burst", type=float, default=0.0, help="/rosout 을 N Hz 로 쏟아 낸다")
-    g.add_argument("--diag-stale", type=float, default=0.0, help="/diagnostics 를 N 초 뒤 멈춤")
+    g.add_argument("--diag-stale", type=float, default=0.0, help="/diagnostics 를 첫 연결 N 초 뒤 멈춤")
     g.add_argument("--nav", action="store_true", help="amcl·costmap·footprint·액션 상태 토픽을 낸다")
 
     g = p.add_argument_group("장애 주입")

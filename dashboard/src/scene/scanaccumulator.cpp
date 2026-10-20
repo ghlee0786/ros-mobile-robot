@@ -45,6 +45,8 @@ void ScanAccumulator::handle(const QString &topic, const QJsonObject &msg)
 {
     if (topic == "/scan")
         addScan(msg, now());
+    else if (topic == "/scan_compact")   // LiDAR 센서가 /scan 대신 구독했을 때(Robot::pickScanTopic)
+        addScan(msgparse::scanFromCompact(msg), now());
     else if (topic == "/tf_static")
         for (const QJsonValue &v : msg["transforms"].toArray()) {
             const QJsonObject t = v.toObject(), tr = t["transform"].toObject();
@@ -64,7 +66,7 @@ void ScanAccumulator::addScan(const QJsonObject &m, qint64 nowMs)
     const double c = std::cos(m_rt), s = std::sin(m_rt);
     Batch b{nowMs, {}, {}, {}};
     for (int i = 0; i < ranges.size() && b.pts.size() < kMaxPoints; ++i) {
-        const double r = ranges[i].toDouble();   // inf/NaN 은 null 로 와서 0
+        const double r = ranges[i].toDouble(qQNaN());   // inf/NaN(rosbridge null) · /scan_compact 0 은 NaN → 버림
         if (!(r >= rmin && r <= rmax))
             continue;
         const double a = a0 + i * da;

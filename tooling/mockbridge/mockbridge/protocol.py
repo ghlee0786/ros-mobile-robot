@@ -79,7 +79,7 @@ class Sub:
     def __init__(self, type_):
         self.type = type_
         self.params = {}             # sid -> (throttle_ms, queue_length, compression)
-        self.last_sent = 0.0
+        self.next_due = 0.0          # 다음 발행을 보낼 수 있는 시각(perf_counter 초)
         self.pending = collections.deque(maxlen=1)
 
     def update(self, sid, throttle, queue, compression):
@@ -155,11 +155,14 @@ class Conn:
                 self.flush_one(sub, now)
 
     def flush_one(self, sub, now):
-        if sub.pending and (now - sub.last_sent) * 1000 >= sub.throttle:
+        # 재생 기록은 파이 rosbridge 의 throttle 을 이미 거친 '도착' 시각이라 간격이 흔들린다. 그 흔들림을
+        # 한 번 더 걸러 버리지 않도록 재생 출처는 한 주기만큼 일찍 보내도 된다(평균 빈도는 그대로 1/throttle 이하)
+        slack = sub.throttle / 1000 * getattr(getattr(self.server, "source", None), "throttle_slack", 0)
+        if sub.pending and now >= sub.next_due - slack:
             self._send(sub.pending.popleft(), sub, now)
 
     def _send(self, pkt, sub, now):
-        sub.last_sent = now
+        sub.next_due = max(sub.next_due, now) + sub.throttle / 1000
         if sub.compression == "cbor":   # 실기 Foxy 는 cbor 구독에 아무 프레임도 보내지 않는다(--cbor 일 때만 보낸다)
             if not self.server.args.cbor:
                 return

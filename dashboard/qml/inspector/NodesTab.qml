@@ -108,13 +108,23 @@ RowLayout {
                 }
             }
         }
-        TopicList { title: "발행"; items: tab.api.publishing }
-        TopicList { title: "구독"; items: tab.api.subscribing }
-        TopicList { title: "서비스"; items: tab.api.nodeServices }
-        EmptyState {
-            Layout.alignment: Qt.AlignHCenter
+        TopicList { title: "발행"; items: tab.api.publishing; visible: tab.api.node !== "" }
+        TopicList { title: "구독"; items: tab.api.subscribing; visible: tab.api.node !== "" }
+        TopicList { title: "서비스"; items: tab.api.nodeServices; visible: tab.api.node !== "" }
+        Panel {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
             visible: tab.api.node === ""
-            title: "노드를 고르면 발행 · 구독 · 서비스를 보인다"
+            title: "노드 정보"
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                EmptyState {
+                    anchors.centerIn: parent
+                    title: "고른 노드 없음"
+                    description: "왼쪽 목록에서 노드를 고르면 발행 · 구독 · 서비스를 보입니다"
+                }
+            }
         }
     }
 }

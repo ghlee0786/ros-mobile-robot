@@ -109,7 +109,8 @@ signals:
     void bridgeError(const QString &text);   // rosbridge status op, 실패한 서비스 응답
 
 private:
-    struct Times { QList<std::pair<qint64, qint64>> arrivals; qint64 last = 0; qint64 since = 0; double latency = qQNaN(); qint64 total = 0; double guiMs = 0; };
+    struct Arrival { qint64 t, bytes; double stampMs; };   // 수신 시각 · 바이트 · header.stamp(없으면 NaN)
+    struct Times { QList<Arrival> arrivals; qint64 last = 0; qint64 since = 0; double latency = qQNaN(); qint64 total = 0; double guiMs = 0; };
     struct Call { Done done; Fail fail; QString service; };
     struct Pending { int id = 0; bool ready = false; QJsonObject o; qint64 bytes = 0; double workerMs = 0; };
     struct Sub { QString type; int throttle = 0; int queue = -1; };

@@ -114,6 +114,7 @@ private slots:
         QVERIFY(QTest::qWaitFor([&] { return s.ops("advertise", "/dashboard/initialpose").size() == 1; }, 2000));
         emit r.bridge()->message("/tf", tfMsg("map", "odom", 1, 2, M_PI / 2));
         QVERIFY(r.mapOdomFresh());
+        r.armTeleop(true);   // 목표는 잠금을 푼 뒤에만 나간다
         r.sendGoal(1, 0, 0);
         r.setInitialPose(1, 0, 0);
         QVERIFY(QTest::qWaitFor([&] { return !lastPublish(s, "/goal_pose").isEmpty() && !lastPublish(s, "/dashboard/initialpose").isEmpty(); }, 2000));
@@ -141,8 +142,12 @@ private slots:
         MockServer s;
         Robot r;
         QVERIFY(connectRobot(r, s));
+        QTimer alive;   // 기다리는 동안 링크가 끊긴 것으로 보지 않게 /odom 을 계속 보낸다
+        QObject::connect(&alive, &QTimer::timeout, [&] { s.publish("/odom", odomMsg(0, 0)); });
+        alive.start(200);
         emit r.bridge()->message("/tf", tfMsg("map", "odom", 1, 2, M_PI / 2));
         QVERIFY(QTest::qWaitFor([&] { return !r.mapOdomFresh(); }, 11000));
+        r.armTeleop(true);
         r.sendGoal(1, 0, 0);
         QVERIFY(QTest::qWaitFor([&] { return !lastPublish(s, "/goal_pose").isEmpty(); }, 2000));
         const QJsonObject goal = lastPublish(s, "/goal_pose");
@@ -327,6 +332,107 @@ private slots:
         QCOMPARE(r.mapImage().size(), QSize(3000, 3000));
     }
 #endif
+
+    // B27: 재연결 뒤 다른 토픽이 들어오면 이전 세션의 하트비트 나이 때문에 linkLost 로 남지 않는다.
+    void reconnectClearsLinkLostQuickly()
+    {
+        MockServer s;
+        Robot r;
+        QVERIFY(connectRobot(r, s));
+        s.publish("/link/heartbeat", {{"data", "beat"}});
+        QTimer odom;
+        QObject::connect(&odom, &QTimer::timeout, [&] { s.publish("/odom", odomMsg(0, 0)); });
+        odom.start(100);
+        QTest::qWait(300);
+        QVERIFY(!r.linkLost());
+        QVERIFY(QTest::qWaitFor([&] { return r.bridge()->stat("/link/heartbeat").age > 3.2; }, 5000));
+        for (QWebSocket *c : std::as_const(s.clients))
+            c->abort();
+        QVERIFY(QTest::qWaitFor([&] { return !r.bridge()->connected(); }, 2000));
+        QVERIFY(QTest::qWaitFor([&] { return r.bridge()->connected() && !s.clients.isEmpty(); }, 6000));
+        QVERIFY(r.bridge()->stat("/link/heartbeat").age > 3.0);   // 하트비트는 다시 오지 않았다
+        QVERIFY(QTest::qWaitFor([&] { return !r.linkLost(); }, 1000));
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < 1500) {
+            QVERIFY(!r.linkLost());
+            QTest::qWait(50);
+        }
+    }
+
+    // B28: 하트비트만 끊기고 다른 토픽이 계속 들어오면 링크가 살아 있다. 모두 멈추면 linkLost.
+    void heartbeatOnlyLossIsNotLinkLost()
+    {
+        MockServer s;
+        Robot r;
+        QVERIFY(connectRobot(r, s));
+        s.publish("/link/heartbeat", {{"data", "beat"}});
+        QTimer odom;
+        QObject::connect(&odom, &QTimer::timeout, [&] { s.publish("/odom", odomMsg(0, 0)); });
+        odom.start(100);
+        QElapsedTimer t;
+        t.start();
+        while (t.elapsed() < 5000) {
+            QVERIFY2(!r.linkLost(), qPrintable(QString("%1 ms 에 linkLost").arg(t.elapsed())));
+            QTest::qWait(50);
+        }
+        QVERIFY(r.bridge()->stat("/link/heartbeat").age > 4.0);
+        odom.stop();
+        QVERIFY(QTest::qWaitFor([&] { return r.linkLost(); }, 5000));
+    }
+
+    // B30: 레이저가 base_link 에서 떨어져 있으면 가장 가까운 장애물의 거리 · 각도를 모두 base_link 기준으로 고른다.
+    void nearestInBaseFrame()
+    {
+        Robot r;
+        emit r.bridge()->message("/tf_static", tfMsg("base_link", "laser", -0.5, 0, 0));
+        QSignalSpy scan(&r, &Robot::scanChanged);
+        // 레이저 앞 1.0 m → 로봇 앞 0.5 m, 레이저 뒤 0.9 m → 로봇 뒤 1.4 m
+        emit r.bridge()->message("/scan", {{"header", QJsonObject{{"frame_id", "laser"}}}, {"angle_min", 0.0},
+                                           {"angle_increment", M_PI}, {"range_min", 0.05}, {"range_max", 10.0},
+                                           {"ranges", QJsonArray{1.0, 0.9}}});
+        QVERIFY(scan.wait(500));
+        QCOMPARE(r.scanCount(), 2);
+        QVERIFY2(qAbs(r.nearestRange() - 0.5) < 1e-6, qPrintable(QString::number(r.nearestRange())));
+        QVERIFY(qAbs(r.nearestAngle()) < 1e-6);
+    }
+
+    // B31: map 프레임 /plan 은 map→odom 이 바뀔 때마다 다시 odom 으로 투영한다.
+    void mapPlanFollowsMapOdom()
+    {
+        Robot r;
+        emit r.bridge()->message("/tf", tfMsg("map", "odom", 1, 2, 0));
+        const QJsonObject pose{{"pose", QJsonObject{{"position", QJsonObject{{"x", 2.0}, {"y", 2.5}}}}}};
+        emit r.bridge()->message("/plan", {{"header", QJsonObject{{"frame_id", "map"}}}, {"poses", QJsonArray{pose}}});
+        QCOMPARE(r.plan().size(), 1);
+        QVERIFY(qAbs(r.plan().last().x() - 1.0) < 1e-5 && qAbs(r.plan().last().y() - 0.5) < 1e-5);
+        QSignalSpy spy(&r, &Robot::planChanged);
+        emit r.bridge()->message("/tf", tfMsg("map", "odom", 2, 2, M_PI / 2));
+        QCOMPARE(spy.size(), 1);
+        // (2, 2.5) map → odom: dx 0, dy 0.5 를 -90° 돌리면 (0.5, 0)
+        QVERIFY2(qAbs(r.plan().last().x() - 0.5) < 1e-5 && qAbs(r.plan().last().y()) < 1e-5,
+                 qPrintable(QString("%1, %2").arg(r.plan().last().x()).arg(r.plan().last().y())));
+        emit r.bridge()->message("/tf", tfMsg("map", "odom", 2, 2, M_PI / 2));   // 같은 변환: 다시 알리지 않는다
+        QCOMPARE(spy.size(), 1);
+    }
+
+    // B43: GUI 가 멈췄다가 몰려 받은 메시지로 Hz 가 부풀지 않는다(header.stamp 간격으로 센다).
+    void hzFromStampsAfterBurst()
+    {
+        MockServer s;
+        Robot r;
+        QVERIFY(connectRobot(r, s));
+        const qint64 base = QDateTime::currentMSecsSinceEpoch() - 1000;
+        for (int i = 0; i < 33; ++i) {   // 33 Hz 로 찍힌 1 s 분량이 한꺼번에 온다
+            const qint64 ms = base + i * 30;
+            QJsonObject m = odomMsg(0, 0);
+            m["header"] = QJsonObject{{"stamp", QJsonObject{{"sec", double(ms / 1000)}, {"nanosec", double(ms % 1000) * 1e6}}}};
+            s.publish("/odom", m);
+        }
+        QVERIFY(QTest::qWaitFor([&] { return r.bridge()->stat("/odom").recent == 33; }, 2000));
+        const double hz = r.bridge()->stat("/odom").hz;
+        QVERIFY2(hz > 31 && hz < 35, qPrintable(QString("%1 Hz").arg(hz)));
+    }
 };
 
 QTEST_MAIN(TstRobot)

@@ -1,0 +1,104 @@
+{
+  "id": "scan_compact",
+  "title": "토픽 목록에 /scan_compact 가 있으면 LiDAR 는 그것만 구독(/scan 구독 없음) · 점 수가 /scan 과 같음(멈춘 로봇 · 3 m 안 1488 점)",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--freeze-pose",
+    "--scan-max",
+    "3",
+    "--self-hit"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 6,
+      "shot": "scan.png"
+    }
+  ],
+  "duration_s": 10,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.scanTopic",
+        "op": "==",
+        "value": "/scan_compact"
+      },
+      {
+        "path": "robot.scanCount",
+        "op": "==",
+        "value": 1488
+      },
+      {
+        "path": "robot.nearestRange",
+        "op": ">=",
+        "value": 0.3
+      },
+      {
+        "path": "robot.missingRequired",
+        "op": "==",
+        "value": []
+      },
+      {
+        "path": "robot.sensors.0.topic",
+        "op": "==",
+        "value": "/scan_compact"
+      },
+      {
+        "path": "robot.rates.1",
+        "op": "contains",
+        "value": "/scan_compact"
+      },
+      {
+        "path": "robot.recordTopics",
+        "op": "contains",
+        "value": "/scan_compact"
+      },
+      {
+        "path": "robot.recordTopics",
+        "op": "not_contains",
+        "value": "/scan"
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/scan_compact",
+        "value": 1
+      },
+      {
+        "rule": "count_le",
+        "op": "subscribe",
+        "topic": "/scan",
+        "value": 0
+      },
+      {
+        "rule": "count_ge",
+        "dir": "tx",
+        "topic": "/scan_compact",
+        "value": 20
+      },
+      {
+        "rule": "count_le",
+        "dir": "tx",
+        "topic": "/scan",
+        "value": 0
+      }
+    ]
+  }
+}
