@@ -189,7 +189,8 @@ void Robot::resetSession()
     m_moClock.invalidate();
     m_hasMap = false;
     m_mapImage = {};
-    m_lastMap = {};
+    m_mapPending = m_mapInfo = {};
+    m_mapCells = {};
     m_mapApplied = m_mapJob;   // 그리는 중인 지도는 버린다
     m_straightRunning = false;
     m_straightResult.clear();
@@ -215,12 +216,18 @@ void Robot::setSensor(const QString &key, bool on)
         else if (!m_scanTopic.isEmpty())   // 정하기 전이면 pickScanTopic 이 구독한다
             m_bridge.want(m_scanTopic, m_scanTopic == kScanCompact ? kScanCompactType : d.type, "sensor", on, d.throttle);
         for (const auto &e : kExtra.value(key))
-            m_bridge.want(e.first, e.second, "sensor", on);
+            m_bridge.want(e.first, e.second, "sensor", on && (e.first != "/wheel_cmd" || m_wheelCmdWanted));
         if (!on && key == "scan")
             m_scan.clear(), m_scanCount = 0, m_scanDirty = true;
     }
     m_probed = false;
     updateStatus();
+}
+
+void Robot::setWheelCmdWanted(bool on)
+{
+    m_wheelCmdWanted = on;
+    m_bridge.want("/wheel_cmd", "sensor_msgs/JointState", "sensor", on && m_sensorOn.value("wheel").toBool());
 }
 
 void Robot::probe()
@@ -464,28 +471,34 @@ void Robot::placeMap()
 
 void Robot::onMap(const QJsonObject &m)
 {
-    m_lastMap = m;
+    m_mapPending = m;
+    m_mapPendingJob = m_mapJob + 1;
     renderMap(m_bridge.lastWorkerMs());
 }
 
-// OccupancyGrid → 이미지는 다른 스레드에서 만들고, 결과는 GUI 스레드로 넘겨 받는다(2000×2000 이면 수백 ms).
+// OccupancyGrid → 칸 바이트 → 이미지는 다른 스레드에서 만들고, 결과는 GUI 스레드로 넘겨 받는다(2000×2000 이면 수백 ms).
+// 아직 바꾸지 않은 원문(m_mapPending)이 있으면 그것을, 없으면 들고 있는 칸 바이트를 다시 그린다(색 · 이진 바꿈).
 void Robot::renderMap(double bridgeWorkerMs)
 {
-    if (m_lastMap.isEmpty())
+    const bool fromMsg = !m_mapPending.isEmpty();
+    if (!fromMsg && m_mapCells.isEmpty())
         return;
     QElapsedTimer gui;
     gui.start();
-    struct Result { QImage img; Pose2D center; QSizeF size; double ms = 0; };
+    struct Result { QImage img; Pose2D center; QSizeF size; QJsonObject info; QByteArray cells; double ms = 0; };
     const int job = ++m_mapJob;
-    const QJsonObject m = m_lastMap;
+    const QJsonObject m = m_mapPending, info0 = m_mapInfo;
+    const QByteArray cells0 = m_mapCells;
     const QString scheme = m_mapScheme;
     const int threshold = m_mapBinary ? kMapBinaryThreshold : -1;
-    auto future = QtConcurrent::run([m, scheme, threshold] {
+    auto future = QtConcurrent::run([m, info0, cells0, scheme, threshold] {
         QElapsedTimer t;
         t.start();
         Result r;
-        const QJsonObject info = m["info"].toObject();
-        r.img = occupancyToImage(m["data"].toArray(), info["width"].toInt(), info["height"].toInt(), scheme, threshold);
+        r.info = m.isEmpty() ? info0 : m["info"].toObject();
+        r.cells = m.isEmpty() ? cells0 : occupancyCells(m["data"].toArray());
+        const QJsonObject &info = r.info;
+        r.img = cellsToImage(r.cells, info["width"].toInt(), info["height"].toInt(), scheme, threshold);
         const GridPlane plane = gridPlane(info);
         r.center = plane.center;
         r.size = QSizeF(plane.width, plane.height);
@@ -493,12 +506,16 @@ void Robot::renderMap(double bridgeWorkerMs)
         return r;
     });
     const double guiStart = gui.nsecsElapsed() / 1e6;
-    future.then(this, [this, job, guiStart, bridgeWorkerMs](const Result &r) {   // GUI 스레드로 queued
+    future.then(this, [this, job, guiStart, bridgeWorkerMs, fromMsg](const Result &r) {   // GUI 스레드로 queued
         if (job <= m_mapApplied || r.img.isNull())   // 더 새 지도가 이미 들어갔거나 data 가 짧다
             return;
         QElapsedTimer gui;
         gui.start();
         m_mapApplied = job;
+        m_mapInfo = r.info;
+        m_mapCells = r.cells;
+        if (job >= m_mapPendingJob && !m_mapPending.isEmpty())   // 원문(칸 900 만 개면 해제만 수십 ms)은 다른 스레드에서 놓는다
+            (void)QtConcurrent::run([old = std::exchange(m_mapPending, {})] {});
         m_mapO = r.center;
         m_mapSize = r.size;
         m_mapImage = r.img;
@@ -509,9 +526,11 @@ void Robot::renderMap(double bridgeWorkerMs)
         if (!had)
             emit mapChanged();
         placeMap();
+        // gui_ms: 받은 지도를 나눠 준 시간(이 함수 앞부분 포함, RosBridge 가 잰다) + 결과 반영
+        const double before = fromMsg ? qMax(guiStart, m_bridge.stat("/map").guiMs) : guiStart;
         qInfo().noquote() << QString("[perf] map w=%1 h=%2 gui_ms=%3 worker_ms=%4")
                                  .arg(r.img.width()).arg(r.img.height())
-                                 .arg(guiStart + gui.nsecsElapsed() / 1e6, 0, 'f', 1)
+                                 .arg(before + gui.nsecsElapsed() / 1e6, 0, 'f', 1)
                                  .arg(bridgeWorkerMs + r.ms, 0, 'f', 1);
     });
 }

@@ -1,0 +1,96 @@
+{
+  "id": "map_rviz",
+  "title": "기본 설정으로 연결만 해도 /map 을 구독해 RViz2 기본값(켜짐 · Alpha 0.7 · Draw Behind 끔 · 최근접)으로 셀 정렬해 그린다",
+  "needs_pi": false,
+  "needs_human": false,
+  "scene": true,
+  "server_args": [
+    "--freeze-pose"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 2,
+      "set": "scene.cam",
+      "value": "위에서"
+    }
+  ],
+  "duration_s": 12,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.mapWanted",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.hasMap",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.showMap",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.mapOpacity",
+        "op": "==",
+        "value": 0.7
+      },
+      {
+        "path": "scene.mapDrawBehind",
+        "op": "==",
+        "value": false
+      },
+      {
+        "path": "scene.mapFilterNearest",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.noMapHintShown",
+        "op": "==",
+        "value": false
+      },
+      {
+        "path": "scene.mapProbeOccupied",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.mapProbeErrPx",
+        "op": "<=",
+        "value": 2
+      },
+      {
+        "path": "scene.mapProbeErrPx",
+        "op": ">=",
+        "value": 0
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/map",
+        "value": 1
+      },
+      {
+        "rule": "throttle_eq",
+        "topic": "/map",
+        "value": 2000
+      }
+    ]
+  }
+}

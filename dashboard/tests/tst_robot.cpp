@@ -5,6 +5,10 @@
 #include <QTemporaryDir>
 #include <QtMath>
 #include <QtTest>
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <psapi.h>
+#endif
 
 namespace {
 QJsonObject tfMsg(const QString &parent, const QString &child, double x, double y, double yaw)
@@ -268,6 +272,66 @@ private slots:
         QVERIFY(poseSpy.size() >= 2);
         QVERIFY(qAbs(r.mapCenter().x() + 1) < 1e-4);
     }
+
+    // B15: /wheel_cmd 는 바퀴 그래프의 목표 계열이 보일 때만 구독한다(기본 안 함, 바퀴 센서를 꺼 두면 켜도 안 함).
+    void wheelCmdOnlyWhenWanted()
+    {
+        MockServer s;
+        Robot r;
+        QVERIFY(connectRobot(r, s));
+        QVERIFY(QTest::qWaitFor([&] { return s.ops("subscribe", "/wheel_states").size() == 1; }, 2000));
+        QVERIFY(!r.bridge()->subscribed("/wheel_cmd"));
+        QCOMPARE(s.ops("subscribe", "/wheel_cmd").size(), 0);
+        r.setWheelCmdWanted(true);
+        QVERIFY(QTest::qWaitFor([&] { return s.ops("subscribe", "/wheel_cmd").size() == 1; }, 2000));
+        r.setWheelCmdWanted(false);
+        QVERIFY(QTest::qWaitFor([&] { return s.ops("unsubscribe", "/wheel_cmd").size() == 1; }, 2000));
+        r.setSensor("wheel", false);
+        r.setWheelCmdWanted(true);
+        QTest::qWait(200);
+        QVERIFY(!r.bridge()->subscribed("/wheel_cmd"));
+        r.setSensor("wheel", true);
+        QVERIFY(QTest::qWaitFor([&] { return s.ops("subscribe", "/wheel_cmd").size() == 2; }, 2000));
+    }
+
+#ifdef Q_OS_WIN
+    // B14: 3000² 지도를 받은 뒤 Robot 이 붙잡는 메모리는 이미지(36 MB) · 칸 바이트(9 MB) 수준이다.
+    // 원본 QJsonObject(칸마다 16 B, 144 MB)를 들고 있으면 180 MB 를 넘는다.
+    void bigMapRetainsCompactCopy()
+    {
+        auto privateMB = [] {
+            PROCESS_MEMORY_COUNTERS_EX pmc{};
+            GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS *>(&pmc), sizeof pmc);
+            return double(pmc.PrivateUsage) / 1048576.0;
+        };
+        Robot r;
+        const double before = privateMB();
+        {
+            const int w = 3000, h = 3000;
+            QJsonArray data;
+            for (int i = 0; i < w * h; ++i)
+                data.append(i % 997 == 0 ? 100 : i % 13 == 0 ? -1 : 0);
+            const QJsonObject map{{"info", QJsonObject{{"width", w}, {"height", h}, {"resolution", 0.05},
+                                                       {"origin", QJsonObject{{"position", QJsonObject{{"x", 0}, {"y", 0}}},
+                                                                              {"orientation", QJsonObject{{"w", 1}}}}}}},
+                                  {"data", data}};
+            emit r.bridge()->message("/map", map);
+            QVERIFY(QTest::qWaitFor([&] { return r.mapImageSerial() == 1; }, 30000));
+        }
+        QTest::qWait(500);   // 원문은 다른 스레드에서 놓는다
+        const double kept = privateMB() - before;
+        qInfo().noquote() << QString("[perf] robot map 3000x3000 kept_mb=%1").arg(kept, 0, 'f', 1);
+        QVERIFY2(kept < 100, qPrintable(QString("지도 뒤 %1 MB 를 붙잡음").arg(kept)));
+        QCOMPARE(r.mapImage().size(), QSize(3000, 3000));
+        QCOMPARE(r.mapImage().pixelColor(0, 2999), QColor(0, 0, 0));       // 0 번 칸(값 100)은 왼쪽 아래, 검정
+        QCOMPARE(r.mapImage().pixelColor(1, 2999), QColor(255, 255, 255)); // 값 0 은 흰색
+
+        // 색 바꿈은 들고 있는 칸 바이트로 다시 그린다
+        r.setMapBinary(true);
+        QVERIFY(QTest::qWaitFor([&] { return r.mapImageSerial() == 2; }, 30000));
+        QCOMPARE(r.mapImage().size(), QSize(3000, 3000));
+    }
+#endif
 
     // B27: 재연결 뒤 다른 토픽이 들어오면 이전 세션의 하트비트 나이 때문에 linkLost 로 남지 않는다.
     void reconnectClearsLinkLostQuickly()

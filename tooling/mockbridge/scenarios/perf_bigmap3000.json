@@ -1,0 +1,93 @@
+{
+  "id": "perf_bigmap3000",
+  "title": "3000² 지도를 12 s 마다 받아도 지도를 나눠 주는 GUI 스레드 시간(gui_ms, QML 변환 포함)이 150 ms 이하, 끊기지 않음, trace 에 proc · render (B5 B13 B35)",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--map-size",
+    "3000x3000",
+    "--map-max",
+    "4000",
+    "--map-every",
+    "12"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 1,
+      "set": "robot.mapWanted",
+      "value": true
+    },
+    {
+      "t": 1,
+      "set": "scene.showMap",
+      "value": true
+    }
+  ],
+  "duration_s": 40,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "log_regex_max": [
+      {
+        "regex": "gui_ms=([0-9.]+)",
+        "max": 150,
+        "required": true
+      }
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.hasMap",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.mapSize.width",
+        "op": "==",
+        "value": 150.0
+      }
+    ],
+    "trace": [
+      {
+        "rule": "was_true_between",
+        "path": "proc.rssMB",
+        "op": ">",
+        "value": 0,
+        "from_s": 0,
+        "to_s": 1000
+      },
+      {
+        "rule": "was_true_between",
+        "path": "render.fps",
+        "op": ">",
+        "value": 0,
+        "from_s": 0,
+        "to_s": 1000
+      },
+      {
+        "rule": "was_true_between",
+        "path": "render.stallMs",
+        "op": ">=",
+        "value": 0,
+        "from_s": 0,
+        "to_s": 1000
+      },
+      {
+        "rule": "never_between",
+        "path": "bridge.connected",
+        "op": "==",
+        "value": false,
+        "from_s": 0,
+        "to_s": 1000
+      }
+    ]
+  }
+}

@@ -47,6 +47,11 @@ QJsonObject scanFromCompact(const QJsonObject &m);
 // data 가 w*h 보다 짧으면 빈 이미지를 돌려준다.
 QImage occupancyToImage(const QJsonArray &data, int w, int h, const QString &scheme = QStringLiteral("map"),
                         int binaryThreshold = -1);
+// data 를 칸마다 1 바이트(값 & 0xFF)로. QJsonArray 는 칸마다 16 B 라 큰 지도(3000² ≈ 144 MB)는 이것으로 들고 있는다.
+QByteArray occupancyCells(const QJsonArray &data);
+// occupancyCells 의 결과로 occupancyToImage 와 같은 이미지를 만든다.
+QImage cellsToImage(const QByteArray &cells, int w, int h, const QString &scheme = QStringLiteral("map"),
+                    int binaryThreshold = -1);
 
 // OccupancyGrid 를 그리는 판(지도 · 코스트맵 공통): 중심 · yaw(origin 의 yaw) · 크기 m.
 // 셀 (i, j) 의 중심 = origin + R(yaw)·((i + 0.5)·res, (j + 0.5)·res) 이 판 위 같은 자리에 오도록 계산한다.
