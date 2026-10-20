@@ -19,6 +19,7 @@ NAV_RELAY_TO_ROBOT=(/teleop/cmd_vel:geometry_msgs/msg/Twist
                     /map:nav_msgs/msg/OccupancyGrid:transient_local
                     /plan:nav_msgs/msg/Path
                     /amcl_pose:geometry_msgs/msg/PoseWithCovarianceStamped:transient_local
+                    /global_costmap/costmap:nav_msgs/msg/OccupancyGrid:transient_local
                     /local_costmap/costmap:nav_msgs/msg/OccupancyGrid
                     /local_costmap/published_footprint:geometry_msgs/msg/PolygonStamped
                     /map_odom:tf2_msgs/msg/TFMessage)
