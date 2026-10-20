@@ -108,6 +108,7 @@ Robot::Robot(QObject *parent) : QObject(parent)
     m_bridge.advertise("/straight_drive/goal", "geometry_msgs/Vector3");
     m_bridge.advertise("/straight_drive/cancel", "std_msgs/Empty");
     m_bridge.advertise("/teleop/estop", "std_msgs/Empty");   // 파이 cmd_watchdog: 가감속 없이 즉시 정지
+    m_bridge.advertise("/dashboard/nav_cancel", "std_msgs/Empty");   // PC nav_cancel_bridge: Nav2 목표 모두 취소
     m_bridge.advertise("/goal_pose", "geometry_msgs/PoseStamped");
     m_bridge.advertise(kInitialPoseTopic, "geometry_msgs/PoseWithCovarianceStamped");
     m_recordTopics = {"/odom", "/scan", "/imu/data_raw", "/wheel_states"};
@@ -922,6 +923,9 @@ void Robot::cancelGoal()
 {
     if (m_bridge.noPublish())   // 읽기 전용: 쓰는 서비스도 부르지 않는다
         return;
+    // Nav2 는 PC 도메인 8 에 있어 파이 rosbridge 의 서비스 호출로는 닿지 않는다 — 토픽을 split_relay 로 넘기면
+    // PC 의 nav_cancel_bridge 가 모든 목표를 취소한다(아래 서비스 호출은 Nav2 가 로봇 도메인에 있는 구성용).
+    m_bridge.publish("/dashboard/nav_cancel", {});
     QJsonArray uuid;
     for (int i = 0; i < 16; ++i)
         uuid.append(0);
