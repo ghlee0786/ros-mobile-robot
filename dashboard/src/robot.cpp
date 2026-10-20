@@ -107,6 +107,7 @@ Robot::Robot(QObject *parent) : QObject(parent)
     m_bridge.advertise("/teleop/cmd_vel", "geometry_msgs/Twist");
     m_bridge.advertise("/straight_drive/goal", "geometry_msgs/Vector3");
     m_bridge.advertise("/straight_drive/cancel", "std_msgs/Empty");
+    m_bridge.advertise("/teleop/estop", "std_msgs/Empty");   // 파이 cmd_watchdog: 가감속 없이 즉시 정지
     m_bridge.advertise("/goal_pose", "geometry_msgs/PoseStamped");
     m_bridge.advertise(kInitialPoseTopic, "geometry_msgs/PoseWithCovarianceStamped");
     m_recordTopics = {"/odom", "/scan", "/imu/data_raw", "/wheel_states"};
@@ -696,6 +697,22 @@ void Robot::updateStatus()
             for (const QJsonValue &s : v["subscribers"].toArray())
                 m_watchdogOk |= s.toString().contains("cmd_watchdog");
         }, [this](const QString &) { m_watchdogOk = false; });
+    if (conn && m_statusTick % 10 == 1)   // 가감속 프로파일 상태(다른 곳에서 바꿨을 수도 있다)
+        m_bridge.call("/cmd_watchdog/get_parameters", {{"names", QJsonArray{"ramp_enabled"}}}, [this](const QJsonObject &v) {
+            const QJsonArray vals = v["values"].toArray();
+            if (vals.isEmpty() || vals[0].toObject()["type"].toInt() != 1)
+                return;   // 1 = PARAMETER_BOOL. 옛 워치독(파라미터 없음)이면 모른 채로 둔다
+            const bool on = vals[0].toObject()["bool_value"].toBool();
+            if (on != m_ramp || !m_rampKnown) {
+                m_ramp = on;
+                m_rampKnown = true;
+                emit rampChanged();
+            }
+        }, [](const QString &) {});
+    if (!conn && m_rampKnown) {
+        m_rampKnown = false;
+        emit rampChanged();
+    }
     if (!conn)
         m_watchdogOk = false;
 
@@ -917,10 +934,31 @@ void Robot::estop()
 {
     noteDropped();
     m_lin = m_ang = 0;
+    m_bridge.publish("/teleop/estop", {});   // 가감속 프로파일을 건너뛰고 바로 0
     sendStop();
     setMode("정지");
     armTeleop(false);
     addEvent("비상 정지");
+}
+
+void Robot::setRampEnabled(bool on)
+{
+    if (m_bridge.noPublish()) {
+        addEvent("--no-publish: 가감속 설정을 바꾸지 않음");
+        return;
+    }
+    const QJsonObject param{{"name", "ramp_enabled"}, {"value", QJsonObject{{"type", 1}, {"bool_value", on}}}};
+    m_bridge.call("/cmd_watchdog/set_parameters", {{"parameters", QJsonArray{param}}}, [this, on](const QJsonObject &v) {
+        const QJsonArray res = v["results"].toArray();
+        if (!res.isEmpty() && res[0].toObject()["successful"].toBool()) {
+            m_ramp = on;
+            m_rampKnown = true;
+            emit rampChanged();
+            addEvent(on ? "가감속 프로파일 켬" : "가감속 프로파일 끔(명령 속도가 바로 나감)");
+        } else {
+            addEvent("가감속 설정 실패: " + (res.isEmpty() ? QString("응답 없음") : res[0].toObject()["reason"].toString()));
+        }
+    }, [this](const QString &e) { addEvent("가감속 설정 실패: " + e); });
 }
 
 void Robot::clearTrail()
