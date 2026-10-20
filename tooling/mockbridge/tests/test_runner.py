@@ -1,5 +1,6 @@
 """시나리오 실행기 계약: 판정 규칙 계산, fake_dashboard 로 끝까지 실행, --list, --no-dashboard."""
 import json
+import math
 import os
 import subprocess
 import sys
@@ -293,3 +294,42 @@ def test_stale_exe(tmp_path, capsys):
     assert "오래됨" in capsys.readouterr().err
     os.utime(exe, (now + 10, now + 10))
     assert rs.stale_exe(str(exe)) is None
+
+
+def test_zero_until_and_initialpose_inverse():
+    def tw(v):
+        return {"linear": {"x": v}, "angular": {"z": 0.0}}
+    recs = [{"dir": "event", "op": "connect", "t": 0.0, "wall": 1000.0, "conn": 1},
+            rx("publish", 1.5, topic="/teleop/cmd_vel", msg=tw(0.0)), rx("publish", 3.5, topic="/teleop/cmd_vel", msg=tw(0.08))]
+    done = [{"call": "robot.drive", "wall": 1001.0}, {"call": "robot.armTeleop", "wall": 1003.0}]
+    rule = {"rule": "zero_after_action", "action": 0, "until_action": 1, "topic": "/teleop/cmd_vel", "fields": ["linear.x"]}
+    assert rs.check_server_log(recs, [rule], done) == []                       # 비0 은 armTeleop 뒤
+    assert len(rs.check_server_log(recs, [dict(rule, until_action="robot.nope")], done)) == 1   # 없는 action
+    assert len(rs.check_server_log(recs, [{k: v for k, v in rule.items() if k != "until_action"}], done)) == 1
+    # PoseWithCovarianceStamped: map (1,2,30°) 에서 odom (0.5, 0, 0) 은 map (1.433, 2.25, 30°)
+    c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
+    ip = {"header": {"frame_id": "map"}, "pose": {"pose": {"position": {"x": 1 + 0.5 * c, "y": 2 + 0.5 * s},
+          "orientation": {"x": 0, "y": 0, "z": math.sin(math.radians(15)), "w": math.cos(math.radians(15))}}}}
+    recs.append(rx("publish", 4, topic="/dashboard/initialpose", msg=ip))
+    good = {"rule": "goal_inverse", "topic": "/dashboard/initialpose", "map_odom": [1, 2, 30], "odom": [0.5, 0, 0]}
+    assert rs.check_server_log(recs, [good]) == []
+    assert len(rs.check_server_log(recs, [dict(good, odom=[0.6, 0, 0])])) == 1
+
+
+def test_kill_all_leaves_nothing(tmp_path):
+    """끝나면(정상 · 끊김 모두) 띄운 서버 · 대시보드가 남지 않는다."""
+    scd = tmp_path / "sc"
+    scd.mkdir()
+    write(scd, {"id": "quick", "duration_s": 2, "server_args": [], "actions": [], "expect": {}})
+    started = []
+    real = rs.track
+    rs.track = lambda p: started.append(p) or real(p)
+    try:
+        rs.main(["--scenarios", str(scd), "--out", str(tmp_path / "out"), "--dashboard-cmd", f'"{sys.executable}" "{FAKE}"'])
+        assert len(started) == 2 and all(p.poll() is not None for p in started) and not rs.LIVE
+        p = rs.track(subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]))
+        rs.kill_all()
+        assert p.poll() is not None and not rs.LIVE
+    finally:
+        rs.track = real
+        rs._stopping.clear()   # kill_all 뒤 다른 시험의 서버가 바로 죽지 않게

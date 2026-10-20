@@ -1,0 +1,92 @@
+{
+  "id": "insp_params_nopub",
+  "title": "--no-publish 면 파라미터 읽기(14 개)는 되고 set_parameters · advertise · publish 는 보내지 않음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": [
+    "--no-publish"
+  ],
+  "duration_s": 7,
+  "actions": [
+    {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 0.5,
+      "set": "win.page",
+      "value": 1
+    },
+    {
+      "t": 0.6,
+      "set": "inspector.tab",
+      "value": "파라미터"
+    },
+    {
+      "t": 0.7,
+      "set": "paramClient.node",
+      "value": "/straight_drive"
+    },
+    {
+      "t": 0.8,
+      "call": "paramClient.refresh",
+      "args": []
+    },
+    {
+      "t": 3,
+      "call": "paramClient.set",
+      "args": [
+        "max_speed",
+        0.05
+      ]
+    },
+    {
+      "t": 5,
+      "shot": "params.png"
+    }
+  ],
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "inspector.paramCount",
+        "op": "==",
+        "value": 14
+      },
+      {
+        "path": "bridge.noPublish",
+        "op": "==",
+        "value": true
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "op": "call_service",
+        "service": "/straight_drive/get_parameters",
+        "value": 1
+      },
+      {
+        "rule": "count_le",
+        "op": "call_service",
+        "service": "/straight_drive/set_parameters",
+        "value": 0
+      },
+      {
+        "rule": "count_le",
+        "op": "advertise",
+        "value": 0
+      },
+      {
+        "rule": "count_le",
+        "op": "publish",
+        "value": 0
+      }
+    ]
+  }
+}

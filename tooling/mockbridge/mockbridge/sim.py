@@ -24,7 +24,7 @@ BASE_TYPES = {
     "std_msgs/Header", "geometry_msgs/Twist", "geometry_msgs/Vector3", "geometry_msgs/PoseStamped",
     "geometry_msgs/PoseWithCovarianceStamped", "geometry_msgs/PolygonStamped", "geometry_msgs/TransformStamped",
     "geometry_msgs/Pose2D", "nav_msgs/Odometry", "nav_msgs/Path", "nav_msgs/OccupancyGrid", "sensor_msgs/Imu",
-    "sensor_msgs/LaserScan", "sensor_msgs/JointState", "sensor_msgs/Image", "sensor_msgs/CompressedImage",
+    "sensor_msgs/LaserScan", "std_msgs/UInt16MultiArray", "sensor_msgs/JointState", "sensor_msgs/Image", "sensor_msgs/CompressedImage",
     "tf2_msgs/TFMessage", "rcl_interfaces/Log", "diagnostic_msgs/DiagnosticArray", "action_msgs/GoalStatusArray",
 }
 
@@ -38,6 +38,18 @@ def yaw_of(q):
     if not any((x, y, z, w)):
         w = 1.0
     return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+
+
+def compact_scan(s):
+    """sensor_msgs/LaserScan → /scan_compact (파이 tooling/rpi/robot_link/scan_compact_node.py 와 같은 식).
+    data = 거리 mm 정수(0 = 반사 없음/범위 밖), layout.dim[0].label = 'frame_id angle_min angle_increment range_min
+    range_max stamp_sec stamp_nsec'."""
+    h, rmin, rmax, n = s["header"], s["range_min"], s["range_max"], len(s["ranges"])
+    label = (f"{h['frame_id']} {s['angle_min']:.7f} {s['angle_increment']:.9f} {rmin:.3f} {rmax:.3f} "
+             f"{h['stamp']['sec']} {h['stamp']['nanosec']}")
+    data = [int(r * 1000) if r is not None and math.isfinite(r) and rmin <= r <= rmax and r < 65.5 else 0
+            for r in s["ranges"]]
+    return {"layout": {"dim": [{"label": label, "size": n, "stride": n}], "data_offset": 0}, "data": data}
 
 
 def wrap(a):
@@ -160,6 +172,8 @@ class World(Source):
                       "/navigate_to_pose/_action/status": "action_msgs/msg/GoalStatusArray"})
         if a.pi_initialpose:
             T["/initialpose"] = "geometry_msgs/PoseWithCovarianceStamped"
+        if not getattr(a, "no_scan_compact", False):
+            T["/scan_compact"] = "std_msgs/UInt16MultiArray"
         self.types = T
         s = [("/odom", 1 / 33, self.make_odom), ("/tf", 1 / 33, self.make_tf_odom), ("map_odom", 0.2, self.make_tf_map),
              ("/wheel_states", 1 / 30, lambda: self.make_joint(self.wheels)),
@@ -167,6 +181,8 @@ class World(Source):
              ("/imu/data_raw", 0.01, self.make_imu), ("/scan", 0.1, self.make_scan),
              ("/link/heartbeat", 1.0, self.make_beat), ("/rosout", 1.0 / max(1.0, a.rosout_burst or 1.0), self.make_rosout),
              ("/diagnostics", 1.0, self.make_diag), ("/client_count", 1.0, self.make_clients)]
+        if not getattr(a, "no_scan_compact", False):   # 파이 scan_compact_node: 구독자가 있을 때만 /scan 을 바꿔 낸다
+            s.append(("/scan_compact", 0.1, lambda: compact_scan(self.make_scan())))
         if a.map_odom or a.nav:
             # PC 내비 스택(tooling/nav/map_odom_pub.py)처럼 map→odom 만 /map_odom 으로도 5 Hz. throttle 된 /tf 에서는
             # odom→base_link 에 덮여 운 좋을 때만 살아남는다.
@@ -474,7 +490,9 @@ class World(Source):
                 "function": "step", "line": 42}
 
     def make_diag(self):
-        if self.args.diag_stale and time.perf_counter() - self.t0 > self.args.diag_stale:
+        # 장애처럼 첫 연결 기준(대시보드는 서버보다 2~10 s 늦게 붙는다)
+        faults = self.server.faults
+        if self.args.diag_stale and faults.t0 is not None and faults.elapsed() > self.args.diag_stale:
             return None
         return {"header": self.header(""), "status": [
             {"level": 0, "name": "control_node: pico link", "message": "OK", "hardware_id": "pico",

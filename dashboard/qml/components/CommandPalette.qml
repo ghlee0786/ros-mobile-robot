@@ -6,6 +6,7 @@ import RobotDashboard
 // 열려 있을 때만 키보드를 가져간다(modal + focus) — 닫혀 있으면 조종 키에 끼어들지 않는다.
 Popup {
     id: pal
+    objectName: "palette"
     required property Robot robot
     property var pageNames: ["대시보드", "데이터 점검", "연결"]
     signal pageRequested(int index)
@@ -38,8 +39,11 @@ Popup {
         out.push({ label: r.recording ? "기록 중지" : "기록 시작", hint: "rosbag", keys: "", run: () => r.toggleRecording() })
         out.push({ label: "기록 폴더 열기", hint: "", keys: "", run: () => r.openRecords() })
         out.push({ label: "경로 지우기", hint: "3D 이동 경로", keys: "", run: () => r.clearTrail() })
-        out.push({ label: "1 m 직진 시험", hint: "주행", keys: "", run: () => r.straight(1.0) })
-        out.push({ label: "1 m 후진", hint: "주행", keys: "", run: () => r.straight(-1.0) })
+        // 대시보드의 직진 버튼과 같은 조건(DashboardPage.canStraight). 잠금은 Robot::straight 가 지킨다.
+        if (r.bridge.connected && !r.linkLost && !r.straightRunning && r.mode === "키보드 조종") {
+            out.push({ label: "1 m 직진 시험", hint: "주행", keys: "", run: () => r.straight(1.0) })
+            out.push({ label: "1 m 후진", hint: "주행", keys: "", run: () => r.straight(-1.0) })
+        }
         out.push({ label: "비상 정지", hint: "주행", keys: "", run: () => r.estop() })
         out.push({ label: Theme.largeText ? "큰 글자 끄기" : "큰 글자 켜기", hint: "보기", keys: "", run: () => Theme.largeText = !Theme.largeText })
         out.push({ label: Theme.reduceMotion ? "움직임 줄이기 끄기" : "움직임 줄이기", hint: "보기", keys: "", run: () => Theme.reduceMotion = !Theme.reduceMotion })
@@ -87,6 +91,7 @@ Popup {
         spacing: Theme.sp1
         TextField {
             id: field
+            objectName: "paletteField"
             width: parent.width
             implicitHeight: Theme.hLg
             placeholderText: "명령 찾기…"

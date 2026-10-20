@@ -175,7 +175,7 @@ Item {
                         // 토픽 목록까지 받았는데 필수 센서가 안 오면 실패로 보인다
                         fail: robot.bridge.connected && robot.bridge.topicListReceived && robot.missingRequired.length > 0
                         failIcon: "qrc:/icons/wifi-off.svg"
-                        label: ok ? "필수 토픽 수신 (/odom, /scan, /wheel_states)"
+                        label: ok ? "필수 토픽 수신 (/odom, " + (robot.scanTopic || "/scan") + ", /wheel_states)"
                              : fail ? "센서 수신 안 됨" : "필수 토픽 기다리는 중…"
                         cause: ok ? "" : robot.missingRequired.join(", ")
                     }
