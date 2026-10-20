@@ -1,0 +1,33 @@
+{
+  "id": "fixc_inspector_layout",
+  "title": "B36·B38·B40: 점검 탭 화면(빈 상태 가운데, 기록 안내 줄바꿈, 넓은 창 형식 열) 캡처 — 눈으로 확인",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": ["--nav"],
+  "dashboard_args": ["--no-publish"],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 15},
+    {"t": 0.5, "set": "win.page", "value": 1},
+    {"t": 4, "shot": "{out}/topics_1440.png"},
+    {"t": 4.5, "set": "inspector.tab", "value": "진단"},
+    {"t": 5.5, "shot": "{out}/diag_1440.png"},
+    {"t": 6, "set": "inspector.tab", "value": "노드"},
+    {"t": 7, "shot": "{out}/nodes_1440.png"},
+    {"t": 7.5, "set": "inspector.tab", "value": "파라미터"},
+    {"t": 8.5, "shot": "{out}/params_1440.png"},
+    {"t": 9, "set": "inspector.tab", "value": "기록·시험"},
+    {"t": 10, "shot": "{out}/record_1440.png"},
+    {"t": 10.5, "set": "win.width", "value": 1920},
+    {"t": 10.5, "set": "inspector.tab", "value": "토픽"},
+    {"t": 12, "shot": "{out}/topics_1920.png"}
+  ],
+  "duration_s": 13,
+  "expect": {
+    "exit_code": 0,
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [
+      {"path": "inspector.diagDetailCount", "op": "==", "value": 0},
+      {"path": "inspector.paramCount", "op": "==", "value": 0}
+    ]
+  }
+}

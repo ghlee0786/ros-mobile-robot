@@ -12,7 +12,10 @@ RowLayout {
     required property MessageTreeModel tree
     property bool active: false
     property var knownPaths: ({})   // 토픽 → 숫자 필드 경로(원문을 연 적 있는 토픽만)
+    readonly property bool live: robot.bridge.connected   // 끊기면 마지막 값 대신 '끊김' · '—' 를 보인다
     spacing: Theme.sp4
+
+    function shownState(state) { return tab.live ? state : "끊김" }
 
     PlotFeeder { id: fuzzy; active: false }   // fuzzyScore · flattenNumericPaths 만 쓴다
 
@@ -107,13 +110,13 @@ RowLayout {
             spacing: Theme.sp4
             Spark {
                 label: "전체 수신 (60 s)"
-                value: (tab.robot.bridge.rxBytesPerSec * 8 / 1e6).toFixed(2) + " Mbps"
+                value: tab.live ? (tab.robot.bridge.rxBytesPerSec * 8 / 1e6).toFixed(2) + " Mbps" : "—"
                 points: tab.active ? tab.robot.bridge.rxHistory.map(b => b * 8 / 1e6) : []
                 lineColor: Theme.series[0]
             }
             Spark {
                 label: "rosbridge 지연 (60 s)"
-                value: tab.robot.bridge.latencyMs >= 0 ? tab.robot.bridge.latencyMs + " ms" : "—"
+                value: tab.live && tab.robot.bridge.latencyMs >= 0 ? tab.robot.bridge.latencyMs + " ms" : "—"
                 points: tab.active ? tab.robot.bridge.latencyHistory : []
                 lineColor: Theme.series[1]
             }
@@ -128,8 +131,8 @@ RowLayout {
         RowLayout {
             Layout.fillWidth: true
             spacing: 0
-            Head { text: "이름"; Layout.fillWidth: true }
-            Head { text: "형식"; Layout.preferredWidth: 200 }
+            Head { text: "이름"; Layout.fillWidth: true; Layout.preferredWidth: 200 }
+            Head { text: "형식"; Layout.fillWidth: true; Layout.preferredWidth: 200; Layout.maximumWidth: 380 }
             Head { text: "Hz"; Layout.preferredWidth: 64 }
             Head { text: "지연"; Layout.preferredWidth: 76 }
             Head { text: "KB/s"; Layout.preferredWidth: 64 }
@@ -183,24 +186,28 @@ RowLayout {
                 RowLayout {
                     anchors.fill: parent
                     spacing: 0
-                    Cell { text: row.name; Layout.fillWidth: true }
-                    Cell { text: row.type; Layout.preferredWidth: 200; color: Theme.text2; font.pixelSize: Theme.fsSmall }
-                    Cell { text: row.hz > 0 ? row.hz.toFixed(1) : "—"; Layout.preferredWidth: 64 }
+                    Cell { text: row.name; Layout.fillWidth: true; Layout.preferredWidth: 200 }
+                    Cell {
+                        text: row.type; color: Theme.text2; font.pixelSize: Theme.fsSmall
+                        Layout.fillWidth: true; Layout.preferredWidth: 200; Layout.maximumWidth: 380
+                    }
+                    Cell { text: tab.live && row.hz > 0 ? row.hz.toFixed(1) : "—"; Layout.preferredWidth: 64 }
                     Cell {
                         Layout.preferredWidth: 76
-                        text: row.clockSkew ? "시계 차" : row.latencyMs >= 0 ? row.latencyMs + " ms" : "—"
-                        color: row.clockSkew ? Theme.warnText : Theme.text1
-                        font.family: row.clockSkew ? Theme.fontFamily : Theme.monoFamily
+                        readonly property bool skew: tab.live && row.clockSkew
+                        text: skew ? "시계 차" : tab.live && row.latencyMs >= 0 ? row.latencyMs + " ms" : "—"
+                        color: skew ? Theme.warnText : Theme.text1
+                        font.family: skew ? Theme.fontFamily : Theme.monoFamily
                     }
-                    Cell { text: row.kbps > 0 ? (row.kbps / 8).toFixed(1) : "—"; Layout.preferredWidth: 64 }
+                    Cell { text: tab.live && row.kbps > 0 ? (row.kbps / 8).toFixed(1) : "—"; Layout.preferredWidth: 64 }
                     Item {
                         Layout.preferredWidth: 104
                         Layout.fillHeight: true
                         StatusChip {
                             anchors.verticalCenter: parent.verticalCenter
                             x: Theme.sp1
-                            text: row.state
-                            kind: row.state === "정상" ? "ok" : row.state === "구독 안 함" ? "neutral" : "warn"
+                            text: tab.shownState(row.state)
+                            kind: text === "정상" ? "ok" : text === "구독 안 함" ? "neutral" : "warn"
                         }
                     }
                     Item {
@@ -224,7 +231,7 @@ RowLayout {
     }
 
     Panel {
-        Layout.preferredWidth: 440
+        Layout.preferredWidth: Math.max(440, tab.width * 0.32)   // 넓은 창에서는 원문 키 열도 넓힌다
         Layout.fillHeight: true
         visible: tab.tree.topic !== ""
         title: "원문"

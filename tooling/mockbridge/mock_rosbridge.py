@@ -39,6 +39,8 @@ def parser():
     g.add_argument("--hide-topic", action="append", help="/rosapi/topics 에서 숨길 토픽(여러 번)")
     g.add_argument("--no-respond", action="append", help="응답하지 않을 서비스(여러 번)")
     g.add_argument("--clients", type=int, help="/client_count 값을 고정")
+    g.add_argument("--foxy-param-bug", action="store_true",
+                   help="실기 Foxy rclpy 처럼 describe_parameters 의 모든 descriptor 에 마지막 파라미터의 이름 · 형식을 넣는다")
 
     g = p.add_argument_group("시뮬레이션")
     g.add_argument("--room", default=os.path.join(HERE, "rooms", "default.json"), help="방 JSON")

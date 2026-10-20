@@ -91,20 +91,16 @@ void ParamClient::refresh()
                     [this, gen, fail](const QJsonObject &r) {
         if (gen != m_gen)
             return;
-        const QJsonArray names = QJsonArray::fromStringList(parseListResult(r));
-        m_queue.enqueue(service("describe_parameters"), {{"names", names}}, [this, gen, names, fail](const QJsonObject &r) {
+        const QStringList list = parseListResult(r);
+        const QJsonArray names = QJsonArray::fromStringList(list);
+        m_queue.enqueue(service("describe_parameters"), {{"names", names}}, [this, gen, list, names, fail](const QJsonObject &d) {
             if (gen != m_gen)
                 return;
-            QList<Param> params = parseDescriptors(r);
-            m_queue.enqueue(service("get_parameters"), {{"names", names}}, [this, gen, params](const QJsonObject &r) mutable {
+            m_queue.enqueue(service("get_parameters"), {{"names", names}}, [this, gen, list, d](const QJsonObject &r) {
                 if (gen != m_gen)
                     return;
-                const QVariantList values = parseValues(r);
-                for (int i = 0; i < params.size() && i < values.size(); ++i)
-                    params[i].value = values[i];
-                std::sort(params.begin(), params.end(), [](const Param &a, const Param &b) { return a.name < b.name; });
                 beginResetModel();
-                m_params = params;
+                m_params = merge(list, d, r);
                 endResetModel();
                 emit countChanged();
             }, fail);
@@ -198,6 +194,28 @@ QList<ParamClient::Param> ParamClient::parseDescriptors(const QJsonObject &resp)
         }
         out.append(p);
     }
+    return out;
+}
+
+// 실기 Foxy rclpy 의 describe_parameters 는 모든 descriptor 에 마지막 파라미터의 이름 · 형식을 넣어 돌려준다.
+// 그래서 행의 이름은 list_parameters, 형식 · 값은 get_parameters 에서 가져오고, descriptor(설명 · 범위 · 읽기 전용)는
+// 이름이 맞는 것만 쓴다.
+QList<ParamClient::Param> ParamClient::merge(const QStringList &names, const QJsonObject &describe, const QJsonObject &get)
+{
+    QHash<QString, Param> descs;
+    for (const Param &p : parseDescriptors(describe))
+        descs.insert(p.name, p);
+    const QJsonArray values = get["values"].toArray();
+    QList<Param> out;
+    for (int i = 0; i < names.size(); ++i) {
+        Param p = descs.value(names[i]);
+        p.name = names[i];
+        const QJsonObject v = values.at(i).toObject();
+        p.type = v["type"].toInt(NotSet);
+        p.value = parseValue(v);
+        out.append(p);
+    }
+    std::sort(out.begin(), out.end(), [](const Param &a, const Param &b) { return a.name < b.name; });
     return out;
 }
 
