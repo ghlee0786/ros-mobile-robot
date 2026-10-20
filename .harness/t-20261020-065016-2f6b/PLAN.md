@@ -16,7 +16,7 @@
 - [x] B46·B47: 코드 수정 없음 — 분석·권고만(최종 보고)
 - [x] 재현 시험: tst_rosbridge(slowBigFrameKeepsConnection·rxTimeoutBacksOff·quickReconnectAfterServerClose),
       tst_robot(bigMapRetainsCompactCopy), 시나리오 perf_bigmap3000·net_flap. 모두 수정 전 코드에서 실패 확인
-- [x] checks\integration.cmd 통과 확인(추가 요구 반영 뒤: ctest 18/18, smoke, pytest 51, 시나리오 합격 26 · 건너뜀 2)
+- [x] checks\integration.cmd 통과 확인(두 추가 요구 반영 뒤: ctest 18/18, smoke, pytest 51, 시나리오 합격 27 · 건너뜀 2)
 
 ## 추가 요구(지도를 RViz2 처럼)
 - [x] 지도 레이어 기본 켬(=/map 구독, throttle 2000), Alpha 0.7, Draw Behind 끔. 설정 키를 바꿔 예전 저장값을 읽지 않음(DECISIONS 6)
@@ -25,10 +25,16 @@
 - [x] '지도 없음 — ...(tooling\pc\map_start.cmd)' 안내(scene.noMapHintShown), 지도를 받으면 사라짐
 - [x] 시험: tst_msgparse mapPaletteMatchesRviz2 · cellCenterAlignment, 시나리오 map_rviz · map_grow(--map-grow --map-every 2)
 
+## 추가 요구(실측 뒤 B15 — 메시지 수 줄이기)
+- [x] /wheel_cmd: 바퀴 그래프 목표 계열(sCmdL/R, 기본 숨김)이 켜졌을 때만 구독(Robot::setWheelCmdWanted)
+- [x] /odom · /wheel_states throttle 하한 40 ms · queue 1(기록 중에도), 3D 로봇 위치 · yaw · 바퀴 40 ms 보간(SceneView drawPos 등)
+- [x] 시험: tst_rosbridge odomWheelFloor, tst_robot wheelCmdOnlyWhenWanted, 시나리오 perf_odom25(throttle_eq 40, /wheel_cmd 구독 0, drawHz ≥ 38 · poseHz 15..27; 측정 53 · 22)
+
 ## 발견
 - 수정 전 측정: dispatch 317~514 ms 중 Robot::onMap 은 0~30 ms, 나머지는 QML 변환.
 - 남은 GUI 막힘(부하 없을 때 ~50~100 ms, 부하 때 ~160 ms): QWebSocket 내부의 27 MB UTF-8 → QString 변환(GUI 스레드). 없애려면 소켓을 다른 스레드로 옮겨야 한다(이번 범위 밖).
 - 수정 전/후: 지도 뒤 Robot 이 붙잡는 private 291 MB → 43 MB(단위 시험), 실행 peak 899 → 720~810 MB.
+- 다른 작업과 겹친 한 번의 전체 실행에서 대시보드가 1 fps 로 굶어 flood · net_flap · perf_bigmap3000 · perf_odom25 가 함께 떨어졌다. 다시 돌리면 모두 합격(기계 과부하).
 - 프로세스 RSS 는 동시에 도는 다른 작업 부하에 크게 흔들려(447~592 MB) 시나리오 판정에서 뺐다.
 
 ## 남은 일

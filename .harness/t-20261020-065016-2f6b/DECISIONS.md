@@ -39,3 +39,9 @@
 - chosen: (b) — map_rviz · map_grow 시나리오의 actions 에 scene.cam '위에서' 하나만 둔다(구독 · 레이어는 기본 설정 그대로)
 - why: mapProbeErrPx 는 지도(z 0)와 라이다 높이의 점을 화면에서 비교하므로 비스듬한 카메라에서는 시차(약 40 px)가 생긴다. mapflip 시나리오와 같은 기준이다
 - effect: 카메라 기본값은 바뀌지 않는다
+
+## 8. 실측 뒤 B15 재요구 — /wheel_cmd 와 /odom · /wheel_states 메시지 수 줄이기(5 번을 대신한다)
+- options: /wheel_cmd: (a) 화면이 보일 때 (b) 바퀴 그래프의 목표 계열이 켜졌을 때(기본 숨김) / 보간: (c) C++ Robot 이 보간값을 낸다 (d) QML 3D 쪽만 Behavior 로 40 ms 선형 보간
+- chosen: (b) + (d). robot.cpp 의 센서 구독부(setSensor · setWheelCmdWanted)를 고쳤다 — 추가 요구가 'onMap 쪽만' 제한보다 앞선다
+- why: (b) 는 사용자가 고른 상태에만 달려 있어 연결 화면 전환과 상관없다(5 번의 reconnect 시나리오 충돌이 없다). (d) 는 로봇 모델 · 따라가는 카메라 · 바퀴만 부드럽게 하고 수치 · 그래프 · 기록은 받은 값 그대로 둔다
+- effect: 목표 L/R 수치와 그래프 목표 계열은 범례에서 켜야 보인다(켜기 전 수치는 '—'). 3D 로봇은 받은 위치보다 최대 40 ms 늦게 그려진다. 하한은 rosbridge.cpp kThrottleFloor, 보간은 SceneView.qml drawPos · drawYaw · drawWheel* 에서 바꾼다

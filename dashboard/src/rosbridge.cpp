@@ -19,8 +19,11 @@ constexpr int kHistory = 60;
 
 // 토픽별 throttle 하한(ms). 파이의 rosbridge 는 코어 하나로 돌아 전속 IMU · TF 를 받으면 모든 토픽이
 // 22 Hz 로 떨어졌다(00908e1). 어느 용도가 0(전속)으로 구독해도 이 값보다 빨라지지 않는다.
+// /odom · /wheel_states 는 33 Hz 로 오지만 파이 rosbridge 는 메시지 개수가 병목이라(초당 ~136 개에 CPU 59~100 %)
+// 표시용 25 Hz 로 받고 3D 는 보간한다. 기록 중에도 같다.
 const QHash<QString, int> kThrottleFloor = {
-    {"/imu/data_raw", 50}, {"/tf", 200}, {"/map", 2000}, {"/camera/image_raw", 1000}};
+    {"/imu/data_raw", 50}, {"/tf", 200}, {"/map", 2000}, {"/camera/image_raw", 1000},
+    {"/odom", 40}, {"/wheel_states", 40}};
 } // namespace
 
 RosBridge::RosBridge(QObject *parent) : QObject(parent)

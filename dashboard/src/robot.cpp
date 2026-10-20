@@ -195,12 +195,18 @@ void Robot::setSensor(const QString &key, bool on)
         m_sensorOn[key] = on;
         m_bridge.want(d.topic, d.type, "sensor", on, d.throttle);
         for (const auto &e : kExtra.value(key))
-            m_bridge.want(e.first, e.second, "sensor", on);
+            m_bridge.want(e.first, e.second, "sensor", on && (e.first != "/wheel_cmd" || m_wheelCmdWanted));
         if (!on && key == "scan")
             m_scan.clear(), m_scanCount = 0, m_scanDirty = true;
     }
     m_probed = false;
     updateStatus();
+}
+
+void Robot::setWheelCmdWanted(bool on)
+{
+    m_wheelCmdWanted = on;
+    m_bridge.want("/wheel_cmd", "sensor_msgs/JointState", "sensor", on && m_sensorOn.value("wheel").toBool());
 }
 
 void Robot::probe()

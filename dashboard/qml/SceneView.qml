@@ -56,6 +56,33 @@ ColumnLayout {
     property real mapOpacity: 0.7           // RViz2 Map 디스플레이 기본 Alpha
     readonly property bool mapFilterNearest: mapPlane.nearest   // 칸이 번지지 않게 최근접(시험 판정용)
     readonly property bool noMapHintShown: showMap && !robot.hasMap   // '지도 없음' 안내
+
+    // /odom · /wheel_states 는 표시용 25 Hz(throttle 40 ms)로 온다. 3D 로봇 · 따라가는 카메라 · 바퀴는 새 값까지
+    // 40 ms 동안 선형 보간해 프레임마다 움직인다. 각도는 감기지 않게(±180° · 2π 를 넘을 때 거꾸로 돌지 않게) 이어 붙인다.
+    function unwrapTo(cur, target, period) { return cur + ((target - cur) % period + 1.5 * period) % period - period / 2 }
+    property vector3d drawPos: Qt.vector3d(robot.x, robot.y, 0)
+    Behavior on drawPos { Vector3dAnimation { duration: 40 } }
+    property real drawYaw: 0         // 도
+    property real drawWheelL: 0      // rad
+    property real drawWheelR: 0
+    Behavior on drawYaw { NumberAnimation { duration: 40 } }
+    Behavior on drawWheelL { NumberAnimation { duration: 40 } }
+    Behavior on drawWheelR { NumberAnimation { duration: 40 } }
+    readonly property real rawYaw: robot.theta * 180 / Math.PI
+    onRawYawChanged: drawYaw = unwrapTo(drawYaw, rawYaw, 360)
+    readonly property real rawWheelL: robot.wheelAngleL
+    readonly property real rawWheelR: robot.wheelAngleR
+    onRawWheelLChanged: drawWheelL = unwrapTo(drawWheelL, rawWheelL, 2 * Math.PI)
+    onRawWheelRChanged: drawWheelR = unwrapTo(drawWheelR, rawWheelR, 2 * Math.PI)
+    // 시험 판정용: 직전 1 s 동안 그린 로봇 위치가 바뀐 횟수(drawHz)와 받은 위치가 바뀐 횟수(poseHz)
+    property int drawHz: 0
+    property int poseHz: 0
+    property int drawN: 0
+    property int poseN: 0
+    onDrawPosChanged: ++drawN
+    readonly property real rawX: robot.x
+    onRawXChanged: ++poseN
+    Timer { interval: 1000; repeat: true; running: true; onTriggered: { root.drawHz = root.drawN; root.poseHz = root.poseN; root.drawN = 0; root.poseN = 0 } }
     property bool mapDrawBehind: false
     property bool showGlobalCostmap: false
     property bool showLocalCostmap: false
@@ -438,13 +465,13 @@ ColumnLayout {
 
                 Node {
                     id: base
-                    position: Qt.vector3d(robot.x, robot.y, 0)
-                    eulerRotation.z: robot.theta * 180 / Math.PI
+                    position: root.drawPos
+                    eulerRotation.z: root.drawYaw
 
                     RobotModel {
                         id: model
-                        wheelAngleL: robot.wheelAngleL
-                        wheelAngleR: robot.wheelAngleR
+                        wheelAngleL: root.drawWheelL
+                        wheelAngleR: root.drawWheelR
                         bodyUrl: robot.modelFile("body")
                         wheelLUrl: robot.modelFile("wheel_left")
                         wheelRUrl: robot.modelFile("wheel_right")
@@ -474,22 +501,22 @@ ColumnLayout {
             // 추적: 로봇 뒤 1.3 m · 위 0.9 m 에서 로봇을 바라본다
             PerspectiveCamera {
                 id: followCam
-                position: root.scenePos(robot.x - 1.3 * Math.cos(robot.theta), robot.y - 1.3 * Math.sin(robot.theta), 0.9)
+                position: root.scenePos(root.drawPos.x - 1.3 * Math.cos(root.drawYaw * Math.PI / 180), root.drawPos.y - 1.3 * Math.sin(root.drawYaw * Math.PI / 180), 0.9)
                 lookAtNode: base
                 clipNear: 1
                 clipFar: 20000
             }
             // 3인칭: 로봇 yaw 를 따라 돌고, 끌어서 돌린 오프셋(tpYaw · tpPitch)과 거리(tpDist)는 유지한다
             Node {
-                position: root.scenePos(robot.x, robot.y, 0)
-                eulerRotation: Qt.vector3d(root.tpPitch, robot.theta * 180 / Math.PI - 90 + root.tpYaw, 0)
+                position: root.scenePos(root.drawPos.x, root.drawPos.y, 0)
+                eulerRotation: Qt.vector3d(root.tpPitch, root.drawYaw - 90 + root.tpYaw, 0)
                 PerspectiveCamera { id: tpCam; position: Qt.vector3d(0, 0, root.tpDist); clipNear: 1; clipFar: 20000 }
             }
             // 위에서: 로봇 위 4 m, 화면 오른쪽이 로봇 앞(odom x). 직교 카메라라 바닥 지도와 라이다 높이 점의 축척이 같다
             // (원근이면 높이 0.4 m 점이 바닥보다 약 1.1 배 크게 보여 지도가 작아 보였다).
             OrthographicCamera {
                 id: topCam
-                position: root.scenePos(robot.x, robot.y, 4)
+                position: root.scenePos(root.drawPos.x, root.drawPos.y, 4)
                 eulerRotation.x: -90
                 horizontalMagnification: root.topPxPerM / 100
                 verticalMagnification: root.topPxPerM / 100
@@ -499,7 +526,7 @@ ColumnLayout {
             // 자유: 로봇(+ 끌어서 옮긴 만큼)을 중심으로 회전 · 이동 · 확대
             Node {
                 id: orbit
-                position: root.scenePos(robot.x, robot.y, 0).plus(root.panOffset)
+                position: root.scenePos(root.drawPos.x, root.drawPos.y, 0).plus(root.panOffset)
                 eulerRotation: Qt.vector3d(root.camPitch, root.camYaw, 0)
                 PerspectiveCamera { id: freeCam; position: Qt.vector3d(0, 0, root.camDist); clipNear: 1; clipFar: 20000 }
             }

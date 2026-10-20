@@ -1,0 +1,72 @@
+{
+  "id": "perf_odom25",
+  "title": "/odom · /wheel_states 는 throttle 40 ms(25 Hz)로 받고 3D 로봇은 보간해 매 프레임 움직인다, /wheel_cmd 는 목표 계열이 숨겨진 기본 상태에서 구독 안 함 (B15)",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 3,
+      "call": "robot.straight",
+      "args": [
+        1.0
+      ]
+    }
+  ],
+  "duration_s": 9,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.straightRunning",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.poseHz",
+        "op": ">=",
+        "value": 15
+      },
+      {
+        "path": "scene.poseHz",
+        "op": "<=",
+        "value": 27
+      },
+      {
+        "path": "scene.drawHz",
+        "op": ">=",
+        "value": 38
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "throttle_eq",
+        "topic": "/odom",
+        "value": 40,
+        "all": true
+      },
+      {
+        "rule": "throttle_eq",
+        "topic": "/wheel_states",
+        "value": 40,
+        "all": true
+      },
+      {
+        "rule": "count_le",
+        "op": "subscribe",
+        "topic": "/wheel_cmd",
+        "value": 0
+      }
+    ]
+  }
+}

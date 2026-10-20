@@ -115,6 +115,25 @@ private slots:
         QCOMPARE(s.ops("unsubscribe", "/imu/data_raw").size(), 1);
     }
 
+    // B15: /odom · /wheel_states 는 전속(0)을 원해도, 기록 중이어도 표시용 하한 40 ms(25 Hz) · queue 1 로 구독한다.
+    void odomWheelFloor()
+    {
+        MockServer s;
+        RosBridge b;
+        QVERIFY(connectTo(b, s));
+        for (const char *t : {"/odom", "/wheel_states"}) {
+            b.want(t, "x/Y", "sensor", true, 0);
+            b.want(t, "", "record", true, 0);
+            QCOMPARE(b.throttleOf(t), 40);
+        }
+        QTest::qWait(300);
+        for (const char *t : {"/odom", "/wheel_states"})
+            for (const QJsonObject &o : s.ops("subscribe", t)) {
+                QCOMPARE(o["throttle_rate"].toInt(), 40);
+                QCOMPARE(o["queue_length"].toInt(), 1);
+            }
+    }
+
     // 서버가 끊으면 3.5 s 안에 다시 붙어 advertise · subscribe 를 다시 보낸다.
     void reconnectResends()
     {

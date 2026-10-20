@@ -170,6 +170,8 @@ public:
     Q_INVOKABLE void connectTo(const QString &host, int port);
     Q_INVOKABLE void resetSession();   // 다른 로봇에 붙을 때: 자취 · 거리 · 지도 · 경로 · 프레임 · 직진 결과 · map→odom
     Q_INVOKABLE void setSensor(const QString &key, bool on);
+    // /wheel_cmd 는 바퀴 그래프의 목표 계열만 쓴다 — 그것이 보일 때만 구독해 파이 rosbridge 메시지 수를 던다(기본 안 함)
+    Q_INVOKABLE void setWheelCmdWanted(bool on);
     Q_INVOKABLE void probe();
     Q_INVOKABLE void drive(double linear, double angular);   // -1..1 (최대 속도 비율)
     Q_INVOKABLE void armTeleop(bool on);
@@ -230,6 +232,7 @@ private:
 
     double m_x = 0, m_y = 0, m_theta = 0, m_v = 0, m_w = 0, m_distance = 0;
     bool m_haveOdom = false;
+    bool m_wheelCmdWanted = false;
     double m_cmdL = 0, m_cmdR = 0, m_wheelL = 0, m_wheelR = 0, m_angleL = 0, m_angleR = 0;
     qint64 m_wheelT = 0;
     double m_roll = 0, m_pitch = 0, m_yaw = 0, m_gyroZ = 0, m_accelX = 0;

@@ -268,6 +268,27 @@ private slots:
         QVERIFY(qAbs(r.mapCenter().x() + 1) < 1e-4);
     }
 
+    // B15: /wheel_cmd 는 바퀴 그래프의 목표 계열이 보일 때만 구독한다(기본 안 함, 바퀴 센서를 꺼 두면 켜도 안 함).
+    void wheelCmdOnlyWhenWanted()
+    {
+        MockServer s;
+        Robot r;
+        QVERIFY(connectRobot(r, s));
+        QVERIFY(QTest::qWaitFor([&] { return s.ops("subscribe", "/wheel_states").size() == 1; }, 2000));
+        QVERIFY(!r.bridge()->subscribed("/wheel_cmd"));
+        QCOMPARE(s.ops("subscribe", "/wheel_cmd").size(), 0);
+        r.setWheelCmdWanted(true);
+        QVERIFY(QTest::qWaitFor([&] { return s.ops("subscribe", "/wheel_cmd").size() == 1; }, 2000));
+        r.setWheelCmdWanted(false);
+        QVERIFY(QTest::qWaitFor([&] { return s.ops("unsubscribe", "/wheel_cmd").size() == 1; }, 2000));
+        r.setSensor("wheel", false);
+        r.setWheelCmdWanted(true);
+        QTest::qWait(200);
+        QVERIFY(!r.bridge()->subscribed("/wheel_cmd"));
+        r.setSensor("wheel", true);
+        QVERIFY(QTest::qWaitFor([&] { return s.ops("subscribe", "/wheel_cmd").size() == 2; }, 2000));
+    }
+
 #ifdef Q_OS_WIN
     // B14: 3000² 지도를 받은 뒤 Robot 이 붙잡는 메모리는 이미지(36 MB) · 칸 바이트(9 MB) 수준이다.
     // 원본 QJsonObject(칸마다 16 B, 144 MB)를 들고 있으면 180 MB 를 넘는다.

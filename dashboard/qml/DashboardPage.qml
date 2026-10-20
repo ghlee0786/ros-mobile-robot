@@ -53,8 +53,11 @@ FocusScope {
     GraphLink { id: graphLink }
 
     // 기본 그래프는 Robot::sampled(30 Hz)를 push 한다. 목표(cmd)는 계단으로 그린다.
-    PlotSeries { id: sCmdL; name: "목표 L"; color: Theme.series[1]; steps: true }
-    PlotSeries { id: sCmdR; name: "목표 R"; color: Theme.series[4]; steps: true }
+    // 목표(/wheel_cmd)는 기본 숨김 — 범례에서 켜면 그때 구독한다(파이 rosbridge 메시지 수를 던다)
+    PlotSeries { id: sCmdL; name: "목표 L"; color: Theme.series[1]; steps: true; enabled: false }
+    PlotSeries { id: sCmdR; name: "목표 R"; color: Theme.series[4]; steps: true; enabled: false }
+    readonly property bool wheelCmdShown: sCmdL.enabled || sCmdR.enabled
+    onWheelCmdShownChanged: robot.setWheelCmdWanted(wheelCmdShown)
     PlotSeries { id: sActL; name: "좌 실측"; color: Theme.series[0] }
     PlotSeries { id: sActR; name: "우 실측"; color: Theme.series[3] }
     PlotSeries { id: sGyro; name: "gyro z"; color: Theme.series[2] }
@@ -186,7 +189,7 @@ FocusScope {
                             Layout.fillWidth: true
                             spacing: Theme.sp4
                             readonly property int age: Math.round((page.nowMs - page.wheelSeen) / 1000)
-                            Metric { label: "목표 L / R"; valueSize: Theme.fsBody; stale: page.wheelStale; ageSec: parent.age; value: page.wheelSeen > 0 ? robot.wheelCmdL.toFixed(2) + " / " + robot.wheelCmdR.toFixed(2) : "—" }
+                            Metric { label: "목표 L / R"; valueSize: Theme.fsBody; stale: page.wheelStale; ageSec: parent.age; value: page.wheelSeen > 0 && page.wheelCmdShown ? robot.wheelCmdL.toFixed(2) + " / " + robot.wheelCmdR.toFixed(2) : "—" }
                             Metric { label: "좌 실측"; valueSize: Theme.fsBody; stale: page.wheelStale; ageSec: parent.age; value: page.wheelSeen > 0 ? robot.wheelL.toFixed(2) : "—" }
                             Metric { label: "우 실측"; valueSize: Theme.fsBody; stale: page.wheelStale; ageSec: parent.age; value: page.wheelSeen > 0 ? robot.wheelR.toFixed(2) : "—" }
                             Item { Layout.fillWidth: true }
