@@ -27,3 +27,15 @@
 - chosen: (a) — (b) 를 구현·시험했다가 되돌렸다
 - why: 시작 4 s 안에 붙지 못하면 연결 화면으로 바뀌는 타이머 때문에 (b) 에서는 재연결 때 구독 집합이 시점에 따라 달라져 기존 시나리오 reconnect(같은 구독 집합 재수신)가 가끔 불합격했다. 또 robot.cpp 는 onMap 쪽만 고치라는 제한이 있다. /wheel_cmd 는 33 Hz 작은 메시지 하나라 파이 CPU 이득도 작다(/scan 이 대부분)
 - effect: 구독은 예전과 같다. 다시 하려면 '보이는 화면' 대신 '사용자가 고른 화면' 기준으로 하거나 reconnect 시나리오의 기대를 함께 바꿔야 한다
+
+## 6. 지도 기본 켬을 저장된 예전 설정과 어떻게 맞출지(추가 요구 — RViz2 처럼)
+- options: (a) 키를 그대로 두고 기본값만 바꾼다(예전에 한 번이라도 실행했으면 저장된 false 가 남는다) (b) 새 키로 바꿔 예전 값을 읽지 않는다 (c) 버전 키를 두고 한 번만 옮긴다
+- chosen: (b) — view/mapLayer → view/mapLayerOn, layers/mapOpacity → layers/mapAlpha
+- why: 이번 변경 뒤 처음 켤 때 반드시 켜짐 · Alpha 0.7 이 되고, 그 뒤 사용자가 바꾼 값은 새 키로 저장된다. 코드가 가장 적다
+- effect: 예전에 일부러 지도를 꺼 둔 사용자도 한 번은 켜진 채로 시작한다. SceneView.qml 의 Settings alias 이름으로 되돌릴 수 있다
+
+## 7. 지도 정렬(mapProbeErrPx) 판정 시점
+- options: (a) 기본 3인칭 카메라 그대로 (b) 판정 전에 '위에서' 카메라로
+- chosen: (b) — map_rviz · map_grow 시나리오의 actions 에 scene.cam '위에서' 하나만 둔다(구독 · 레이어는 기본 설정 그대로)
+- why: mapProbeErrPx 는 지도(z 0)와 라이다 높이의 점을 화면에서 비교하므로 비스듬한 카메라에서는 시차(약 40 px)가 생긴다. mapflip 시나리오와 같은 기준이다
+- effect: 카메라 기본값은 바뀌지 않는다

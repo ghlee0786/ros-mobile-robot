@@ -16,7 +16,14 @@
 - [x] B46·B47: 코드 수정 없음 — 분석·권고만(최종 보고)
 - [x] 재현 시험: tst_rosbridge(slowBigFrameKeepsConnection·rxTimeoutBacksOff·quickReconnectAfterServerClose),
       tst_robot(bigMapRetainsCompactCopy), 시나리오 perf_bigmap3000·net_flap. 모두 수정 전 코드에서 실패 확인
-- [x] checks\integration.cmd 통과 확인(ctest 18/18, smoke, pytest 51, 시나리오 합격 24 · 건너뜀 2)
+- [x] checks\integration.cmd 통과 확인(추가 요구 반영 뒤: ctest 18/18, smoke, pytest 51, 시나리오 합격 26 · 건너뜀 2)
+
+## 추가 요구(지도를 RViz2 처럼)
+- [x] 지도 레이어 기본 켬(=/map 구독, throttle 2000), Alpha 0.7, Draw Behind 끔. 설정 키를 바꿔 예전 저장값을 읽지 않음(DECISIONS 6)
+- [x] Main 의 connectTo(resetSession) 가 SceneView 초기화 전에 mapChanged 를 내 기본 켬이 꺼짐으로 덮이던 경쟁을 mapSynced 로 막음
+- [x] 텍스처 min · mag 최근접, mip 없음(scene.mapFilterNearest). 위치 · 셀 중심 정렬은 기존(gridPlane · placeMap)대로, 시험 추가
+- [x] '지도 없음 — ...(tooling\pc\map_start.cmd)' 안내(scene.noMapHintShown), 지도를 받으면 사라짐
+- [x] 시험: tst_msgparse mapPaletteMatchesRviz2 · cellCenterAlignment, 시나리오 map_rviz · map_grow(--map-grow --map-every 2)
 
 ## 발견
 - 수정 전 측정: dispatch 317~514 ms 중 Robot::onMap 은 0~30 ms, 나머지는 QML 변환.

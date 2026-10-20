@@ -57,6 +57,55 @@ private slots:
         QCOMPARE(px(img, 5, 0).blue(), 0);
     }
 
+    // RViz2 Map 디스플레이(map 색 체계)의 makeMapPalette 규칙으로 계산한 색과 같다. 칸 바이트 경로(cellsToImage)도 같다.
+    void mapPaletteMatchesRviz2()
+    {
+        auto rviz = [](int v) {
+            const int i = v & 0xFF;
+            if (i <= 100) {
+                const int g = 255 - (255 * i) / 100;
+                return QColor(g, g, g);
+            }
+            if (i <= 127)
+                return QColor(0, 255, 0);
+            if (i <= 254)
+                return QColor(255, (255 * (i - 128)) / (254 - 128), 0);
+            return QColor(0x70, 0x89, 0x86);
+        };
+        const QList<int> vals{0, 50, 100, -1, 101, 128};
+        QJsonArray data;
+        for (int v : vals)
+            data.append(v);
+        const QImage img = occupancyToImage(data, int(vals.size()), 1, "map");
+        const QImage fromCells = cellsToImage(occupancyCells(data), int(vals.size()), 1, "map");
+        for (int k = 0; k < vals.size(); ++k) {
+            QCOMPARE(px(img, k, 0), rviz(vals[k]));
+            QCOMPARE(px(fromCells, k, 0), rviz(vals[k]));
+        }
+    }
+
+    // 셀 (i,j) 중심 = origin + (i+0.5, j+0.5)·res(origin yaw 적용)이 판 uv 에서 그 칸 픽셀의 한가운데에 온다.
+    void cellCenterAlignment()
+    {
+        const int w = 5, h = 3;
+        const QJsonObject info{{"width", w}, {"height", h}, {"resolution", 0.1},
+                               {"origin", QJsonObject{{"position", QJsonObject{{"x", 1.5}, {"y", -0.7}}},
+                                                      {"orientation", quatFromYaw(qDegreesToRadians(30.0))}}}};
+        QJsonArray data = filled(w * h, 0);
+        data[2 * w + 3] = 100;   // 칸 (3, 2)
+        const QImage img = occupancyToImage(data, w, h);
+        const GridPlane plane = gridPlane(info);
+        for (int j = 0; j < h; ++j)
+            for (int i = 0; i < w; ++i) {
+                const Pose2D c = gridCellCenter(info, i, j);
+                const QPointF uv = planeUv(plane, c.x, c.y);
+                QVERIFY(qAbs(uv.x() * w - (i + 0.5)) < 1e-6);
+                QVERIFY(qAbs(uv.y() * h - (h - 1 - j + 0.5)) < 1e-6);   // 이미지 0 행 = 지도 맨 위 행
+                const QColor want = i == 3 && j == 2 ? QColor(0, 0, 0) : QColor(255, 255, 255);
+                QCOMPARE(px(img, int(uv.x() * w), int(uv.y() * h)), want);
+            }
+    }
+
     void costmapPalette()
     {
         const QJsonArray data{0, 50, 99, 100, -1};

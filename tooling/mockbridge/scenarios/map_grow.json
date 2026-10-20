@@ -1,0 +1,71 @@
+{
+  "id": "map_grow",
+  "title": "SLAM 처럼 2 s 마다 커지고 origin 이 바뀌는 /map 을 끊김 없이 반영하고, 벽 칸 정렬이 유지된다",
+  "needs_pi": false,
+  "needs_human": false,
+  "scene": true,
+  "server_args": [
+    "--freeze-pose",
+    "--map-grow",
+    "--map-every",
+    "2"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "t": 2,
+      "set": "scene.cam",
+      "value": "위에서"
+    }
+  ],
+  "duration_s": 16,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.hasMap",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.mapImageSerial",
+        "op": ">=",
+        "value": 4
+      },
+      {
+        "path": "scene.mapProbeOccupied",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "scene.mapProbeErrPx",
+        "op": "<=",
+        "value": 2
+      },
+      {
+        "path": "scene.mapProbeErrPx",
+        "op": ">=",
+        "value": 0
+      }
+    ],
+    "trace": [
+      {
+        "rule": "never_between",
+        "path": "bridge.connected",
+        "op": "==",
+        "value": false,
+        "from_s": 0,
+        "to_s": 1000
+      }
+    ]
+  }
+}

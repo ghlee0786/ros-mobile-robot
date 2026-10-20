@@ -52,8 +52,10 @@ ColumnLayout {
     property bool showTrail: true           // 이동 경로 · 계획 경로 · 직진 목표선
     property bool trailGradient: false
     property bool showAxes: true
-    property bool showMap: false            // robot.mapWanted 와 같이 움직인다
-    property real mapOpacity: 1
+    property bool showMap: true             // RViz2 처럼 기본 켬(/map 구독). robot.mapWanted 와 같이 움직인다
+    property real mapOpacity: 0.7           // RViz2 Map 디스플레이 기본 Alpha
+    readonly property bool mapFilterNearest: mapPlane.nearest   // 칸이 번지지 않게 최근접(시험 판정용)
+    readonly property bool noMapHintShown: showMap && !robot.hasMap   // '지도 없음' 안내
     property bool mapDrawBehind: false
     property bool showGlobalCostmap: false
     property bool showLocalCostmap: false
@@ -189,7 +191,7 @@ ColumnLayout {
         property alias scanLayer: root.showScan
         property alias pathLayer: root.showTrail
         property alias axesLayer: root.showAxes
-        property alias mapLayer: root.showMap
+        property alias mapLayerOn: root.showMap   // 예전 키 mapLayer 는 기본 꺼짐 시절 값이라 읽지 않는다
     }
     Settings {
         category: "layers"
@@ -199,7 +201,7 @@ ColumnLayout {
         property alias scanColorMode: root.scanColorMode
         property alias scanPointSize: root.scanPointSize
         property alias trailGradient: root.trailGradient
-        property alias mapOpacity: root.mapOpacity
+        property alias mapAlpha: root.mapOpacity   // 예전 키 mapOpacity(기본 1)는 읽지 않는다
         property alias mapDrawBehind: root.mapDrawBehind
         property alias globalCostmap: root.showGlobalCostmap
         property alias localCostmap: root.showLocalCostmap
@@ -212,11 +214,14 @@ ColumnLayout {
     }
     // 지도 레이어 = robot.mapWanted (시험 동작 · 다른 화면이 바꿔도 체크가 따라온다)
     onShowMapChanged: if (robot.mapWanted !== showMap) robot.mapWanted = showMap
+    // 이 화면이 저장된 값(기본 켬)을 robot 에 넣기 전에 Main 의 connectTo(resetSession)가 내는 mapChanged 는 따라가지 않는다
+    property bool mapSynced: false
     Connections {
         target: root.robot
+        enabled: root.mapSynced
         function onMapChanged() { if (root.showMap !== root.robot.mapWanted) root.showMap = root.robot.mapWanted }
     }
-    Component.onCompleted: if (robot.mapWanted !== showMap) robot.mapWanted = showMap
+    Component.onCompleted: { if (robot.mapWanted !== showMap) robot.mapWanted = showMap; mapSynced = true }
 
     // ---- 장면 데이터 (켤 때만 구독, RosBridge 공개 API 만 씀) ----
     ScanAccumulator {
@@ -344,6 +349,7 @@ ColumnLayout {
                     property alias tex: tex
                     property real alpha: 1
                     property bool behind: false   // Draw Behind: 깊이를 쓰지 않아 다른 것을 가리지 않는다
+                    readonly property bool nearest: gpTex.magFilter === Texture.Nearest && gpTex.minFilter === Texture.Nearest
                     source: "#Rectangle"
                     castsShadows: false
                     opacity: alpha
@@ -352,9 +358,12 @@ ColumnLayout {
                         alphaMode: PrincipledMaterial.Blend
                         depthDrawMode: gp.behind ? PrincipledMaterial.NeverDepthDraw : PrincipledMaterial.OpaqueOnlyDepthDraw
                         baseColorMap: Texture {
+                            id: gpTex
                             textureData: MapTexture { id: tex }
                             flipV: true
-                            magFilter: Texture.Nearest
+                            magFilter: Texture.Nearest   // RViz 처럼 칸을 또렷하게(확대 · 축소 모두)
+                            minFilter: Texture.Nearest
+                            mipFilter: Texture.None
                         }
                     }
                 }
@@ -670,6 +679,23 @@ ColumnLayout {
                 width: bar.width + 60; height: 36
                 Rectangle { id: bar; x: 14; anchors.verticalCenter: parent.verticalCenter; width: root.topPxPerM * 0.5; height: 4; color: Theme.hudText1 }
                 Text { anchors.left: bar.right; anchors.leftMargin: 8; anchors.verticalCenter: parent.verticalCenter; text: "0.5 m"; color: Theme.hudText2; font.pixelSize: Theme.fsSmall }
+            }
+        }
+
+        // ---- 지도 없음 안내(지도를 받으면 사라진다) ----
+        Rectangle {
+            objectName: "noMapHint"
+            visible: root.noMapHintShown
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.margins: 14
+            radius: Theme.rLg; color: Theme.hudFill
+            width: noMap.implicitWidth + 28; height: noMap.implicitHeight + 16
+            Text {
+                id: noMap
+                anchors.centerIn: parent
+                color: Theme.hudText2; font.pixelSize: Theme.fsSmall
+                text: "지도 없음 — PC 에서 SLAM/Nav2 를 실행하면 /map 이 표시됩니다(tooling\\pc\\map_start.cmd)"
             }
         }
 
