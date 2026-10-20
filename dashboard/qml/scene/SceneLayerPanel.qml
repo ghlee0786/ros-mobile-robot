@@ -128,7 +128,7 @@ Rectangle {
 
                 LayerRow {
                     text: "LiDAR 점"; swatch: Theme.lidar; on: root.scene.showScan; onFlip: root.scene.showScan = !on
-                    status: !(root.robot.sensorOn.scan ?? false) ? "센서 꺼짐" : root.robot.scanCount === 0 ? "/scan 수신 없음"
+                    status: !(root.robot.sensorOn.scan ?? false) ? "센서 꺼짐" : root.robot.scanCount === 0 ? (root.robot.scanTopic || "/scan") + " 수신 없음"
                           : root.scene.scanDecay > 0 ? "잔상 " + root.scanAcc.pointCount + " 점" : ""
                     warn: status !== "" && root.scene.scanDecay === 0
                     Labeled {

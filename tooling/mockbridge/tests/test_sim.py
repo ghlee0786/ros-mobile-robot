@@ -202,3 +202,26 @@ def test_pi_initialpose(mock, client):
     assert ip["msg"]["header"]["frame_id"] == "map" and ip["msg"]["pose"]["pose"]["position"]["x"] == 0.0
     c.collect(0.3)
     assert math.hypot(*amcl_xy(c)) < 0.01
+
+
+def test_scan_compact(mock, client):
+    """/scan_compact: 기본으로 토픽 목록에 있고 /scan 과 같은 스캔을 mm 정수로 낸다. --no-scan-compact 면 목록에서도 빠진다."""
+    c = client(mock("--freeze-pose").port)
+    topics = c.call("/rosapi/topics")["values"]
+    assert topics["types"][topics["topics"].index("/scan_compact")] == "std_msgs/msg/UInt16MultiArray"
+    c.send(op="subscribe", topic="/scan", type="sensor_msgs/LaserScan")
+    c.send(op="subscribe", topic="/scan_compact", type="std_msgs/UInt16MultiArray")
+    scan = c.until(lambda m: m.get("topic") == "/scan")["msg"]
+    comp = c.until(lambda m: m.get("topic") == "/scan_compact")["msg"]
+    f = comp["layout"]["dim"][0]["label"].split(" ")
+    assert len(f) == 7 and f[0] == scan["header"]["frame_id"]
+    assert abs(float(f[1]) - scan["angle_min"]) < 1e-6 and abs(float(f[2]) - scan["angle_increment"]) < 1e-8
+    assert float(f[3]) == scan["range_min"] and float(f[4]) == scan["range_max"]
+    assert comp["layout"]["dim"][0]["size"] == len(comp["data"]) == len(scan["ranges"])
+    for r, mm in zip(scan["ranges"], comp["data"]):   # 멈춘 로봇이라 두 스캔이 같다
+        if r is None or not scan["range_min"] <= r <= scan["range_max"]:
+            assert mm == 0
+        else:
+            assert mm == int(r * 1000)
+    c2 = client(mock("--no-scan-compact").port)
+    assert "/scan_compact" not in c2.call("/rosapi/topics")["values"]["topics"]

@@ -123,6 +123,67 @@ private slots:
         QVERIFY(qAbs(s.points[1].x() - 0.1) < 1e-5 && qAbs(s.points[1].y() + 2.0) < 1e-5);
         QVERIFY(qAbs(s.nearestRange - 0.9) < 1e-9);   // 거리도 base 기준: 점 (-0.9, 0)
     }
+
+    // /scan_compact: label 파싱 · mm→m · 0 은 무효(null)
+    void compactLabel()
+    {
+        const QJsonObject c{{"layout", QJsonObject{{"dim", QJsonArray{QJsonObject{
+                                {"label", "laser -3.1240000 0.003483000 0.150 25.000 1700000000 123456789"},
+                                {"size", 3}, {"stride", 3}}}}}},
+                            {"data", QJsonArray{1500, 0, 65000}}};
+        const QJsonObject s = scanFromCompact(c);
+        QCOMPARE(s["header"].toObject()["frame_id"].toString(), QString("laser"));
+        QCOMPARE(s["header"].toObject()["stamp"].toObject()["sec"].toInteger(), 1700000000);
+        QCOMPARE(s["header"].toObject()["stamp"].toObject()["nanosec"].toInteger(), 123456789);
+        QCOMPARE(s["angle_min"].toDouble(), -3.124);
+        QCOMPARE(s["angle_increment"].toDouble(), 0.003483);
+        QCOMPARE(s["range_min"].toDouble(), 0.15);
+        QCOMPARE(s["range_max"].toDouble(), 25.0);
+        const QJsonArray r = s["ranges"].toArray();
+        QCOMPARE(r.size(), 3);
+        QCOMPARE(r[0].toDouble(), 1.5);
+        QVERIFY(r[1].isNull());   // 0 mm = 반사 없음
+        QCOMPARE(r[2].toDouble(), 65.0);
+        // range_min 이 0 이어도 0 mm 는 점이 되지 않는다
+        QJsonObject z = c;
+        z["layout"] = QJsonObject{{"dim", QJsonArray{QJsonObject{{"label", "base_link 0 0.1 0 100 0 0"}}}}};
+        QCOMPARE(parseScan(scanFromCompact(z)).points.size(), 2);
+        // frame_id 가 비어도(앞 공백) 숫자 칸을 읽는다 · label 이 모자라면 빈 객체
+        z["layout"] = QJsonObject{{"dim", QJsonArray{QJsonObject{{"label", " 0.5 0.1 0.2 10 1 2"}}}}};
+        QCOMPARE(scanFromCompact(z)["angle_min"].toDouble(), 0.5);
+        QCOMPARE(scanFromCompact(z)["header"].toObject()["frame_id"].toString(), QString());
+        z["layout"] = QJsonObject{{"dim", QJsonArray{QJsonObject{{"label", "laser 0 0.1"}}}}};
+        QVERIFY(scanFromCompact(z).isEmpty());
+        QVERIFY(scanFromCompact({}).isEmpty());
+    }
+
+    // 같은 스캔을 /scan 과 /scan_compact(파이 scan_compact_node 와 같은 식)로 받으면 같은 점이 나온다
+    void compactSameAsScan()
+    {
+        const int n = 360;
+        const double a0 = -M_PI, da = 2 * M_PI / n, rmin = 0.15, rmax = 12.0;
+        QJsonArray ranges, mm;
+        for (int i = 0; i < n; ++i) {
+            const double r = i % 17 == 0 ? qInf() : i % 23 == 0 ? 0.1 : 0.25 + 0.01 * (i % 200);
+            ranges.append(std::isfinite(r) ? QJsonValue(r) : QJsonValue());   // rosbridge 는 inf 를 null 로
+            mm.append(std::isfinite(r) && rmin <= r && r <= rmax ? int(r * 1000) : 0);
+        }
+        const QJsonObject scan{{"header", QJsonObject{{"frame_id", "laser"}}}, {"angle_min", a0}, {"angle_increment", da},
+                               {"range_min", rmin}, {"range_max", rmax}, {"ranges", ranges}};
+        const QJsonObject compact{
+            {"layout", QJsonObject{{"dim", QJsonArray{QJsonObject{
+                {"label", QString("laser %1 %2 %3 %4 0 0").arg(a0, 0, 'f', 7).arg(da, 0, 'f', 9).arg(rmin, 0, 'f', 3).arg(rmax, 0, 'f', 3)},
+                {"size", n}, {"stride", n}}}}}},
+            {"data", mm}};
+        const Pose2D mount{-0.12, 0, 0.2};
+        const Scan a = parseScan(scan, mount, 0.3), b = parseScan(scanFromCompact(compact), mount, 0.3);
+        QVERIFY(a.points.size() > 100);
+        QCOMPARE(b.points.size(), a.points.size());
+        for (int i = 0; i < a.points.size(); ++i)
+            QVERIFY2((a.points[i] - b.points[i]).length() < 0.002, qPrintable(QString::number(i)));
+        QVERIFY(qAbs(a.nearestRange - b.nearestRange) < 0.001);
+        QVERIFY(qAbs(a.nearestAngle - b.nearestAngle) < 0.1);
+    }
 };
 
 QTEST_GUILESS_MAIN(TstMsgParse)

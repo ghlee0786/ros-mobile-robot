@@ -37,6 +37,10 @@ struct Scan {
 };
 // sensor_msgs/LaserScan → 점. mount 는 base_link → 레이저 프레임 변환, selfHide m 안의 점은 버린다.
 Scan parseScan(const QJsonObject &m, const Pose2D &mount = {}, double selfHide = 0);
+// /scan_compact(std_msgs/UInt16MultiArray, 파이 scan_compact_node) → sensor_msgs/LaserScan 모양 JSON.
+// data = 거리 mm(0 = 반사 없음 → null, rosbridge 가 inf 를 보내는 모양), layout.dim[0].label =
+// "frame_id angle_min angle_increment range_min range_max stamp_sec stamp_nsec". label 이 모자라면 빈 객체.
+QJsonObject scanFromCompact(const QJsonObject &m);
 
 // OccupancyGrid data → RGBA 이미지. 0 행이 이미지 아래가 된다(이미지 위 = +y, 오른쪽 = +x).
 // scheme: "map" · "costmap" · "raw". binaryThreshold >= 0 이면 0..100 값을 그 값 이상 = 검정, 미만 = 흰색으로 그린다.

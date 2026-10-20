@@ -89,6 +89,19 @@ RowLayout {
             mono: true
         }
 
+        // 요약 줄: 시계 차 = 최근 메시지 header.stamp − 수신 시각의 중앙값. 1 s 를 넘으면 경고색 · 툴팁
+        Text {
+            readonly property real skew: tab.robot.bridge.clockSkewMs
+            readonly property bool bad: Math.abs(skew) > 1000
+            text: "시계 차 " + (skew < 0 ? "−" : "+") + Math.abs(Math.round(skew)) + " ms"
+            color: bad ? Theme.warnText : Theme.text2
+            font.pixelSize: Theme.fsSmall
+            font.features: Theme.numFeatures
+            ToolTip.visible: bad && skewHover.hovered
+            ToolTip.delay: 300
+            ToolTip.text: "파이와 PC 시계가 다릅니다 — timesyncd/시간 동기화 확인"
+            HoverHandler { id: skewHover }
+        }
         RowLayout {
             Layout.fillWidth: true
             spacing: Theme.sp4

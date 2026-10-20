@@ -1,0 +1,97 @@
+{
+  "id": "dash_graphs",
+  "title": "바퀴 그래프 시간 창 30 s · 일시정지(멈춘 뒤 X 끝이 IMU 그래프보다 뒤처짐) · 사용자 그래프 경로 추가(/client_count.data 구독 · 점)",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [],
+  "dashboard_args": [],
+  "duration_s": 12,
+  "actions": [
+    {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 1,
+      "set": "wheelGraph.windowSec",
+      "value": 30
+    },
+    {
+      "t": 1.2,
+      "call": "userGraphPanel.addSeries",
+      "args": [
+        {
+          "path": "/client_count.data"
+        }
+      ]
+    },
+    {
+      "t": 3,
+      "call": "wheelGraph.setPaused",
+      "args": [
+        true
+      ]
+    },
+    {
+      "t": 9,
+      "shot": "graphs.png"
+    }
+  ],
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "dash.wheelPaused",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "dash.wheelWindowSec",
+        "op": "==",
+        "value": 30
+      },
+      {
+        "path": "dash.wheelSpanSec",
+        "op": ">=",
+        "value": 29.99
+      },
+      {
+        "path": "dash.wheelSpanSec",
+        "op": "<=",
+        "value": 30.01
+      },
+      {
+        "path": "dash.wheelLagSec",
+        "op": ">=",
+        "value": 5
+      },
+      {
+        "path": "dash.userSeriesCount",
+        "op": "==",
+        "value": 3
+      },
+      {
+        "path": "dash.userLastPath",
+        "op": "==",
+        "value": "/client_count.data"
+      },
+      {
+        "path": "dash.userLastCount",
+        "op": ">=",
+        "value": 5
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/client_count",
+        "value": 1
+      }
+    ]
+  }
+}
