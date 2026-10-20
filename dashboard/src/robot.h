@@ -182,7 +182,7 @@ public:
     Q_INVOKABLE void drive(double linear, double angular);   // -1..1 (최대 속도 비율)
     Q_INVOKABLE void armTeleop(bool on);
     Q_INVOKABLE void straight(double distance);
-    Q_INVOKABLE void sendGoal(double x, double y, double yaw);   // Nav2 이동 목표 (odom 프레임 m · rad)
+    Q_INVOKABLE QString sendGoal(double x, double y, double yaw);   // Nav2 이동 목표 (odom 프레임 m · rad). 보내지 않았으면 그 이유
     Q_INVOKABLE void setInitialPose(double x, double y, double yaw);   // AMCL 초기 위치 (odom 프레임 m · rad) → /dashboard/initialpose
     Q_INVOKABLE void estop();
     bool rampEnabled() const { return m_ramp; }

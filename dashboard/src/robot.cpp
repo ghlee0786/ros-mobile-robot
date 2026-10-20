@@ -871,13 +871,13 @@ void Robot::straight(double distance)
     m_bridge.publish("/straight_drive/goal", {{"x", distance}, {"y", qMin(m_maxSpeed, kMaxLinear)}, {"z", 0}});
 }
 
-void Robot::sendGoal(double x, double y, double yaw)
+QString Robot::sendGoal(double x, double y, double yaw)
 {
     const QString why = !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(yaw) ? QString("숫자가 아닌 목표")
                         : m_mode == "정지" ? QString("정지 모드") : moveBlocked();
     if (!why.isEmpty()) {
         addEvent("이동 목표 거부 — " + why);
-        return;
+        return why;
     }
     // Nav2 bt_navigator 가 듣는 /goal_pose 로 보낸다. map→odom 이 신선하면 map 으로 바꿔 보낸다: p_map = (map->odom) * p_odom
     QString frame = "odom";
@@ -895,6 +895,7 @@ void Robot::sendGoal(double x, double y, double yaw)
         {"pose", QJsonObject{{"position", QJsonObject{{"x", p.x}, {"y", p.y}, {"z", 0}}},
                              {"orientation", quatFromYaw(p.yaw)}}}});
     addEvent(QString("이동 목표 %1 (%2, %3) %4°").arg(frame).arg(p.x, 0, 'f', 2).arg(p.y, 0, 'f', 2).arg(qRadiansToDegrees(p.yaw), 0, 'f', 0));
+    return {};
 }
 
 void Robot::setInitialPose(double x, double y, double yaw)

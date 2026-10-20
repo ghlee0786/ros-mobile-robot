@@ -59,7 +59,7 @@ def main():
     c = ros('controller_server', p)
     c.update(controller_frequency=10.0, odom_topic='/odom')
     c['progress_checker'].update(required_movement_radius=0.1, movement_time_allowance=20.0)
-    c['general_goal_checker'].update(xy_goal_tolerance=0.15, yaw_goal_tolerance=0.3)
+    c['general_goal_checker'].update(xy_goal_tolerance=0.10, yaw_goal_tolerance=0.25)
     c['FollowPath'] = RPP
 
     for name, frame in (('local_costmap', 'odom'), ('global_costmap', 'map')):

@@ -21,6 +21,8 @@ ColumnLayout {
     property var goalA: null      // Nav2 이동 목표 (odom 프레임, m)
     property real goalYaw: 0      // rad
     property bool goalDragging: false
+    property string goalError: ""   // 목표를 보내지 않은 이유(잠김 · 정지 모드 · 끊김), 몇 초 보이고 사라진다
+    Timer { id: goalErrorTimer; interval: 6000; onTriggered: root.goalError = "" }
     property var initA: null      // AMCL 초기 위치 (끄는 동안, odom 프레임 m)
     property real initYaw: 0      // rad
     property bool initDragging: false
@@ -304,9 +306,11 @@ ColumnLayout {
         Item { implicitWidth: Theme.sp2 }
         Text { text: "도구"; color: Theme.text2; font.pixelSize: Theme.fsSmall }
         Seg {
-            options: ["없음", "측정", "목표", "초기 위치"]
-            current: root.tool === "" ? "없음" : root.tool
-            onPicked: (v) => { root.tool = v === "없음" ? "" : v; root.measureA = root.measureB = null }
+            // 화면 이름 → 도구 값(tool)
+            readonly property var names: ({"없음": "", "거리 측정": "측정", "Nav2 목표": "목표", "초기 위치(AMCL)": "초기 위치"})
+            options: ["없음", "거리 측정", "Nav2 목표", "초기 위치(AMCL)"]
+            current: Object.keys(names).find(k => names[k] === root.tool) || "없음"
+            onPicked: (v) => { root.tool = names[v]; root.measureA = root.measureB = null; root.goalError = "" }
         }
         Item { implicitWidth: Theme.sp2 }
         Seg { options: ["추적", "3인칭", "위에서", "자유"]; current: root.cam; onPicked: (v) => { viewAnim.stop(); root.cam = v } }
@@ -628,7 +632,12 @@ ColumnLayout {
             onReleased: (m) => {
                 if (root.goalDragging) {
                     root.goalDragging = false
-                    robot.sendGoal(root.goalA.x, root.goalA.y, root.goalYaw)
+                    root.goalError = robot.sendGoal(root.goalA.x, root.goalA.y, root.goalYaw)
+                    if (root.goalError) {
+                        root.goalA = null   // 보내지 않았다 — 화살표를 지우고 도구는 켜 둔 채 이유를 보인다
+                        goalErrorTimer.restart()
+                        return
+                    }
                     root.tool = ""   // RViz 처럼 한 번 보내면 도구가 꺼진다
                     return
                 }
@@ -743,7 +752,9 @@ ColumnLayout {
                           ? "초기 위치 (" + root.initA.x.toFixed(2) + ", " + root.initA.y.toFixed(2) + ") m · " + (root.initYaw * 180 / Math.PI).toFixed(0) + "°"
                           : "로봇이 있는 곳을 누른 채 로봇이 보는 방향으로 끌고 놓으세요 (AMCL)")
                       + (robot.mapOdomFresh ? "" : "<br>map→odom 이 없거나 낡았습니다 — odom 프레임으로 보냅니다 (PC Nav2 연결 확인)")
-                    : root.tool === "목표" && !root.goalDragging ? "목표 위치를 누른 채 바라볼 방향으로 끌고 놓으세요 (Nav2)"
+                    : root.goalError ? "목표를 보내지 않았습니다 — " + root.goalError + "<br>조종 바의 <b>길게 눌러 잠금 해제</b>(또는 Ctrl+Enter)로 조종을 켠 뒤 다시 찍으세요"
+                    : root.tool === "목표" && !root.goalDragging && !robot.teleopArmed ? "① 조종이 잠겨 있습니다 — 먼저 <b>Ctrl+Enter</b>(또는 조종 바의 잠금 해제)<br>② 그다음 목표 위치를 누른 채 바라볼 방향으로 끌고 놓으세요 (Nav2)"
+                    : root.tool === "목표" && !root.goalDragging ? "목표 위치를 누른 채 바라볼 방향으로 끌고 놓으세요 (Nav2) — 놓는 순간 보냅니다"
                     : !root.measuring ? (root.goalA ? "이동 목표 (" + root.goalA.x.toFixed(2) + ", " + root.goalA.y.toFixed(2) + ") m · "
                       + (root.goalYaw * 180 / Math.PI).toFixed(0) + "°" + (root.goalDragging ? "" : " · 보냄") : "")
                     : !root.measureA ? "바닥을 클릭해 시작점을 찍으세요"
