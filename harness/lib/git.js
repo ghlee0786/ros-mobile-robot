@@ -205,6 +205,7 @@ function addWorktree(root, wt, o) {
   const P = S.paths(root);
   return S.withLockSync(root, 'worktree', () => {
     ensureExclude(P.excludeFile, '.harness-worktrees/');   // 잠금 안에서 — 동시 작업이 같은 파일을 겹쳐 쓰지 않게
+    ensureExclude(P.excludeFile, '.harness-build/');   // 언어 팩의 빌드 폴더(C/C++ cmake · meson) — 매 턴 커밋에 빌드 산출물이 섞이지 않게
     fs.mkdirSync(path.dirname(wt), { recursive: true });
     let args;
     if (opt.detach) args = ['worktree', 'add', '-q', '--detach', wt, opt.base || 'HEAD'];
@@ -367,7 +368,7 @@ function useAltWorktree(root, task, P, why, log) {
     S.retargetWorktree(P, alt);
     task.worktree_alt = alt;
     S.log(root, task.id, { event: 'worktree_alt', wt: alt, why: String(why).slice(0, 300) });
-    if (log) log(`[harness] ${task.id} — 원래 worktree 자리가 잠겨 있어 ${alt} 에서 진행한다(남은 폴더는 node harness/cli.js gc 가 다시 치운다)`);
+    if (log) log(`[pilot] ${task.id} — 원래 worktree 자리가 잠겨 있어 ${alt} 에서 진행한다(남은 폴더는 node harness/cli.js gc 가 다시 치운다)`);
     return true;
   }
   return false;
@@ -378,7 +379,7 @@ function slotOpts(root, id, taskDir, log) {
     salvageDir: path.join(taskDir, `leftover-${new Date().toISOString().replace(/[:.]/g, '-')}`),
     onCleared: x => {
       S.log(root, id, { event: 'leftover_cleared', killed: x.killed.map(k => `${k.name}(${k.pid})`), salvaged: x.salvaged.length, dir: x.salvaged.length ? x.dir : null });
-      if (log) log(`[harness] ${id} — 남은 worktree 폴더를 치웠다${x.killed.length ? ` · 붙잡던 프로세스 ${x.killed.map(k => k.name).join(', ')} 를 끝냄` : ''}${x.salvaged.length ? ` · 브랜치와 다른 파일 ${x.salvaged.length}개를 ${x.dir} 에 보관` : ''}`);
+      if (log) log(`[pilot] ${id} — 남은 worktree 폴더를 치웠다${x.killed.length ? ` · 붙잡던 프로세스 ${x.killed.map(k => k.name).join(', ')} 를 끝냄` : ''}${x.salvaged.length ? ` · 브랜치와 다른 파일 ${x.salvaged.length}개를 ${x.dir} 에 보관` : ''}`);
     },
   };
 }

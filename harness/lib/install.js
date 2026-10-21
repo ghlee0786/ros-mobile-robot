@@ -16,6 +16,15 @@ const fs = require('node:fs');
 const path = require('node:path');
 const C = require('../hooks/_common');
 
+// 예전 템플릿(template/CLAUDE.md)의 줄 → 지금 문구. 글자 그대로 같은 줄만 바꾼다.
+//   [2026-10-20 사용자 보고] 대화형 세션이 "서브에이전트는 적게" 지침 때문에 독립적인 시험 · 검토 11개를 하나씩 차례로 돌렸다.
+const LEGACY_CLAUDE_LINES = [
+  ['- 서브에이전트는 정말 독립적인 큰 일에만, 적게 쓴다.',
+    '- 서로 독립적인 일(조사 · 시나리오 시험 · 검토 · 서로 다른 파일의 작업)은 서브에이전트로 나눠 한 메시지에서 동시에 띄운다. 같은 파일을 여러 에이전트가 고치게 나누지 않는다 — 그렇게 나눠야 하면 `factory` · `go --owns`.'],
+  ['- 별도의 검증 단계나 검증용 서브에이전트를 두지 않는다 — 저장소 테스트 명령의 종료 코드가 판정이다.',
+    '- 판정은 저장소 테스트 명령의 종료 코드다 — 에이전트의 의견으로 판정하지 않는다. 시험을 쓰고 돌리는 서브에이전트는 된다(그 시험이 판정이 된다).'],
+];
+
 const BEGIN = '<!-- harness:begin -->';
 const END = '<!-- harness:end -->';
 const EXCLUDE_LINE = '.harness-worktrees/';
@@ -211,7 +220,7 @@ function saveManifest(ctx, remove) {
 // cli.js 는 r.report 를 그대로 출력하고 r.ok === false 면 1 로 끝난다.
 function summary(ctx, verb) {
   const changed = [...new Set(ctx.changed)];
-  const L = [`harness ${verb}${ctx.opts.dryRun ? ' (dry run — 아무것도 쓰지 않음)' : ''}: ${ctx.root}`];
+  const L = [`pilot ${verb}${ctx.opts.dryRun ? ' (dry run — 아무것도 쓰지 않음)' : ''}: ${ctx.root}`];
   if (!changed.length) L.push('  바뀐 것 없음');
   // harness/ 사본은 파일이 많다 — 한 줄로 묶는다.
   const copies = changed.filter(c => c.startsWith('harness/'));
@@ -288,6 +297,12 @@ function install(opts) {
   if (claude === null) {
     entry(ctx, 'CLAUDE.md', () => ({ created: true }));
     put(ctx, claudeFile, fs.readFileSync(path.join(source, 'template', 'CLAUDE.md')));
+  } else if (LEGACY_CLAUDE_LINES.some(([old]) => claude.split(/\r?\n/).includes(old))) {
+    // 예전 템플릿이 넣은 줄을 글자 그대로 찾아 새 문구로(사용자가 고친 줄 · 다른 내용은 그대로) — 이미 설치된 프로젝트에도 바뀐 지침이 닿게
+    const eol = eolOf(claude);
+    const next = claude.split(/\r?\n/).map(l => { const hit = LEGACY_CLAUDE_LINES.find(([old]) => old === l); return hit ? hit[1] : l; }).join(eol);
+    entry(ctx, 'CLAUDE.md', () => ({ created: false, migrated: true }));
+    put(ctx, claudeFile, next);
   } else if (!/^@AGENTS\.md[ \t]*\r?$/m.test(claude)) {
     const eol = eolOf(claude);
     const nl = claude.indexOf('\n');
@@ -434,7 +449,7 @@ function runningTasks(root) {
 }
 
 function refuse(ctx, why) {
-  const L = [`harness install 중단: ${ctx.root}`, `  기존 harness/ 를 덮어쓰지 않았다 — ${why}.`,
+  const L = [`pilot install 중단: ${ctx.root}`, `  기존 harness/ 를 덮어쓰지 않았다 — ${why}.`,
     '  아무것도 바꾸지 않았다. 그 폴더를 옮기거나, 덮어써도 되면 `node harness/cli.js install --force` 로 다시 실행하세요.'];
   return { ok: false, target: ctx.root, changed: [], skipped: [{ path: 'harness/', reason: why }], notes: [], dryRun: !!ctx.opts.dryRun, report: L.join('\n') };
 }

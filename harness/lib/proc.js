@@ -73,9 +73,16 @@ function refHookDir(common) {
 // 작업 worktree 에서 도는 프로세스(작업자 · 하네스 검사)의 격리 환경 — [2026-10-17 자동 보고 caed67b9a2f1] 작업자가 worktree 의 compose 로
 //   사용자의 실행 중 컨테이너를 다시 만들었다(프로젝트 이름이 메인과 같았다). COMPOSE_PROJECT_NAME 은 compose 에서 .env · name: 보다 앞선다.
 const WT_RE = /[\\/]\.harness-worktrees[\\/](t-\d{8}-\d{6}-[0-9a-f]{4})(?:-\d+)?(?:[\\/]|$)/;
+//   [2026-10-20 PRD R1] + 작업마다의 임시 폴더(TEMP · TMP · TMPDIR) · 시험 데이터 구역(HARNESS_DATA_NS) — 자원 장부(resources.js)가 회수한다.
+//   [PRD R3] 작업에 쓰기 소유 경로가 있으면 HARNESS_OWNS(JSON) — guard(--worker)가 그 밖의 쓰기 · 삭제를 막는다.
 function isolationEnv(cwd) {
-  const m = WT_RE.exec(String(cwd || ''));
-  return m ? { COMPOSE_PROJECT_NAME: `harness-${m[1]}` } : {};
+  if (!WT_RE.test(String(cwd || ''))) return {};
+  const R = require('./resources'), env = R.envFor(cwd);
+  try {
+    const m = R.WT_RE.exec(String(cwd)), t = m && require('./state').readTask(m[1], m[2]);
+    if (t && Array.isArray(t.owns) && t.owns.length) env.HARNESS_OWNS = JSON.stringify(t.owns);
+  } catch { /* 작업 기록을 못 읽으면 소유 제한 없이(지금까지와 같다) */ }
+  return env;
 }
 function noPushEnv(extra, cwd) {
   const merged = { ...process.env, ...(extra || {}) };
@@ -129,7 +136,7 @@ function spawnCapture(o) {
     const dOut = new StringDecoder('utf8'), dErr = new StringDecoder('utf8');
     const maxLine = o.maxLine || 64 * 1024 * 1024;
     let lineBuf = '', overlong = 0, dropping = false;
-    let done = false, timedOut = false, aborted = false, spawnError = null, child = null, timer = null, grace = null, onAbort = null;
+    let done = false, timedOut = false, aborted = false, spawnError = null, child = null, timer = null, grace = null, onAbort = null, reaped = [];
 
     const feedLines = s => {
       if (!o.onLine) return;
@@ -151,7 +158,7 @@ function spawnCapture(o) {
       if (o.onLine && lineBuf && !dropping) { try { o.onLine(lineBuf.replace(/\r$/, '')); } catch { /* 위와 같다 */ } }
       err.push(dErr.end());
       resolve({ code: code == null ? null : code, signal: sig || null, stdout: out.text(), stderr: err.text(), stdoutOmitted: out.omitted, overlongLines: overlong,
-        timedOut, aborted, spawnError, pid: child ? child.pid : null, durationMs: Date.now() - t0 });
+        timedOut, aborted, spawnError, pid: child ? child.pid : null, reaped, durationMs: Date.now() - t0 });
     };
     const kill = why => {
       if (done) return;
@@ -168,6 +175,8 @@ function spawnCapture(o) {
     } catch (e) { spawnError = e; return finish(null); }
 
     child.on('error', e => { spawnError = spawnError || e; finish(null); });
+    // o.reapTree: 작업자(모델 세션)가 끝나면 남은 자손을 거둔다(resources.reapDescendants) — 'close' 는 자손이 파이프를 붙들면 오지 않으므로 'exit' 에서
+    if (o.reapTree) child.on('exit', () => { try { reaped = require('./resources').reapDescendants(child.pid, t0, { taskId: (o.env || {}).HARNESS_TASK_ID }).killed; } catch { /* 거두기 실패는 결과를 막지 않는다 */ } });
     child.on('close', (code, sig) => finish(code, sig));
     child.stdout.on('data', b => { const s = dOut.write(b); out.push(s); feedLines(s); });
     child.stderr.on('data', b => { err.push(dErr.write(b)); });

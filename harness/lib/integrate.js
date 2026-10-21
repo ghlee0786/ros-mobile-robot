@@ -27,7 +27,7 @@ function load(o) {
 }
 function out(task, extra) {
   const r = { ...L.result(task), ...(extra || {}) };
-  r.report = extra && extra.report ? extra.report : `harness ${task.id} — ${r.status}${r.reason ? ': ' + r.reason : ''}`;
+  r.report = extra && extra.report ? extra.report : `pilot ${task.id} — ${r.status}${r.reason ? ': ' + r.reason : ''}`;
   return r;
 }
 // 한국어 작업(task.language === 'Korean')이면 보고를 한국어로 — [2026-10-13 사용자 보고] 결과가 영어로 나왔다.
@@ -46,7 +46,7 @@ const REFUSE_KO = [
   [/^the previous worktree (\S+) is still being removed(.*)$/s, m => `이전 worktree ${m[1]} 가 아직 지워지는 중이다(다른 프로세스가 파일을 잡고 있다) — 1분쯤 뒤 다시 하세요`],
 ];
 const refuseKo = r => { for (const [re, fn] of REFUSE_KO) { const m = re.exec(String(r)); if (m) return fn(m); } return String(r); };
-const refused = (task, reason) => out(task, { refused: true, reason, report: isKo(task) ? `harness ${task.id} — 바뀐 것 없음: ${refuseKo(reason)}` : `harness ${task.id} — nothing changed: ${reason}` });
+const refused = (task, reason) => out(task, { refused: true, reason, report: isKo(task) ? `pilot ${task.id} — 바뀐 것 없음: ${refuseKo(reason)}` : `pilot ${task.id} — nothing changed: ${reason}` });
 
 // 메인 체크아웃(대상 브랜치가 체크아웃된 곳)의 미커밋 변경 중 files 와 겹치는 것.
 function dirtyOverlap(cwd, files) {
@@ -54,6 +54,15 @@ function dirtyOverlap(cwd, files) {
   const hits = [];
   for (const e of G.dirtyFiles(cwd)) for (const p of [e.path, e.orig]) if (p && want.has(norm(p))) hits.push(p);
   return [...new Set(hits)];
+}
+
+// [PRD R1] 작업을 치울 때 git 밖 자원(볼륨 · 이미지 · 임시 폴더 · 프로젝트 정리 명령)을 회수한다 — 실패해도 병합 · 취소는 그대로, 남은 것은 기록한다.
+function releaseResources(root, task) {
+  try {
+    const r = require('./resources').release(root, task);
+    if (Object.keys(r.docker.removed).length || r.residue.length || r.cleanup || (r.tmp && r.tmp.removed)) S.log(root, task.id, { event: 'resources_released', docker: r.docker.removed, cleanup: r.cleanup && { ok: r.cleanup.ok, exit_code: r.cleanup.exit_code }, tmp_removed: !!(r.tmp && r.tmp.removed), residue: r.residue });
+    return r;
+  } catch (e) { task.resources = { ...(task.resources || {}), error: String(e.message).slice(0, 200) }; return null; }
 }
 
 function withTaskLock(root, task, fn) {
@@ -229,29 +238,43 @@ async function accept(o) {
     archivePlan(root, task, P);
 
     // 2. 대상 브랜치를 가져와 최신화(충돌 → 같은 세션이 푼다 · 예산 안에서만) → 검사
+    const checkHere = async (why) => {
+      const run1 = async () => (await K.runJudged(P.wt, K.commandsForJudge(P.wt, task.checks), { timeoutMs: checkTimeout(task, o), rerun: task.checks.rerun, serialRoot: task.checks.serial ? root : null })).judged;
+      let j = await run1();
+      // 늦은 기준선(D2): 실패했는데 기준선이 없으면 지금 작업 시작 시점에서 잰다 — 명령이 바뀌면(멈춘 테스트 · 빠진 검사) 다시 잰다
+      if (!j.ok && !task.checks.baseline) { const before = JSON.stringify(task.checks.commands); await L.ensureBaseline(root, task, { o: { checkTimeoutMs: checkTimeout(task, o) }, log }); if (JSON.stringify(task.checks.commands) !== before) j = await run1(); }
+      task.checks.last = K.brief(j);
+      const v = K.judge(j, task.checks.baseline, { notWorse: task.checks.source !== 'user' });
+      S.log(root, task.id, { event: 'checks', phase: 'accept', why, verdict: v.verdict, pass: j.pass, fail: j.fail });
+      if (v.verdict !== 'fail') return null;
+      commitInto(task, P.wt, 'checks after bringing target up to date');
+      S.writeTask(root, task);
+      if (why === 'deferred checks (thin)') return refused(task, `checks fail on ${task.branch} and are worse than before the task (${j.fail} failing) — resume or fix it, then accept again (or --force if you accept the failures)`);
+      return refused(task, `checks fail after bringing ${target} into ${task.branch} (${j.fail} failing) — the task branch now contains ${target}; resume or fix it, then accept again`);
+    };
     let rounds = 0;
     for (let pass = 0; pass < 2 && !G.isAncestor(root, target, task.branch); pass++) {
       broughtTarget = true;
       const m = G.git(P.wt, [...G.identityArgs(P.wt), 'merge', '--no-ff', '--no-edit', '--no-verify', '-m', `harness(${task.id}): bring ${target} up to date`, target], { allowFail: true, retryLock: true });
       if (!m.ok) {
         if (!G.mergeInProgress(P.wt)) { S.writeTask(root, task); return refused(task, `could not bring ${target} into ${task.branch}: ${m.err.trim().slice(0, 300)}`); }
-        log(`[harness] ${task.id} — conflicts with ${target}; asking the session to resolve them`);
+        log(`[pilot] ${task.id} — conflicts with ${target}; asking the session to resolve them`);
         const res = await resolveConflicts(root, task, P, target, o);
         if (!res.ok) { S.writeTask(root, task); return refused(task, res.why); }
         rounds += res.rounds;
       } else task.commits.push(G.headSha(P.wt));
       S.log(root, task.id, { event: 'target_merged', target, rounds });
-      if (task.checks.commands.length) {
-        const j = (await K.runJudged(P.wt, K.commandsForJudge(P.wt, task.checks), { timeoutMs: checkTimeout(task, o), rerun: task.checks.rerun, serialRoot: task.checks.serial ? root : null })).judged;
-        task.checks.last = K.brief(j);
-        const v = K.judge(j, task.checks.baseline, { notWorse: task.checks.source !== 'user' });
-        S.log(root, task.id, { event: 'checks', phase: 'accept', verdict: v.verdict, pass: j.pass, fail: j.fail });
-        if (v.verdict === 'fail') {
-          commitInto(task, P.wt, 'checks after bringing target up to date');
-          S.writeTask(root, task);
-          return refused(task, `checks fail after bringing ${target} into ${task.branch} (${j.fail} failing) — the task branch now contains ${target}; resume or fix it, then accept again`);
-        }
-      }
+      if (task.checks.commands.length) { const no = await checkHere('target brought in'); if (no) return no; }
+    }
+    // 대상 브랜치를 새로 들이지 않았어도, 마지막으로 기록된 검사가 실패면 다시 잰다 — [2026-10-20 실측 · 작업 수치에서 발견]
+    //   위에서 거절된 작업을 다시 accept 하면 이미 들인 상태라 위 고리를 건너뛰어 검사 없이 병합됐다(실패 0 → 133 인 채로 사용자 브랜치에).
+    //   --force(사용자가 실패를 알고 병합)면 다시 재지 않는다.
+    if (!broughtTarget && !o.force && task.checks.commands.length && task.checks.last && K.judge(task.checks.last, task.checks.baseline, { notWorse: task.checks.source !== 'user' }).verdict === 'fail') {
+      const no = await checkHere('last recorded checks failed'); if (no) return no;
+    }
+    // thin: 작업이 끝 검사를 미뤘다 — 합치기 전에 여기서 처음 잰다(실패면 기준선과 비교해 나빠졌을 때만 막는다). --force 면 재지 않는다.
+    if (!broughtTarget && !o.force && task.checks.commands.length && task.checks.deferred && !task.checks.last) {
+      const no = await checkHere('deferred checks (thin)'); if (no) return no;
     }
     // 린트 — 대상 브랜치를 들인 뒤에도 작업이 바꾼 파일에서 다시 본다(루프에서 통과했어도 그 뒤의 커밋 · 대상 브랜치가 깨뜨릴 수 있다).
     //   [2026-10-14 자동 이슈 #3] 새로 만든 worktree 는 빌드 · 복원 산출물이 없어(--no-restore 린트) 루프에서 통과한 린트가 거절됐다.
@@ -323,6 +346,7 @@ async function accept(o) {
       task.worktree_kept = rm.why;
       if (rm.ignored) task.outside_git = { ...(task.outside_git || {}), ignored_changed: rm.ignored };
     }
+    releaseResources(root, task);
     // go --doc 로 연결한 관리 문서: tasks 에 id · updated · 색인. git 이 추적하는 문서만 그 경로로 커밋한다. 실패해도 병합은 그대로.
     let docLines = [];
     if ((task.docs || []).length) {
@@ -338,14 +362,14 @@ async function accept(o) {
     }
     S.writeTask(root, task);
     if (isKo(task)) {
-      const headKo = was.status === 'done' ? `harness ${task.id} — 받아들임` : `harness ${task.id} — 받아들임(강제) — 작업 상태는 ${was.status}: ${was.reason || '(이유 기록 없음)'}`;
+      const headKo = was.status === 'done' ? `pilot ${task.id} — 받아들임` : `pilot ${task.id} — 받아들임(강제) — 작업 상태는 ${was.status}: ${was.reason || '(이유 기록 없음)'}`;
       return out(task, { report: [headKo, `${task.branch} 를 ${target} 에 ${merge.slice(0, 10)} 로 병합했다${tagErr ? '' : `(태그 ${tag})`}${rounds ? ` — 충돌 해결 ${rounds}회 뒤` : ''}.`,
         ...(tagErr ? [`경고: 태그 ${tag} 를 만들지 못했다: ${tagErr} — 병합은 작업 기록(merge_commit ${merge.slice(0, 10)})에 있어 cancel 은 그대로 된다`] : []),
         ...(task.worktree_kept ? [`작업 폴더(worktree) 남김: ${P.wt} (${task.worktree_kept})`] : []),
         ...docLines,
         `계획 보관: ${P.archiveDir}`, `되돌리기: node harness/cli.js cancel ${task.id}   (revert 커밋을 만든다 · reset 은 쓰지 않는다)`].join('\n') });
     }
-    const head = was.status === 'done' ? `harness ${task.id} — ACCEPTED` : `harness ${task.id} — ACCEPTED (forced) — the task was ${was.status}: ${was.reason || '(no reason recorded)'}`;
+    const head = was.status === 'done' ? `pilot ${task.id} — ACCEPTED` : `pilot ${task.id} — ACCEPTED (forced) — the task was ${was.status}: ${was.reason || '(no reason recorded)'}`;
     return out(task, { report: [head, `merged ${task.branch} into ${target} as ${merge.slice(0, 10)}${tagErr ? '' : ` (tag ${tag})`}${rounds ? ` after ${rounds} conflict-resolution round(s)` : ''}.`,
       ...(tagErr ? [`warning: could not create tag ${tag}: ${tagErr} — the merge is recorded in the task (merge_commit ${merge.slice(0, 10)}); cancel still works`] : []),
       ...(task.worktree_kept ? [`worktree kept: ${P.wt} (${task.worktree_kept})`] : []),
@@ -381,7 +405,9 @@ async function revertOnto(root, task, target, commit, extra, label, o) {
     } else if (task.checks.commands.length) {
       // cancel: 되돌린 뒤의 상태는 작업 전 기준선보다 나쁘지 않으면 된다(사용자 검사는 되돌린 기능을 묘사하므로 다시 빨개지는 게 맞다).
       // restore: 기능이 돌아오므로 accept 때와 같은 판정.
-      const j = await K.runAll(tmp, K.commandsForJudge(tmp, task.checks), { timeoutMs: checkTimeout(task, o), serialRoot: task.checks.serial ? root : null });
+      const runT = () => K.runAll(tmp, K.commandsForJudge(tmp, task.checks), { timeoutMs: checkTimeout(task, o), serialRoot: task.checks.serial ? root : null });
+      let j = await runT();
+      if (!j.ok && !task.checks.baseline) { const before = JSON.stringify(task.checks.commands); await L.ensureBaseline(root, task, { o: { checkTimeoutMs: checkTimeout(task, o) }, log: (o && o.log) || (() => {}) }); if (JSON.stringify(task.checks.commands) !== before) j = await runT(); }
       const v = K.judge(j, task.checks.baseline, { notWorse: label === 'cancel' || task.checks.source !== 'user' });
       S.log(root, task.id, { event: 'checks', phase: label, verdict: v.verdict, pass: j.pass, fail: j.fail });
       if (v.verdict === 'fail') return { refused: `checks fail on ${target} after the ${label} revert (${j.fail} failing); nothing was applied — if this is only an environment problem, run ${label} again with --skip-checks` };
@@ -420,8 +446,8 @@ async function cancel(o) {
       Object.assign(task, { status: 'cancelled', reason: `merge ${task.merge_commit.slice(0, 10)} reverted on ${target} by ${r.sha.slice(0, 10)}${r.checksSkipped ? ' (checks skipped)' : ''}`, revert_commit: r.sha, cancelled_from: 'accepted', cancelled_at: S.nowIso() });
       S.writeTask(root, task);
       S.log(root, task.id, { event: 'cancelled', after_merge: true, revert_commit: r.sha, checks_skipped: !!r.checksSkipped });
-      if (isKo(task)) return out(task, { report: [`harness ${task.id} — 취소(병합 뒤)`, `${target} 에서 ${task.merge_commit.slice(0, 10)} 를 ${r.sha.slice(0, 10)} 로 되돌렸다(보통 커밋 — 기록은 남는다).`, ...(r.checksSkipped ? ['검사를 건너뛰었다(--skip-checks) — 직접 확인하세요'] : []), `되살리기: node harness/cli.js restore ${task.id}`].join('\n') });
-      return out(task, { report: [`harness ${task.id} — CANCELLED (after merge)`, `reverted ${task.merge_commit.slice(0, 10)} on ${target} with ${r.sha.slice(0, 10)} (a normal commit; history is kept).`, ...skippedLine(r, 'revert'), `undo: node harness/cli.js restore ${task.id}`].join('\n') });
+      if (isKo(task)) return out(task, { report: [`pilot ${task.id} — 취소(병합 뒤)`, `${target} 에서 ${task.merge_commit.slice(0, 10)} 를 ${r.sha.slice(0, 10)} 로 되돌렸다(보통 커밋 — 기록은 남는다).`, ...(r.checksSkipped ? ['검사를 건너뛰었다(--skip-checks) — 직접 확인하세요'] : []), `되살리기: node harness/cli.js restore ${task.id}`].join('\n') });
+      return out(task, { report: [`pilot ${task.id} — CANCELLED (after merge)`, `reverted ${task.merge_commit.slice(0, 10)} on ${target} with ${r.sha.slice(0, 10)} (a normal commit; history is kept).`, ...skippedLine(r, 'revert'), `undo: node harness/cli.js restore ${task.id}`].join('\n') });
     }
     // 병합 전: 커밋되지 않은 것은 먼저 커밋한다 — 커밋되지 않은 worktree 는 지우지 않는다.
     // [버그 2026-10-01] 폴더가 있다는 것만으로 커밋하지 않는다 — 등록이 사라진 빈 폴더에서는 git 이 메인 저장소를 본다.
@@ -450,10 +476,11 @@ async function cancel(o) {
     // 원래 상태와 그 이유를 남긴다 — restore 뒤 accept 가 (강제일 때) 실패 이유를 앞세울 수 있게.
     Object.assign(task, { status: 'cancelled', cancelled_from: task.status, cancelled_from_reason: task.reason || '', reason: `discarded before merge${kept ? `; the work stays reachable at tag ${tag}` : ''}`, cancelled_at: S.nowIso() });
     delete task.worktree_kept;
+    releaseResources(root, task);
     S.writeTask(root, task);
     S.log(root, task.id, { event: 'cancelled', after_merge: false, tag: kept ? tag : null });
-    if (isKo(task)) return out(task, { report: [`harness ${task.id} — 취소`, `브랜치 ${task.branch} 와 worktree 를 버렸다${kept ? ` — 커밋은 태그 ${tag} 에 남는다` : ''}.`, `되살리기: node harness/cli.js restore ${task.id}`].join('\n') });
-    return out(task, { report: [`harness ${task.id} — CANCELLED`, `branch ${task.branch} and its worktree were discarded${kept ? `; the commits are kept at tag ${tag}` : ''}.`, `undo: node harness/cli.js restore ${task.id}`].join('\n') });
+    if (isKo(task)) return out(task, { report: [`pilot ${task.id} — 취소`, `브랜치 ${task.branch} 와 worktree 를 버렸다${kept ? ` — 커밋은 태그 ${tag} 에 남는다` : ''}.`, `되살리기: node harness/cli.js restore ${task.id}`].join('\n') });
+    return out(task, { report: [`pilot ${task.id} — CANCELLED`, `branch ${task.branch} and its worktree were discarded${kept ? `; the commits are kept at tag ${tag}` : ''}.`, `undo: node harness/cli.js restore ${task.id}`].join('\n') });
   });
 }
 
@@ -473,8 +500,8 @@ async function restore(o) {
         reverts: [...(task.reverts || []), task.revert_commit], revert_commit: null, restored_at: S.nowIso() });
       S.writeTask(root, task);
       S.log(root, task.id, { event: 'restored', restore_commit: r.sha, checks_skipped: !!r.checksSkipped });
-      if (isKo(task)) return out(task, { status: 'restored', task_status: task.status, report: [`harness ${task.id} — 되살림`, `${target} 에 ${r.sha.slice(0, 10)} 로 병합을 다시 적용했다.`, ...(r.checksSkipped ? ['검사를 건너뛰었다(--skip-checks) — 직접 확인하세요'] : [])].join('\n') });
-      return out(task, { status: 'restored', task_status: task.status, report: [`harness ${task.id} — RESTORED`, `re-applied the merge on ${target} with ${r.sha.slice(0, 10)}.`, ...skippedLine(r, 'restore')].join('\n') });
+      if (isKo(task)) return out(task, { status: 'restored', task_status: task.status, report: [`pilot ${task.id} — 되살림`, `${target} 에 ${r.sha.slice(0, 10)} 로 병합을 다시 적용했다.`, ...(r.checksSkipped ? ['검사를 건너뛰었다(--skip-checks) — 직접 확인하세요'] : [])].join('\n') });
+      return out(task, { status: 'restored', task_status: task.status, report: [`pilot ${task.id} — RESTORED`, `re-applied the merge on ${target} with ${r.sha.slice(0, 10)}.`, ...skippedLine(r, 'restore')].join('\n') });
     }
     const tag = `harness/cancelled/${task.id}`;
     if (!G.tagExists(root, tag)) return refused(task, `nothing to restore (no revert commit and no tag ${tag})`);
@@ -485,9 +512,33 @@ async function restore(o) {
     Object.assign(task, { status: back, reason: task.cancelled_from_reason ? `${task.cancelled_from_reason} (restored from tag ${tag})` : `restored from tag ${tag}`, restored_at: S.nowIso() });
     S.writeTask(root, task);
     S.log(root, task.id, { event: 'restored', from_tag: tag });
-    if (isKo(task)) return out(task, { status: 'restored', task_status: task.status, report: `harness ${task.id} — 되살림\n브랜치 ${task.branch} 가 돌아왔다(상태 ${task.status}) — 전처럼 accept 하거나 cancel 하세요.` });
-    return out(task, { status: 'restored', task_status: task.status, report: `harness ${task.id} — RESTORED\nbranch ${task.branch} is back (status ${task.status}); accept or cancel it as before.` });
+    if (isKo(task)) return out(task, { status: 'restored', task_status: task.status, report: `pilot ${task.id} — 되살림\n브랜치 ${task.branch} 가 돌아왔다(상태 ${task.status}) — 전처럼 accept 하거나 cancel 하세요.` });
+    return out(task, { status: 'restored', task_status: task.status, report: `pilot ${task.id} — RESTORED\nbranch ${task.branch} is back (status ${task.status}); accept or cancel it as before.` });
   });
 }
 
-module.exports = { accept, cancel, restore, dirtyOverlap, archivePlan, conflictBudget };
+// check <id> — 결과 브랜치에서 저장소 검사를 지금 돌려 기록한다(합치지 않는다). thin 작업의 미룬 검사를 accept 전에 미리 보는 길.
+//   실패면 작업 시작 시점의 기준선과 비교한다(원래부터 실패 = 나빠지지 않음). 기록된 결과는 accept 가 그대로 쓴다(나빠졌으면 다시 재고 막는다).
+async function check(o) {
+  const { root, task: task0, P, log } = load(o);
+  if (!['done', 'failed', 'interrupted', 'capped', 'blocked', 'stalled'].includes(task0.status)) return refused(task0, `task status is ${task0.status} — check runs on finished work`);
+  return withTaskLock(root, task0, async () => {
+    const task = S.readTask(root, task0.id);
+    if (!(task.checks && task.checks.commands && task.checks.commands.length)) return out(task, { status: 'checked', report: `pilot ${task.id} — no checks found for this repository` });
+    const wtWhy = ensureWorktree(root, task, P, o.removalWaitMs, log);
+    if (wtWhy) return refused(task, wtWhy);
+    const run1 = async () => (await K.runJudged(P.wt, K.commandsForJudge(P.wt, task.checks), { timeoutMs: checkTimeout(task, o), rerun: task.checks.rerun, serialRoot: task.checks.serial ? root : null })).judged;
+    let j = await run1();
+    if (!j.ok && !task.checks.baseline && task.checks.source !== 'user') { const before = JSON.stringify(task.checks.commands); await L.ensureBaseline(root, task, { o: { checkTimeoutMs: checkTimeout(task, o) }, log }); if (JSON.stringify(task.checks.commands) !== before) j = await run1(); }
+    task.checks.last = K.brief(j);
+    const v = K.judge(j, task.checks.baseline, { notWorse: task.checks.source !== 'user' });
+    task.checks.verdict = v.verdict;
+    S.log(root, task.id, { event: 'checks', phase: 'check', verdict: v.verdict, pass: j.pass, fail: j.fail });
+    S.writeTask(root, task);
+    const ko = task.language === 'Korean';
+    const head = `pilot ${task.id} — ${ko ? '검사' : 'CHECKS'}: ${v.verdict} (${j.pass} ${ko ? '통과' : 'pass'} / ${j.fail} ${ko ? '실패' : 'fail'})`;
+    return out(task, { status: v.verdict === 'fail' ? 'check-failed' : 'checked', verdict: v.verdict, report: [head, v.why, ...(v.verdict === 'fail' ? [K.failureExcerpt(j).slice(0, 1500)] : [])].filter(Boolean).join('\n') });
+  });
+}
+
+module.exports = { accept, cancel, restore, check, dirtyOverlap, archivePlan, conflictBudget };

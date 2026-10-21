@@ -5,31 +5,18 @@
 //   정책: 기존 코드의 옛 흔적은 보지 않는다(새로 더한 줄만). 루프가 걸린 것을 모아 작업자에게 한 번만 돌려보내고, 남으면 막지 않고 보고한다.
 //   끄기: 프로젝트 블록 quality: off(전부) · quality_off: ["debug", …](규칙별).
 const fs = require('node:fs'), path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const G = require('./git'), D = require('./dup');
 
-const RULES = ['unused', 'debug', 'todo', 'commented', 'suppress', 'test-weaken', 'hardcoded', 'format-only'];
+const RULES = ['unused', 'debug', 'todo', 'commented', 'suppress', 'test-weaken', 'hardcoded', 'format-only', 'repo-lint'];
 const CONF_EXT = /\.(csproj|vbproj|fsproj|props|targets|json|ya?ml|toml|ini|cfg|config|xml|xaml)$/i;
-const JS = /\.(js|mjs|cjs|ts|tsx|jsx|vue|svelte)$/i, PY = /\.py$/i, CS = /\.(cs|java|kt|vb|fs|scala|swift|dart)$/i;
-
-const DEBUG = [[JS, /\bconsole\.(log|debug|trace|dir)\s*\(|^\s*debugger\s*;?\s*$/], [PY, /\bbreakpoint\(\)|\b(i?pdb)\.set_trace\(/], [CS, /\bDebugger\.(Break|Launch)\(\)/]];
+// 언어별 패턴(디버그 흔적 · 테스트 약화 · 안 쓰는 정의 · 주석)은 언어 팩(langs.js)에 — 여기는 언어와 무관한 것만(PRD R5)
+const Langs = require('./langs');
 const TODO = /(\/\/|#|\/\*|\*|--|<!--)\s*.*\b(TODO|FIXME|XXX|HACK)\b/;
-const SUPPRESS = /eslint-disable|@ts-ignore|@ts-nocheck|@ts-expect-error|#\s*noqa\b|#\s*type:\s*ignore|pylint:\s*disable|#\s*nosec\b|#pragma\s+warning\s+disable|SuppressMessage|NOSONAR|@SuppressWarnings|rubocop:disable|<NoWarn>|TreatWarningsAsErrors>\s*false/i;
-const WEAKEN = /\b(it|test|describe|context|suite)\.(skip|only)\s*\(|\b(xit|xdescribe|xtest|fit|fdescribe)\s*\(|@pytest\.mark\.(skip|xfail)|\bpytest\.skip\(|\[Ignore\b|\bSkip\s*=\s*"|@Disabled\b|@Ignore\b|^\s*assert\s+True\s*$|expect\(true\)\.toBe\(true\)|Assert\.(True|IsTrue)\(\s*true\s*\)/;
+const SUPPRESS = /eslint-disable|@ts-ignore|@ts-nocheck|@ts-expect-error|#\s*noqa\b|#\s*type:\s*ignore|pylint:\s*disable|#\s*nosec\b|#pragma\s+warning\s+disable|SuppressMessage|NOSONAR|@SuppressWarnings|rubocop:disable|<NoWarn>|TreatWarningsAsErrors>\s*false|\/\/\s*nolint\b|#!?\[allow\(|\bNOLINT(NEXTLINE)?\b|#pragma\s+(GCC|clang)\s+diagnostic\s+ignored/i;
 const HARD_PATH = /\b[A-Za-z]:(\\\\|\\|\/)Users(\\\\|\\|\/)[^\\/\s"'`]+|\/home\/[a-z_][\w.-]*\/|\/Users\/[A-Za-z][\w.-]*\//;
 const SECRET = /\b(ghp|gho|ghs|ghu|github_pat)_[A-Za-z0-9_]{20,}|\bAKIA[0-9A-Z]{16}\b|\bsk-[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|\bxox[baprs]-[A-Za-z0-9-]{10,}/;
-// 주석 표시는 언어별로 — C# · JS 의 #if · #region 은 전처리 지시문이다. 문서 주석(/// · /** · *)은 코드가 아니다. [2026-10-17 실측 오탐]
-const COMMENT_BY = [
-  [/\.(js|mjs|cjs|ts|tsx|jsx|vue|svelte|cs|java|kt|go|rs|swift|c|cc|cpp|h|hpp|scala|dart|php|fs)$/i, /^\s*\/\/(?!\/)\s?(.*)$/],
-  [/\.(py|rb|sh|ps1|ya?ml|toml)$/i, /^\s*#(?![!#])\s?(.*)$/], [/\.(sql|lua)$/i, /^\s*--\s?(.*)$/], [/\.vb$/i, /^\s*'\s?(.*)$/]];
-const commentOf = (f, t) => { const m = COMMENT_BY.find(([ext]) => ext.test(f)); const c = m && m[1].exec(t); return c ? c[1] : null; };
 const CODEY = /(\w+\s*\(.*\)\s*;?\s*$|[;{}]\s*$|^\s*(return|if|for|while|const|let|var|def|class|import|from|await|throw)\b|\w\s*[+\-*/]?=\s*\S)/;
-const DEFS = [
-  [PY, /^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/], [PY, /^\s*class\s+([A-Za-z_]\w*)/],
-  [JS, /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(/],
-  [JS, /^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/],
-  [JS, /^\s*(?:export\s+)?(?:default\s+)?class\s+([A-Za-z_$][\w$]*)/],
-  [CS, /^\s*(?:(?:public|private|protected|internal|static|async|virtual|sealed|abstract|partial|final|readonly|unsafe|extern|new)\s+)+(?!class\b|interface\b|struct\b|record\b|enum\b|override\b)[\w<>[\],.?]+(?:\s*<[^>]*>)?\s+([A-Za-z_]\w*)\s*\([^;]*$/],
-];
 const NOT_UNUSED = /^(main|Main|__\w+__|setUp|tearDown|setup|teardown|constructor|render|default)$|^(test|Test)/;
 // [2026-10-19 현장 오탐] 데코레이터 · 어트리뷰트(@router.get · [HttpGet] · @Get())가 붙은 정의는 프레임워크가 이름 없이 부른다.
 //   여러 줄 데코레이터(@router.get(\n "/x",\n))도 — 정의 위로, 같은 들여쓰기의 @ · [ 줄이 나오면 붙은 것. 빈 줄 · 같은 들여쓰기의 다른 문장에서 멈춘다.
@@ -72,14 +59,14 @@ function find(wt, base, o) {
       if (!added.has(n)) { flushRun(); continue; }
       const hit = (rule, text) => { if (on(rule)) out.push({ rule, file: f, line: n, text: (text || t.trim()).slice(0, 120) }); };
       if (!isTest && SUPPRESS.test(t) && !reasoned(t)) hit('suppress');   // 테스트의 억누르기(# noqa: E402 · @ts-expect-error)는 대개 의도다
-      if (isTest) { if (WEAKEN.test(t)) hit('test-weaken'); continue; }
+      if (isTest) { if (Langs.WEAKEN.test(t)) hit('test-weaken'); continue; }
       if (!isCode) continue;
-      if (DEBUG.some(([ext, re]) => ext.test(f) && re.test(t))) hit('debug');
+      if (Langs.debugFor(f).some(re => re.test(t))) hit('debug');
       if (TODO.test(t)) hit('todo');
       if (HARD_PATH.test(t) || SECRET.test(t)) hit('hardcoded', t.trim().replace(SECRET, m => `${m.slice(0, 6)}…`));
-      const c = commentOf(f, t);
+      const c = Langs.commentOf(f, t);
       if (c != null && CODEY.test(c) && !/<\/?\w+[^>]*>/.test(c) && !TODO.test(t) && !SUPPRESS.test(t)) run.push(n); else flushRun();
-      if (on('unused')) for (const [ext, re] of DEFS) { if (!ext.test(f)) continue; const m = re.exec(t); if (m && !NOT_UNUSED.test(m[1]) && !/\boverride\b/.test(t) && !decorated(lines, n)) { defs.push({ file: f, line: n, name: m[1], text: t }); break; } }
+      if (on('unused')) for (const re of Langs.defsFor(f)) { const m = re.exec(t); if (m && !NOT_UNUSED.test(m[1]) && !/\boverride\b/.test(t) && !decorated(lines, n)) { defs.push({ file: f, line: n, name: m[1], text: t }); break; } }
     }
     flushRun();
   }
@@ -106,11 +93,16 @@ function find(wt, base, o) {
       if (!(ws.get(f) > 0)) out.push({ rule: 'format-only', file: f, line: 0, text: '공백 · 들여쓰기만 바뀌었다' });
     }
   }
+  // 저장소 린트: 저장소가 설정한 린터로 새로 생긴 위반(repolint.js) — 작업 전 내용은 git show 그대로(끝 줄바꿈을 지우지 않게)
+  if (on('repo-lint')) {
+    const baseText = f => { const r = spawnSync('git', ['show', `${base}:${f}`], { cwd: wt, encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 * 1024, timeout: 30000 }); return r.status === 0 ? r.stdout : null; };
+    try { out.push(...require('./repolint').find(wt, changed.filter(f => D.CODE_EXT.test(f)), amap, baseText, o && o.repoLint)); } catch { /* 린터 실패는 품질 검사를 막지 않는다 */ }
+  }
   return out.slice(0, 40);
 }
 
 // 규칙 이름 → 사람이 읽는 이름(보고 · 지시)
-const LABEL_KO = { dup: '중복', unused: '쓰이지 않는 새 정의', debug: '디버그 흔적', todo: '남긴 할 일', commented: '주석 처리된 코드', suppress: '검사 억누르기', 'test-weaken': '테스트 약화', hardcoded: '하드코딩(개인 경로 · 비밀)', 'format-only': '형식만 바뀐 파일' };
-const LABEL_EN = { dup: 'duplicate code', unused: 'new definitions nothing uses', debug: 'debug leftovers', todo: 'TODO/FIXME left behind', commented: 'commented-out code', suppress: 'lint/type checks suppressed', 'test-weaken': 'tests weakened (skip/only/always-true)', hardcoded: 'hard-coded personal paths or secrets', 'format-only': 'files with only whitespace/indentation changes' };
+const LABEL_KO = { dup: '중복', unused: '쓰이지 않는 새 정의', debug: '디버그 흔적', todo: '남긴 할 일', commented: '주석 처리된 코드', suppress: '검사 억누르기', 'test-weaken': '테스트 약화', hardcoded: '하드코딩(개인 경로 · 비밀)', 'format-only': '형식만 바뀐 파일', 'repo-lint': '저장소 린트의 새 위반' };
+const LABEL_EN = { dup: 'duplicate code', unused: 'new definitions nothing uses', debug: 'debug leftovers', todo: 'TODO/FIXME left behind', commented: 'commented-out code', suppress: 'lint/type checks suppressed', 'test-weaken': 'tests weakened (skip/only/always-true)', hardcoded: 'hard-coded personal paths or secrets', 'format-only': 'files with only whitespace/indentation changes', 'repo-lint': 'new violations of the repository\'s own linter' };
 
 module.exports = { find, RULES, LABEL_KO, LABEL_EN };
