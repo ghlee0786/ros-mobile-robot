@@ -1,6 +1,6 @@
 """설치 파일 시험(표준 라이브러리만): 무인 설치 → 설치본 실행 → 업그레이드 → 무인 제거.
 
-python -I installer/test_installer.py   (먼저 installer\\build_installer.cmd 로 dist\\RobotDashboard-Setup-<ver>.exe 를 만든다)
+python -I installer/test_installer.py   (먼저 installer\\build_installer.cmd 로 dist\\ROSMonitor-Setup-<ver>.exe 를 만든다)
 
 - 사용자 설정은 건드리지 않는다: 설치 파일에 /SETTINGSKEY 로 시험용 키(HKCU\\Software\\RobotDashboardInstallerTest\\...)를 주고,
   설치본은 ROBOT_DASHBOARD_TEST=1(설정을 RobotDashboardTest 조직에 따로 씀)로 띄운다.
@@ -95,14 +95,33 @@ def smoke_run(tmp):
     check(s.get("exit") == "quit-after", "정해진 시간까지 살아 있다가 끝남")
     qml = [w for w in s.get("warnings", []) if ".qml" in w or "qrc:" in w]
     check(not qml, f"QML 경고 없음 {qml[:3]}")
+    # 개발 배치와 같게 동작하는지: 모델 glb · 글꼴 · SVG 아이콘 · TLS 플러그인 · 기록 폴더(문서)
+    d = s.get("deploy", {})
+    check(d.get("installed") is True and same_path(d.get("dataDir"), INSTALL_DIR), f"설치본 배치로 인식(dataDir {d.get('dataDir')})")
+    check(s.get("scene", {}).get("modelLoad") == "ok", f"로봇 모델 glb 를 읽음 ({s.get('scene', {}).get('modelLoad')})")
+    fonts = d.get("fonts", [])
+    check("Pretendard Variable" in fonts and "JetBrains Mono" in fonts, f"동봉 글꼴 로드 {fonts[:2]}")
+    check(d.get("svg") is True and d.get("iconLoads") is True, "SVG 아이콘을 그림(imageformats/qsvg)")
+    check(d.get("tls") is True and "schannel" in d.get("tlsBackends", []), f"TLS 백엔드 {d.get('tlsBackends')}")
+    check(same_path(d.get("recordsPath"), documents() / "RobotDashboard" / "records"), f"기록 폴더는 문서 아래 ({d.get('recordsPath')})")
+
+
+def same_path(a, b):
+    return a is not None and os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(str(b)))
+
+
+def documents():
+    """문서 폴더(Qt 의 DocumentsLocation 과 같은 곳)."""
+    p = reg_get(r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders", "Personal")
+    return Path(os.path.expandvars(p)) if p else Path.home() / "Documents"
 
 
 def main():
-    setup = ROOT / "dist" / f"RobotDashboard-Setup-{version()}.exe"
+    setup = ROOT / "dist" / f"ROSMonitor-Setup-{version()}.exe"
     check(setup.exists(), f"설치 파일 {setup.name}")
     existing = reg_get(UNINSTALL_KEY, "InstallLocation")
     if existing and Path(existing.rstrip("\\")) != INSTALL_DIR:
-        raise SystemExit(f"이 PC 에 로봇 대시보드가 이미 설치되어 있습니다({existing}). 시험이 그 설치를 덮어쓰지 않게 멈춥니다.")
+        raise SystemExit(f"이 PC 에 ROS 모니터가 이미 설치되어 있습니다({existing}). 시험이 그 설치를 덮어쓰지 않게 멈춥니다.")
     uninstall()   # 지난 시험이 남긴 것
     reg_delete_tree(TEST_ROOT)
     shutil.rmtree(INSTALL_DIR, ignore_errors=True)
@@ -118,6 +137,9 @@ def main():
         check(reg_get(TEST_KEY, "port") == 9090, "처음 설치: port 기본값을 씀")
         check(reg_get(TEST_KEY, "updateCheck") == "true", "처음 설치: updateCheck 켬")
         check(reg_get(UNINSTALL_KEY, "DisplayVersion") == version(), "제거 항목의 버전")
+        check(reg_get(UNINSTALL_KEY, "DisplayName") == "ROS Monitor", "제거 항목 이름 ROS Monitor")
+        menu = Path(os.environ["APPDATA"]) / "Microsoft/Windows/Start Menu/Programs"
+        check(any((menu / n).exists() for n in ("ROS 모니터.lnk", "ROS Monitor.lnk")), "시작 메뉴 바로 가기 'ROS 모니터'")
         smoke_run(tmp)
 
         print("(b) 업그레이드(같은 설치 파일로 다시)")
@@ -139,6 +161,7 @@ def main():
         check(not (INSTALL_DIR / "robot_dashboard.exe").exists(), "프로그램 파일이 지워짐")
         check(not (INSTALL_DIR / "model").exists(), "model 폴더가 지워짐")
         check(reg_get(UNINSTALL_KEY, "DisplayName") is None, "제거 항목이 사라짐")
+        check(not any((menu / n).exists() for n in ("ROS 모니터.lnk", "ROS Monitor.lnk")), "시작 메뉴 바로 가기가 사라짐")
         check(reg_get(TEST_KEY, "host") == "10.9.8.7" and reg_get(TEST_KEY, "installerTestMarker") == "keep",
               "무인 제거는 설정을 남김")
         print("인스톨러 시험 통과")

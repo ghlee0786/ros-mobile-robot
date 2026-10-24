@@ -1,10 +1,14 @@
 #include "testhooks.h"
+#include "robot.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDebug>
 #include <QFile>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QImage>
+#include <QImageReader>
 #include <QJsonDocument>
 #include <QKeyEvent>
 #include <QKeySequence>
@@ -15,6 +19,7 @@
 #include <QQuickWindow>
 #include <QRegularExpression>
 #include <QSizeF>
+#include <QSslSocket>
 #include <QTimer>
 #include <QVector3D>
 #include <cstdio>
@@ -409,6 +414,18 @@ QJsonObject TestHooks::snapshot(bool full) const
                               {"stallMs", m_stallMaxMs}};   // 직전 trace 줄 뒤 GUI 스레드가 가장 오래 멈춘 ms
     if (!full)
         return r;
+    // 배포 점검(설치본이 개발 배치와 같게 도는지): 데이터 · 기록 폴더, 글꼴 · SVG 아이콘 · TLS 플러그인
+    QJsonArray fonts;
+    for (const QString &fam : QFontDatabase::families())
+        if (fam.startsWith("Pretendard") || fam.startsWith("JetBrains Mono"))
+            fonts.append(fam);
+    r["deploy"] = QJsonObject{
+        {"exeDir", QCoreApplication::applicationDirPath()}, {"dataDir", Robot::dataDir()},
+        {"installed", Robot::installed()}, {"recordsPath", Robot::recordsPath()}, {"fonts", fonts},
+        {"svg", QImageReader::supportedImageFormats().contains("svg")},
+        {"iconLoads", !QImage(":/icons/plug.svg").isNull()},
+        {"tlsBackends", QJsonArray::fromStringList(QSslSocket::availableBackends())},
+        {"tls", QSslSocket::supportsSsl()}};
     for (const char *name : {"scene", "inspector", "dash"})
         if (QObject *o = findObject(QString::fromLatin1(name)))
             r[QString::fromLatin1(name)] = dumpObject(o, true);

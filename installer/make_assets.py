@@ -47,8 +47,8 @@ def wizard():
     icon = ICON.resize((176, 176), Image.LANCZOS)
     img.paste(icon, ((w - 176) // 2, 150), icon)
     d = ImageDraw.Draw(img)
-    for text, y, f, fill in (("로봇 대시보드", 360, font(34, "Bold"), "#E8EAED"),
-                             ("Robot Dashboard", 408, font(20, "Medium"), "#A3A9B2"),
+    for text, y, f, fill in (("ROS 모니터", 360, font(34, "Bold"), "#E8EAED"),
+                             ("ROS Monitor", 408, font(20, "Medium"), "#A3A9B2"),
                              ("ROS 2 · Qt 6 Quick 3D", 560, font(16), "#7F8792")):
         d.text((w // 2, y), text, font=f, fill=fill, anchor="mm")
     img.save(OUT / "wizard.bmp")
@@ -116,8 +116,8 @@ FEATURES = {
         ("mock", "Mock robot", "Try every screen without hardware via a mock rosbridge"),
     ],
 }
-LAST = {"ko": ("로봇 대시보드", "ROS 2 모바일 로봇을 위한 Windows 앱"),
-        "en": ("Robot Dashboard", "A Windows app for ROS 2 mobile robots")}
+LAST = {"ko": ("ROS 모니터", "ROS 2 모바일 로봇을 위한 Windows 앱"),
+        "en": ("ROS Monitor", "A Windows app for ROS 2 mobile robots")}
 
 
 def wrap(d, text, f, width):

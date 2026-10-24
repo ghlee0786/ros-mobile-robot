@@ -22,6 +22,9 @@ Node {
     // Fusion 에서 cm/mm 로 내보냈으면 modelScale 을 0.01 / 0.001 로 바꾼다.
     property vector3d modelRotation: Qt.vector3d(90, 0, 0)
     property real modelScale: 1.0
+    // 몸체 파일을 읽은 결과(설치본 시험이 state 로 확인): 기본 도형 · loading · ok · error: …
+    readonly property string bodyLoad: bodyUrl.toString() === "" ? "기본 도형" : bodyLoader.status === RuntimeLoader.Success ? "ok"
+                                     : bodyLoader.status === RuntimeLoader.Error ? "error: " + bodyLoader.errorString : "loading"
 
     readonly property real wheelRadius: 0.05    // firmware/pwm-pico/include/config.h
     readonly property real wheelSeparation: 0.34
@@ -39,6 +42,7 @@ Node {
 
     // ---- 몸체 ----
     RuntimeLoader {
+        id: bodyLoader
         visible: root.bodyUrl.toString() !== ""
         source: root.bodyUrl
         eulerRotation: root.modelRotation

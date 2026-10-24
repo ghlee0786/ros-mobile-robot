@@ -34,7 +34,7 @@ public:
     };
     // "v1.2.3" · "1.2.3-rc1" 처럼 앞의 v 와 '-' · '+' 뒤(pre-release · build)는 무시하고 숫자만 비교한다. <0 · 0 · >0
     static int compareVersions(const QString &a, const QString &b);
-    // releases/latest JSON → tag · body · RobotDashboard-Setup-*.exe asset. tag 가 없으면 ok=false
+    // releases/latest JSON → tag · body · ROSMonitor-Setup-*.exe(옛 이름 RobotDashboard-Setup-*.exe) asset. tag 가 없으면 ok=false
     static Release parseRelease(const QByteArray &json, bool *ok);
 
     explicit Updater(QObject *parent = nullptr);

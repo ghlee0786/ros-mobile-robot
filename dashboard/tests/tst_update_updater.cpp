@@ -13,7 +13,7 @@ QByteArray releaseJson(const QString &tag)
 {
     return QString(R"({"tag_name":"%1","name":"%1","body":"## 바뀐 점\n- 업데이트 알림",
         "assets":[{"name":"notes.txt","browser_download_url":"http://x/notes.txt","size":3},
-                  {"name":"RobotDashboard-Setup-%2.exe","browser_download_url":"http://x/RobotDashboard-Setup-%2.exe","size":12345}]})")
+                  {"name":"ROSMonitor-Setup-%2.exe","browser_download_url":"http://x/ROSMonitor-Setup-%2.exe","size":12345}]})")
         .arg(tag, QString(tag).remove(0, 1)).toUtf8();
 }
 
@@ -98,9 +98,16 @@ private slots:
         QVERIFY(ok);
         QCOMPARE(r.tag, "v0.2.0");
         QVERIFY(r.body.contains("업데이트 알림"));
-        QCOMPARE(r.assetName, "RobotDashboard-Setup-0.2.0.exe");
-        QCOMPARE(r.assetUrl, "http://x/RobotDashboard-Setup-0.2.0.exe");
+        QCOMPARE(r.assetName, "ROSMonitor-Setup-0.2.0.exe");
+        QCOMPARE(r.assetUrl, "http://x/ROSMonitor-Setup-0.2.0.exe");
         QCOMPARE(r.assetSize, 12345);
+
+        // 옛 이름(RobotDashboard-Setup-*.exe)의 asset 도 찾는다
+        const Updater::Release old = Updater::parseRelease(
+            "{\"tag_name\":\"v0.1.1\",\"assets\":[{\"name\":\"RobotDashboard-Setup-0.1.1.exe\",\"browser_download_url\":\"http://x/o.exe\",\"size\":7}]}", &ok);
+        QVERIFY(ok);
+        QCOMPARE(old.assetName, "RobotDashboard-Setup-0.1.1.exe");
+        QCOMPARE(old.assetSize, 7);
 
         Updater::parseRelease("{broken", &ok);
         QVERIFY(!ok);

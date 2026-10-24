@@ -1,5 +1,5 @@
 @echo off
-rem 설치 파일 만들기: Release 빌드 → dist\stage 에 배포(windeployqt) → Inno Setup 으로 dist\RobotDashboard-Setup-<ver>.exe
+rem 설치 파일 만들기: Release 빌드 → dist\stage 에 배포(windeployqt) → Inno Setup 으로 dist\ROSMonitor-Setup-<ver>.exe
 rem 버전은 dashboard\CMakeLists.txt 의 project(... VERSION x.y.z ...) 에서 읽는다.
 setlocal
 cd /d "%~dp0.."
@@ -7,7 +7,7 @@ if "%QT_ROOT%"=="" set QT_ROOT=E:\Qt
 
 for /f "tokens=3" %%v in ('findstr /b /c:"project(robot_dashboard VERSION" dashboard\CMakeLists.txt') do set VER=%%v
 if "%VER%"=="" (echo dashboard\CMakeLists.txt 에서 VERSION 을 찾지 못했습니다 & exit /b 1)
-echo === 로봇 대시보드 %VER% 설치 파일 만들기
+echo === ROS 모니터 %VER% 설치 파일 만들기
 
 rem (1) Release 빌드
 call dashboard\build.cmd || exit /b 1
@@ -37,4 +37,4 @@ if not exist "%ISCC%" set ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe
 if not exist "%ISCC%" set ISCC=E:\Tools\InnoSetup\ISCC.exe
 if not exist "%ISCC%" (echo Inno Setup 6 의 ISCC.exe 를 찾지 못했습니다 & exit /b 1)
 "%ISCC%" /Q /DAppVersion=%VER% installer\robot_dashboard.iss || exit /b 1
-echo === dist\RobotDashboard-Setup-%VER%.exe
+echo === dist\ROSMonitor-Setup-%VER%.exe

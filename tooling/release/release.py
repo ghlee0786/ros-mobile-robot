@@ -1,14 +1,14 @@
-"""로봇 대시보드 릴리스 만들기(표준 라이브러리만).
+"""ROS 모니터 릴리스 만들기(표준 라이브러리만).
 
     uv run --no-project python tooling/release/release.py 0.2.0             # 확인 + 설치 파일 빌드, 올릴 내용만 보여 줌(dry run)
     uv run --no-project python tooling/release/release.py 0.2.0 --publish   # + git tag v0.2.0 · GitHub 릴리스 · 설치 파일 올리기
 
 하는 일
 1. dashboard/CMakeLists.txt 의 project(VERSION) 이 0.2.0 인지, CHANGELOG.md 에 '## [0.2.0]' 항목이 있는지 확인
-2. installer\\build_installer.cmd 로 dist\\RobotDashboard-Setup-0.2.0.exe 를 만든다
+2. installer\\build_installer.cmd 로 dist\\ROSMonitor-Setup-0.2.0.exe 를 만든다
 3. --publish 일 때만: 로컬에 태그 v0.2.0 을 만들고 push 명령을 알려 준 뒤, GitHub API 로 릴리스(본문 = CHANGELOG 의 그 항목)를
    만들고 설치 파일을 asset 으로 올린다. 토큰은 `git credential fill`(Git Credential Manager)로 얻고 화면 · 파일에 남기지 않는다.
-   대시보드는 이 릴리스의 tag_name 과 RobotDashboard-Setup-*.exe 를 보고 새 버전을 알린다(dashboard/src/update).
+   ROS 모니터(대시보드)는 이 릴리스의 tag_name 과 ROSMonitor-Setup-*.exe(옛 이름 RobotDashboard-Setup-*.exe 도)를 보고 새 버전을 알린다(dashboard/src/update).
 """
 import argparse
 import json
@@ -64,7 +64,7 @@ def api(method, url, tok, data=None, content_type="application/json"):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="로봇 대시보드 릴리스(설치 파일 빌드 · GitHub Releases 올리기)")
+    ap = argparse.ArgumentParser(description="ROS 모니터 릴리스(설치 파일 빌드 · GitHub Releases 올리기)")
     ap.add_argument("version", help="x.y.z (앞의 v 없이)")
     ap.add_argument("--publish", action="store_true", help="태그를 만들고 GitHub 릴리스를 올린다(없으면 dry run)")
     a = ap.parse_args()
@@ -82,9 +82,11 @@ def main():
     print("[빌드] installer\\build_installer.cmd")
     if subprocess.run(["cmd", "/c", str(ROOT / "installer" / "build_installer.cmd")], cwd=ROOT).returncode != 0:
         fail("설치 파일 빌드 실패")
-    setup = ROOT / "dist" / f"RobotDashboard-Setup-{ver}.exe"
-    if not setup.exists():
-        fail(f"{setup} 가 없습니다")
+    # 지금 이름 ROSMonitor-Setup-*, 없으면 옛 이름 RobotDashboard-Setup-*
+    found = [p for p in (ROOT / "dist" / f"{n}-Setup-{ver}.exe" for n in ("ROSMonitor", "RobotDashboard")) if p.exists()]
+    if not found:
+        fail(f"dist\\ROSMonitor-Setup-{ver}.exe 가 없습니다")
+    setup = found[0]
     print(f"[빌드] {setup.relative_to(ROOT)} ({setup.stat().st_size / 1e6:.1f} MB)")
 
     head = git("rev-parse", "HEAD")

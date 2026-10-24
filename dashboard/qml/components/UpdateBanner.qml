@@ -32,7 +32,7 @@ Rectangle {
             text: root.updater.downloading ? root.updater.latestTag + " 내려받는 중 · "
                                                + Math.round(root.updater.progress * 100) + " %"
                 : root.updater.message !== "" ? root.updater.message
-                : "새 버전 " + root.updater.latestTag + " 이(가) 나왔습니다"
+                : "ROS 모니터 새 버전 " + root.updater.latestTag + " 이(가) 나왔습니다"
             color: Theme.accentText
             font.pixelSize: Theme.fsBody
             font.weight: Theme.wMedium

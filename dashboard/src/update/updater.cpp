@@ -61,7 +61,8 @@ Updater::Release Updater::parseRelease(const QByteArray &json, bool *ok)
     for (const QJsonValue &v : o.value("assets").toArray()) {
         const QJsonObject a = v.toObject();
         const QString name = a.value("name").toString();
-        if (name.startsWith("RobotDashboard-Setup-") && name.endsWith(".exe", Qt::CaseInsensitive)) {
+        // ROSMonitor-Setup-*.exe(지금 이름) 또는 RobotDashboard-Setup-*.exe(옛 이름)
+        if ((name.startsWith("ROSMonitor-Setup-") || name.startsWith("RobotDashboard-Setup-")) && name.endsWith(".exe", Qt::CaseInsensitive)) {
             r.assetName = name;
             r.assetUrl = a.value("browser_download_url").toString();
             r.assetSize = a.value("size").toInteger(-1);
@@ -174,7 +175,7 @@ void Updater::downloadAndInstall()
     if (m_driving)
         return setMessage("주행을 멈춘 뒤 설치하세요");
     if (m_rel.assetUrl.isEmpty())
-        return setMessage("이 릴리스에 설치 파일(RobotDashboard-Setup-*.exe)이 없습니다");
+        return setMessage("이 릴리스에 설치 파일(ROSMonitor-Setup-*.exe)이 없습니다");
     const QString path = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation)).absoluteFilePath(m_rel.assetName);
     m_file = new QFile(path, this);
     if (!m_file->open(QIODevice::WriteOnly | QIODevice::Truncate)) {

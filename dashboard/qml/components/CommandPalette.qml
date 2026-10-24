@@ -55,7 +55,7 @@ Popup {
             out.push({ label: u.checkEnabled ? "시작할 때 업데이트 확인 끄기" : "시작할 때 업데이트 확인 켜기", hint: "업데이트", keys: "",
                        run: () => u.checkEnabled = !u.checkEnabled })
         }
-        out.push({ label: "정보 · 로봇 대시보드 v" + Qt.application.version, hint: "버전", keys: "", run: () => {} })
+        out.push({ label: "정보 · ROS 모니터 v" + Qt.application.version, hint: "버전", keys: "", run: () => {} })
         return out
     }
     // 글자가 순서대로 다 들어 있으면 맞는 것으로 보고, 붙어 있을수록 · 앞쪽일수록 점수를 준다.

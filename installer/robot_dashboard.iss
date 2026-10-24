@@ -1,4 +1,4 @@
-﻿; 로봇 대시보드 설치 파일(Inno Setup 6.7). installer\build_installer.cmd 가 dist\stage 를 채우고 /DAppVersion=x.y.z 로 컴파일한다.
+﻿; ROS 모니터(ROS Monitor, 실행 파일 robot_dashboard.exe) 설치 파일(Inno Setup 6.7). installer\build_installer.cmd 가 dist\stage 를 채우고 /DAppVersion=x.y.z 로 컴파일한다.
 ; - 같은 AppId 로 새 버전을 깔면 업그레이드: 이전 프로그램 파일은 [InstallDelete] 로 지우고 새로 깐다. 설정(레지스트리)은 그대로.
 ; - 설정은 대시보드의 QSettings 와 같은 곳(HKCU\Software\RobotDashboard\RobotDashboard)의 host · port · updateCheck.
 ;   값이 없을 때만 '기본 설정' 페이지 값으로 쓰고, 있으면 페이지에 미리 채워 두었다가 바뀐 값만 쓴다.
@@ -12,15 +12,15 @@
 
 [Setup]
 AppId={{B7D82307-ECDE-49A5-A9C4-80D2C7990238}
-AppName=Robot Dashboard
+AppName=ROS Monitor
 AppVersion={#AppVersion}
-AppVerName=Robot Dashboard {#AppVersion}
+AppVerName=ROS Monitor {#AppVersion}
 AppPublisher=ghlee0786
 AppPublisherURL=https://github.com/ghlee0786/ros-mobile-robot
 AppSupportURL=https://github.com/ghlee0786/ros-mobile-robot/issues
 AppUpdatesURL=https://github.com/ghlee0786/ros-mobile-robot/releases
 VersionInfoVersion={#AppVersion}
-DefaultDirName={autopf}\RobotDashboard
+DefaultDirName={autopf}\ROS Monitor
 DisableProgramGroupPage=yes
 DisableWelcomePage=no
 ; 기본은 사용자별 설치(관리자 권한 없이 자동 업데이트), 마법사 첫 대화상자에서 '모든 사용자' 도 고를 수 있다
@@ -29,10 +29,10 @@ PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=RobotDashboard-Setup-{#AppVersion}
+OutputBaseFilename=ROSMonitor-Setup-{#AppVersion}
 SetupIconFile=..\dashboard\icons\app.ico
 UninstallDisplayIcon={app}\{#ExeName}
-UninstallDisplayName=Robot Dashboard
+UninstallDisplayName=ROS Monitor
 WizardStyle=modern
 WizardImageFile=assets\wizard.bmp
 WizardSmallImageFile=assets\wizard_small.bmp
@@ -46,22 +46,22 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Messages]
-korean.WelcomeLabel2=[name/ver] 을(를) 설치합니다.%n%n라즈베리 파이 + Pico 로 움직이는 ROS 2 로봇을 Windows PC 에서 보고 · 조종하고 · 지도 위 목표로 보내는 대시보드입니다.%n%n다음 화면에서 주요 기능을 소개합니다. 계속하기 전에 다른 프로그램을 닫는 것이 좋습니다.
+korean.WelcomeLabel2=[name/ver] 을(를) 설치합니다.%n%n라즈베리 파이 + Pico 로 움직이는 ROS 2 로봇을 Windows PC 에서 보고 · 조종하고 · 지도 위 목표로 보내는 ROS 2 모니터링 · 조종 앱입니다.%n%n다음 화면에서 주요 기능을 소개합니다. 계속하기 전에 다른 프로그램을 닫는 것이 좋습니다.
 english.WelcomeLabel2=This will install [name/ver] on your computer.%n%nWatch, drive and send navigation goals to a Raspberry Pi + Pico ROS 2 robot from your Windows PC.%n%nThe next page shows the main features. It is recommended that you close all other applications before continuing.
 
 [CustomMessages]
-korean.AppDisplayName=로봇 대시보드
-english.AppDisplayName=Robot Dashboard
+korean.AppDisplayName=ROS 모니터
+english.AppDisplayName=ROS Monitor
 korean.FeaturesTitle=제품 특징
 english.FeaturesTitle=Features
-korean.FeaturesDesc=로봇 대시보드로 할 수 있는 일
-english.FeaturesDesc=What Robot Dashboard can do
+korean.FeaturesDesc=ROS 모니터로 할 수 있는 일
+english.FeaturesDesc=What ROS Monitor can do
 korean.SettingsTitle=기본 설정
 english.SettingsTitle=Basic settings
 korean.SettingsDesc=로봇 연결과 업데이트 설정
 english.SettingsDesc=Robot connection and updates
-korean.SettingsSub=대시보드가 처음 연결할 로봇(rosbridge) 주소입니다. 나중에 '연결' 화면에서 바꿀 수 있습니다. 이미 설치되어 있으면 지금 쓰는 값이 채워져 있습니다.
-english.SettingsSub=The robot (rosbridge) the dashboard connects to first. You can change it later on the Connect page. On upgrade the current values are filled in.
+korean.SettingsSub=ROS 모니터가 처음 연결할 로봇(rosbridge) 주소입니다. 나중에 '연결' 화면에서 바꿀 수 있습니다. 이미 설치되어 있으면 지금 쓰는 값이 채워져 있습니다.
+english.SettingsSub=The robot (rosbridge) ROS Monitor connects to first. You can change it later on the Connect page. On upgrade the current values are filled in.
 korean.HostLabel=로봇 주소:
 english.HostLabel=Robot address:
 korean.PortLabel=rosbridge 포트:
@@ -70,8 +70,8 @@ korean.UpdateLabel=시작할 때 새 버전 확인(GitHub Releases)
 english.UpdateLabel=Check for new versions at startup (GitHub Releases)
 korean.DesktopLabel=바탕 화면에 바로 가기 만들기
 english.DesktopLabel=Create a desktop shortcut
-korean.RunLabel=설치가 끝나면 로봇 대시보드 실행
-english.RunLabel=Launch Robot Dashboard when setup finishes
+korean.RunLabel=설치가 끝나면 ROS 모니터 실행
+english.RunLabel=Launch ROS Monitor when setup finishes
 korean.BadHost=로봇 주소를 입력하세요.
 english.BadHost=Enter the robot address.
 korean.BadPort=포트는 1 ~ 65535 사이의 숫자여야 합니다.

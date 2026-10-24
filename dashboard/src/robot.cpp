@@ -258,11 +258,16 @@ bool Robot::installed()
     return qEnvironmentVariableIsEmpty("ROBOT_DASHBOARD_DIR") && QDir(QCoreApplication::applicationDirPath()).exists("model");
 }
 
-QString Robot::recordsDir() const
+QString Robot::recordsPath()
 {
     // 설치본은 설치 폴더(Program Files 일 수 있음)가 아니라 문서/RobotDashboard/records 에 쓴다
     const QString base = installed() ? QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/RobotDashboard" : dataDir();
-    const QString d = QDir(base).absoluteFilePath("records");
+    return QDir(base).absoluteFilePath("records");
+}
+
+QString Robot::recordsDir() const
+{
+    const QString d = recordsPath();
     QDir().mkpath(d);
     return d;
 }
@@ -708,7 +713,8 @@ void Robot::updateStatus()
             for (const QJsonValue &s : v["subscribers"].toArray())
                 m_watchdogOk |= s.toString().contains("cmd_watchdog");
         }, [this](const QString &) { m_watchdogOk = false; });
-    if (conn && m_statusTick % 10 == 1)   // 가감속 프로파일 상태(다른 곳에서 바꿨을 수도 있다)
+    // 가감속 프로파일 상태(다른 곳에서 바꿨을 수도 있다). --no-publish 는 rosapi 밖의 서비스를 부르지 않는다(B10).
+    if (conn && m_statusTick % 10 == 1 && !m_bridge.noPublish())
         m_bridge.call("/cmd_watchdog/get_parameters", {{"names", QJsonArray{"ramp_enabled"}}}, [this](const QJsonObject &v) {
             const QJsonArray vals = v["values"].toArray();
             if (vals.isEmpty() || vals[0].toObject()["type"].toInt() != 1)
