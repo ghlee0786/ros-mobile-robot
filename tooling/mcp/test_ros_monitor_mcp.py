@@ -63,7 +63,7 @@ def test_tools_and_reads(mock_url):
         assert st["connected"] and st["allow_motion"] is False
         assert st["watchdog"]["present"] is True
         assert st["rates_hz"]["/odom"] > 5
-        assert "없음" in str(st["nav"])            # 모의 서버에는 /nav/status 가 없다
+        assert (st["nav"]["state"] == "idle") if isinstance(st["nav"], dict) else "없음" in st["nav"]   # 모의 /nav/status 가 아직 안 왔을 수 있다
         pose = await call("get_pose")
         assert pose["odom"] is not None and pose["map"] is not None
         scan = await call("get_scan_summary")
@@ -74,7 +74,7 @@ def test_tools_and_reads(mock_url):
         topics = await call("list_topics")
         assert "/odom" in topics["topics"]
         nav = await call("nav_status")
-        assert nav["available"] is False
+        assert nav["available"] is True and nav["state"] in ("idle", "succeeded", "failed", "canceled"), nav   # 모의 서버 --nav 가 /nav/status 를 낸다
     run(mock_url, script)
 
 
@@ -120,7 +120,7 @@ def test_drive_nav_estop(mock_url):
         m = (await call("get_pose"))["map"]
         g = await call("send_nav_goal", x=m["x"] + 0.3 * math.cos(math.radians(m["yaw_deg"])),
                        y=m["y"] + 0.3 * math.sin(math.radians(m["yaw_deg"])), yaw_deg=m["yaw_deg"], timeout_s=40)
-        assert g["ok"] and g["state"] == "succeeded(추정)" and "/nav/status 없음" in g["source"], g
+        assert g["ok"] and g["state"] == "succeeded" and g["error_code"] == 0, g   # /nav/status 의 끝 상태
         assert math.hypot(g["final_pose"]["x"] - g["goal"]["x"], g["final_pose"]["y"] - g["goal"]["y"]) < 0.15
 
         # 앞쪽 2 m 목표를 보내고(기다리지 않음) 달리는 중에 비상 정지

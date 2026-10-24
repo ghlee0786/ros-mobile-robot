@@ -93,7 +93,7 @@ private slots:
         QVERIFY(r.navStatus().isEmpty());
         QVERIFY(!r.sendGoal(1, 2, 0).isEmpty());   // 잠김 · 끊김
         QVERIFY(r.navStatus().isEmpty());
-        QVERIFY(!r.bridge()->wantedTopics().contains("/nav/status"));
+        QVERIFY(r.bridge()->wantedTopics().contains("/nav/status"));   // MCP 등 다른 곳에서 보낸 목표도 보이게 늘 구독
     }
 };
 

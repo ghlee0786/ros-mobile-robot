@@ -7,6 +7,13 @@
   "dashboard_args": [],
   "actions": [
     {
+      "t": 2.5,
+      "call": "robot.armTeleop",
+      "args": [
+        true
+      ]
+    },
+    {
       "t": 3,
       "call": "robot.straight",
       "args": [

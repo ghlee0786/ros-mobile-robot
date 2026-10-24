@@ -310,6 +310,7 @@ private:
     QVariantMap m_navStatus;
     double m_navGoalX = 0, m_navGoalY = 0;   // 보낸 목표(보낸 프레임) — /nav/status 가 이 목표의 것인지 가린다
     int m_navSeq = 0;                        // 받아들인 마지막 seq
+    bool m_navSeen = false;                  // 연결 뒤 /nav/status 를 한 번이라도 받았나
     QElapsedTimer m_navSent;                 // 목표를 보낸 뒤 경과(상태가 오지 않을 때 알림)
 
     bool m_recording = false;

@@ -116,6 +116,8 @@ Robot::Robot(QObject *parent) : QObject(parent)
     m_bridge.advertise("/teleop/estop", "std_msgs/Empty");   // 파이 cmd_watchdog: 가감속 없이 즉시 정지
     m_bridge.advertise("/dashboard/nav_cancel", "std_msgs/Empty");   // PC nav_cancel_bridge: Nav2 목표 모두 취소
     m_bridge.advertise("/dashboard/map_reset", "std_msgs/Empty");    // PC nav_cancel_bridge: /slam_toolbox/reset
+    // MCP(Claude · Codex)가 보낸 목표도 화면에 보이게 늘 구독한다(작은 String 2 Hz · throttle 500 ms)
+    m_bridge.want(kNavStatus, "std_msgs/String", "nav", true, kNavStatusThrottleMs);
     m_bridge.advertise("/goal_pose", "geometry_msgs/PoseStamped");
     m_bridge.advertise(kInitialPoseTopic, "geometry_msgs/PoseWithCovarianceStamped");
     m_recordTopics = {"/odom", "/scan", "/imu/data_raw", "/wheel_states"};
@@ -207,6 +209,7 @@ void Robot::resetSession()
     m_targetLine.clear();
     m_navStatus.clear();
     m_navSeq = 0;
+    m_navSeen = false;
     emit navStatusChanged();
     m_dirty = true;
     emit trailChanged();
@@ -621,8 +624,22 @@ void Robot::onStraight(const QJsonObject &m)
 void Robot::onNavStatus(const QJsonObject &m)
 {
     QVariantMap st = parseNavStatus(m["data"].toString());
-    if (!navStatusMatches(st, m_navGoalX, m_navGoalY, m_navSeq))
-        return;   // 이전 목표(끝난 상태는 5 s 마다 다시 온다) 또는 다른 곳(MCP 등)에서 보낸 목표
+    const QString s = st.value("state").toString();
+    const bool active = s == "planning" || s == "running";
+    const bool own = navStatusMatches(st, m_navGoalX, m_navGoalY, m_navSeq);
+    if (!m_navSeen) {   // 붙자마자 받은 끝난 상태(5 s 마다 다시 온다)는 지난 일이라 보이지 않고 seq 만 기억한다
+        m_navSeen = true;
+        if (!own && !active) {
+            m_navSeq = st["seq"].toInt() + 1;
+            return;
+        }
+    }
+    // 다른 곳(MCP 등)에서 보낸 목표: 진행 중이거나 처음 보는 seq 면 보여 준다
+    const bool other = st.value("hasGoal").toBool() && (active || st["seq"].toInt() >= m_navSeq);
+    if (!own && !other)
+        return;   // 이전 목표의 되풀이
+    if (!own)
+        m_navGoalX = st["goalX"].toDouble(), m_navGoalY = st["goalY"].toDouble();
     m_navSeq = st["seq"].toInt();
     setNavStatus(st);
 }
@@ -636,10 +653,9 @@ void Robot::setNavStatus(const QVariantMap &st)
     emit navStatusChanged();
 }
 
-// 자율주행에서 벗어나면 구독을 끊는다. 진행 중이던 목표는 cancelGoal 로 취소되지만 그 결과는 더 받지 않으므로 여기서 취소로 둔다.
+// 자율주행에서 벗어나면 진행 중이던 목표는 cancelGoal 로 취소된다 — PC 의 취소 결과를 기다리지 않고 화면을 바로 취소로 둔다.
 void Robot::stopNavStatus()
 {
-    m_bridge.want(kNavStatus, "std_msgs/String", "nav", false);
     const QString s = m_navStatus.value("state").toString();
     if (s == "sent" || s == "planning" || s == "running") {
         QVariantMap st = m_navStatus;
@@ -972,7 +988,6 @@ QString Robot::sendGoal(double x, double y, double yaw)
     m_navSent.start();
     m_navStatus = {{"state", "sent"}, {"text", "보냄 — Nav2 응답 기다리는 중"}, {"distance", -1}, {"eta", -1}};
     emit navStatusChanged();
-    m_bridge.want(kNavStatus, "std_msgs/String", "nav", true, kNavStatusThrottleMs);
     return {};
 }
 
