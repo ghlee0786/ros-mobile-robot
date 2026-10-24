@@ -35,8 +35,8 @@ const QHash<QString, QList<QPair<QString, QString>>> kExtra = {
 };
 const char *kRequired[] = {"/odom", "/scan", "/wheel_states"};
 constexpr double kSelfHide = 0.3;     // 로봇 몸체에 맞은 LiDAR 점(m 이내)은 숨김
-constexpr double kMaxAngular = 0.60;  // 펌웨어 한계 rad/s
-constexpr double kMaxLinear = 0.25;   // 펌웨어 한계 m/s
+constexpr double kMaxAngular = 0.80;  // 펌웨어 한계 rad/s
+constexpr double kMaxLinear = 0.35;   // 펌웨어 한계 m/s
 constexpr double kMaxStraight = 2.0;  // 직진 시험 거리 상한 m
 // /tf 는 throttle 200 ms · queue 1 이라 창마다 마지막 변환 하나만 온다. map→odom 은 평균 약 0.66 Hz 로
 // 불규칙하게 오므로 2 s 로 판정하면 24 % 동안 낡음으로 본다 — 10 s 안에 한 번이라도 왔으면 신선하다고 본다.

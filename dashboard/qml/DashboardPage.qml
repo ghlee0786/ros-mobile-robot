@@ -396,7 +396,7 @@ FocusScope {
                         color: Theme.text2; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
                         text: "최대 속도 <b>" + robot.maxSpeed.toFixed(2) + " m/s</b>"
                     }
-                    Text { text: "펌웨어 한계 0.25"; color: Theme.text3; font.pixelSize: Theme.fsSmall }
+                    Text { text: "펌웨어 한계 0.35"; color: Theme.text3; font.pixelSize: Theme.fsSmall }
                     Seg {
                         objectName: "rampSeg"
                         options: ["가감속 켬", "끔"]
@@ -407,7 +407,7 @@ FocusScope {
                     }
                     Slider {
                         width: 170
-                        from: 0.02; to: 0.25; stepSize: 0.01
+                        from: 0.02; to: 0.35; stepSize: 0.01
                         value: robot.maxSpeed
                         focusPolicy: Qt.NoFocus
                         onMoved: robot.maxSpeed = value
