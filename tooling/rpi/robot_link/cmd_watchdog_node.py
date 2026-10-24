@@ -48,8 +48,8 @@ class CmdWatchdog(Node):
         super().__init__('cmd_watchdog')
         self.timeout = self.declare_parameter('timeout', 0.5).value
         self.declare_parameter('ramp_enabled', True)
-        self.declare_parameter('lin_acc', 0.30)    # m/s^2   (0 -> 0.25 m/s in 0.83 s)
-        self.declare_parameter('lin_dec', 0.50)    # m/s^2   (0.25 -> 0 in 0.5 s)
+        self.declare_parameter('lin_acc', 0.35)    # m/s^2   (0 -> 0.35 m/s in 1 s)
+        self.declare_parameter('lin_dec', 0.60)    # m/s^2   (0.35 -> 0 in 0.58 s)
         self.declare_parameter('ang_acc', 1.00)    # rad/s^2 (0 -> 0.6 rad/s in 0.6 s)
         self.declare_parameter('ang_dec', 1.50)    # rad/s^2
         self.declare_parameter('estop_hold', 1.0)  # s

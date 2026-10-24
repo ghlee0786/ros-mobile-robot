@@ -42,7 +42,7 @@ class StraightDrive(Node):
         p = self.declare_parameter
         self.rate_hz = p('rate_hz', 20.0).value
         self.default_speed = p('default_speed', 0.08).value
-        self.max_speed = p('max_speed', 0.25).value         # Pico firmware clamps |v| <= 0.25 m/s
+        self.max_speed = p('max_speed', 0.35).value         # Pico firmware clamps |v| <= 0.35 m/s
         self.max_angular = p('max_angular', 0.25).value     # Pico firmware clamps |w| <= 0.25 rad/s
         self.accel = p('accel', 0.1).value                  # m/s^2 ramp up/down
         self.alpha = p('imu_weight', 0.7).value             # heading fusion weight of the IMU
