@@ -3,21 +3,25 @@
 # sides must list the same topics in the same order, because frames carry the list index. That also
 # lets a topic change name on the way: the dashboard sends its initial pose on /dashboard/initialpose
 # because the Pi's initialpose_node publishes /initialpose = (0, 0, 0) every 5 s, which would keep
-# resetting AMCL if it were relayed; the PC side publishes it as /initialpose.
+# resetting AMCL if it were relayed; the PC side publishes it as /initialpose. Likewise the robot's
+# /goal_pose arrives on the PC as /dashboard/goal_pose: tooling/nav/nav_goal_bridge.py sends it to Nav2 as a
+# NavigateToPose action (so the result and the failure reason come back on /nav/status) instead of
+# bt_navigator taking /goal_pose directly.
 NAV_RELAY_TO_PC_PORT=7701
 NAV_RELAY_TO_ROBOT_PORT=7702
 _to_pc=(/scan:sensor_msgs/msg/LaserScan:best_effort
         /odom:nav_msgs/msg/Odometry
         /tf:tf2_msgs/msg/TFMessage
         /tf_static:tf2_msgs/msg/TFMessage:transient_local
-        /goal_pose:geometry_msgs/msg/PoseStamped
         /dashboard/nav_cancel:std_msgs/msg/Empty
         /teleop/estop:std_msgs/msg/Empty
         /dashboard/map_reset:std_msgs/msg/Empty)
-NAV_RELAY_TO_PC_ROBOT_SIDE=("${_to_pc[@]}" /dashboard/initialpose:geometry_msgs/msg/PoseWithCovarianceStamped)
-NAV_RELAY_TO_PC_PC_SIDE=("${_to_pc[@]}" /initialpose:geometry_msgs/msg/PoseWithCovarianceStamped)
+NAV_RELAY_TO_PC_ROBOT_SIDE=("${_to_pc[@]}" /dashboard/initialpose:geometry_msgs/msg/PoseWithCovarianceStamped
+                            /goal_pose:geometry_msgs/msg/PoseStamped)
+NAV_RELAY_TO_PC_PC_SIDE=("${_to_pc[@]}" /initialpose:geometry_msgs/msg/PoseWithCovarianceStamped
+                         /dashboard/goal_pose:geometry_msgs/msg/PoseStamped)
 # PC -> robot: Nav2 velocity (the Pi's cmd_watchdog relays it); map, plan, localization, the local
-# costmap and map->odom (tooling/nav/map_odom_pub.py) for the dashboard
+# costmap, map->odom (tooling/nav/map_odom_pub.py) and the Nav2 goal status (nav_goal_bridge.py) for the dashboard
 NAV_RELAY_TO_ROBOT=(/teleop/cmd_vel:geometry_msgs/msg/Twist
                     /map:nav_msgs/msg/OccupancyGrid:transient_local
                     /plan:nav_msgs/msg/Path
@@ -25,4 +29,5 @@ NAV_RELAY_TO_ROBOT=(/teleop/cmd_vel:geometry_msgs/msg/Twist
                     /global_costmap/costmap:nav_msgs/msg/OccupancyGrid:transient_local
                     /local_costmap/costmap:nav_msgs/msg/OccupancyGrid
                     /local_costmap/published_footprint:geometry_msgs/msg/PolygonStamped
-                    /map_odom:tf2_msgs/msg/TFMessage)
+                    /map_odom:tf2_msgs/msg/TFMessage
+                    /nav/status:std_msgs/msg/String)

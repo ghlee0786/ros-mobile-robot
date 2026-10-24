@@ -101,6 +101,37 @@ def test_goal_plan_cancel(mock, client):
                    and m["msg"]["status_list"] and m["msg"]["status_list"][0]["status"] == 6)
 
 
+def _nav_goal(c, x, y):
+    c.send(op="subscribe", topic="/nav/status", type="std_msgs/String")
+    c.send(op="advertise", topic="/goal_pose", type="geometry_msgs/PoseStamped")
+    time.sleep(0.2)
+    c.send(op="publish", topic="/goal_pose", msg={"header": {"frame_id": "odom", "stamp": {"sec": 0, "nanosec": 0}},
+                                                  "pose": {"position": {"x": x, "y": y, "z": 0},
+                                                           "orientation": {"x": 0, "y": 0, "z": 0, "w": 1}}})
+
+    def status(state):
+        m = c.until(lambda m: m.get("topic") == "/nav/status" and json.loads(m["msg"]["data"])["state"] == state, 15)
+        return json.loads(m["msg"]["data"]) if m else None
+    return status
+
+
+def test_nav_status_succeeded(mock, client):
+    status = _nav_goal(client(mock("--nav").port), 0.3, 0.0)
+    st = status("running")
+    assert st and st["seq"] == 1 and st["goal"] == {"x": 0.3, "y": 0.0, "yaw": 0.0} and st["distance_remaining"] > 0
+    st = status("succeeded")
+    assert st and st["reason"] == "" and st["error_code"] == 0 and st["distance_remaining"] == 0.0
+    assert set(st) == {"seq", "state", "goal", "distance_remaining", "eta_s", "recoveries", "error_code", "error_msg",
+                       "reason", "stamp"}
+
+
+def test_nav_status_plan_fail(mock, client):
+    status = _nav_goal(client(mock("--nav", "--nav-fail", "plan").port), 1.0, 0.0)
+    assert status("planning")
+    st = status("failed")
+    assert st and st["error_code"] == 208 and "출발점" in st["reason"]
+
+
 def test_map_once_and_size(mock, client):
     c = client(mock("--map-size", "400x300", "--map-origin-yaw-deg", "10").port)
     c.send(op="subscribe", topic="/map", type="nav_msgs/OccupancyGrid")

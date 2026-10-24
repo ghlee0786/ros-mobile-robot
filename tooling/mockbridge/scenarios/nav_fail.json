@@ -1,0 +1,88 @@
+{
+  "id": "nav_fail",
+  "title": "--nav-fail plan: /nav/status failed · reason(출발점 막힘) → robot.navStatus · 3D 뷰 실패 배너",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--nav",
+    "--nav-fail",
+    "plan"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 5.5,
+      "call": "robot.armTeleop",
+      "args": [
+        true
+      ]
+    },
+    {
+      "t": 6,
+      "call": "robot.sendGoal",
+      "args": [
+        0.5,
+        0.2,
+        0.3
+      ]
+    }
+  ],
+  "duration_s": 12,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.navStatus.state",
+        "op": "==",
+        "value": "failed"
+      },
+      {
+        "path": "robot.navStatus.errorCode",
+        "op": "==",
+        "value": 208
+      },
+      {
+        "path": "robot.navStatus.reason",
+        "op": "contains",
+        "value": "출발점이 장애물에 막혀"
+      },
+      {
+        "path": "robot.navStatus.text",
+        "op": "contains",
+        "value": "지도 초기화"
+      },
+      {
+        "path": "scene.navState",
+        "op": "==",
+        "value": "failed"
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "throttle_eq",
+        "topic": "/nav/status",
+        "value": 500,
+        "all": true
+      },
+      {
+        "rule": "count_le",
+        "topic": "/plan",
+        "dir": "tx",
+        "value": 0
+      }
+    ]
+  }
+}
