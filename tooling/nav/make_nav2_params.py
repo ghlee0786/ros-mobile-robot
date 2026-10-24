@@ -57,7 +57,7 @@ def main():
     ros('bt_navigator', p).update(robot_base_frame='base_link', odom_topic='/odom', transform_tolerance=0.5)
 
     c = ros('controller_server', p)
-    c.update(controller_frequency=10.0, odom_topic='/odom')
+    c.update(controller_frequency=20.0, odom_topic='/odom')   # 10 -> 20 Hz: half the reaction delay
     c['progress_checker'].update(required_movement_radius=0.1, movement_time_allowance=20.0)
     c['general_goal_checker'].update(xy_goal_tolerance=0.15, yaw_goal_tolerance=0.15)
     c['FollowPath'] = RPP
@@ -67,6 +67,8 @@ def main():
         cm.update(global_frame=frame, robot_base_frame='base_link', robot_radius=RADIUS,
                   transform_tolerance=0.5)
         cm.pop('footprint', None)
+        if name == 'local_costmap':
+            cm.update(update_frequency=10.0)   # 5 -> 10 Hz: an obstacle reaches the controller up to 100 ms sooner
         for layer in ('obstacle_layer', 'voxel_layer'):
             if layer in cm and 'scan' in cm[layer]:
                 cm[layer]['scan'].update(topic='/scan', raytrace_max_range=6.0, obstacle_max_range=5.0,

@@ -39,9 +39,10 @@ from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Empty
 
 import speed_limits
-from obstacle_guard import guard
+from obstacle_guard import allowed_speed, nearest_in_sector
 
-STEP = 0.05   # s, output period while moving
+STEP = 0.02   # s, output period while moving (50 Hz: the Pico reads at 33 Hz, so a stop reaches it within one cycle)
+ZEROS = 12    # zero messages after a stop (~0.25 s)
 
 
 def approach(cur, target, acc, dec, dt):
@@ -125,7 +126,10 @@ class CmdWatchdog(Node):
         return lv, lw
 
     def on_scan(self, msg):
-        self.scan, self.scan_t = (msg.ranges, msg.angle_min, msg.angle_increment), time.monotonic()
+        # nearest returns ahead / behind once per scan (12 Hz), not on every 50 Hz step
+        hw = math.radians(self.get_parameter('guard_half_width_deg').value)
+        self.scan = tuple(nearest_in_sector(msg.ranges, msg.angle_min, msg.angle_increment, c, hw) for c in (0.0, math.pi))
+        self.scan_t = time.monotonic()
 
     def limit_for_obstacles(self, v):
         p = self.get_parameter
@@ -134,8 +138,9 @@ class CmdWatchdog(Node):
         if self.scan is None or time.monotonic() - self.scan_t > p('scan_timeout').value:
             lim = p('blind_speed').value
             return max(-lim, min(lim, v))
-        out, near = guard(v, self.scan, p('stop_dist').value, max(p('lin_dec').value, 0.1),
-                          p('guard_latency').value, math.radians(p('guard_half_width_deg').value))
+        near = self.scan[0 if v > 0 else 1]
+        vmax = allowed_speed(near, p('stop_dist').value, max(p('lin_dec').value, 0.1), p('guard_latency').value)
+        out = math.copysign(min(abs(v), vmax), v)
         if abs(out) < abs(v) - 1e-3 and time.monotonic() - self.guard_warn_t > 2.0:
             self.guard_warn_t = time.monotonic()
             self.get_logger().warn(f'obstacle {near:.2f} m {"ahead" if v > 0 else "behind"}: '
@@ -148,7 +153,7 @@ class CmdWatchdog(Node):
         self.pub.publish(Twist())
         if self.moving:
             self.get_logger().warn('estop: robot stopped at once')
-        self.moving, self.zeros_left = False, 5
+        self.moving, self.zeros_left = False, ZEROS
 
     def step(self):
         fresh = time.monotonic() - self.last_t < self.timeout
@@ -174,7 +179,7 @@ class CmdWatchdog(Node):
             t = Twist()
             t.linear.x, t.angular.z = self.out_v, self.out_w
             self.pub.publish(t)
-            self.moving, self.zeros_left = True, 5
+            self.moving, self.zeros_left = True, ZEROS
             return
         self.out_v = self.out_w = 0.0
         self.moving = False
