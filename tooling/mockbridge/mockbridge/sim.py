@@ -155,6 +155,9 @@ class World(Source):
         self.rosout_n = 0
         self.map_w, self.map_h, self.map_origin = self._map_geometry()
         self.params = make_params()
+        if getattr(args, "no_speed_limits", False):   # 속도 한계 전의 옛 워치독(파이 미배포)
+            for k in ("max_forward", "max_reverse", "max_angular"):
+                self.params["/cmd_watchdog"].pop(k)
         self._build_schedule()
 
     # ---- 토픽 표 ------------------------------------------------------------------------
@@ -254,7 +257,7 @@ class World(Source):
             timeout = self.params["/cmd_watchdog"]["timeout"][1]
             fresh = now - self.teleop_t < timeout
             if fresh and (abs(self.teleop[0]) > 1e-6 or abs(self.teleop[1]) > 1e-6):
-                self.cmd, self.wd_moving, self.wd_zeros = self.teleop, True, 5
+                self.cmd, self.wd_moving, self.wd_zeros = self.limit_teleop(*self.teleop), True, 5
             else:
                 self.wd_moving = False
                 if self.wd_zeros > 0:
@@ -268,6 +271,14 @@ class World(Source):
             # nav_goal_bridge.fail_reason 이 출발점 칸이 막혔을 때 내는 것과 같은 결과(208 = NO_VALID_PATH)
             self.nav.update(error_code=208, error_msg="mock: no valid path")
             self.nav_set("failed", NAV_START_BLOCKED)
+
+    def limit_teleop(self, v, w):
+        """워치독 속도 한계(speed_limits.clamp 와 같은 식): 전진 max_forward · 후진 max_reverse · |w| max_angular."""
+        p = self.params["/cmd_watchdog"]
+        if "max_forward" not in p:
+            return v, w
+        v = min(v, p["max_forward"][1]) if v >= 0 else max(v, -p["max_reverse"][1])
+        return v, max(-p["max_angular"][1], min(p["max_angular"][1], w))
 
     # ---- 명령 --------------------------------------------------------------------------
     def on_command(self, topic, msg):
@@ -665,5 +676,8 @@ def make_params():
             "sensor_timeout": (3, 1.5, (0.0, 10.0)), "use_imu": (1, True, None),
             "log_dir": (4, "~/robot_link/logs", None), "use_sim_time": (1, False, None)},
         "/cmd_watchdog": {"timeout": (3, 0.5, (0.05, 5.0)), "use_sim_time": (1, False, None),
-                          "zero_repeats": (2, 5, (0, 20))},
+                          "zero_repeats": (2, 5, (0, 20)),
+                          # 속도 한계: 범위 = 0 ~ 펌웨어 한계(실기 speed_limits.FIRMWARE). 밖이면 set_parameters 거부
+                          "max_forward": (3, 0.25, (0.0, 0.35)), "max_reverse": (3, 0.15, (0.0, 0.35)),
+                          "max_angular": (3, 0.6, (0.0, 0.8))},
     }

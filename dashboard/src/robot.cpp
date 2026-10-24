@@ -65,8 +65,14 @@ Robot::Robot(QObject *parent) : QObject(parent)
     connect(&m_bridge, &RosBridge::message, this, &Robot::onMessage);
     connect(&m_bridge, &RosBridge::bridgeError, this, &Robot::addEvent);
     connect(&m_bridge, &RosBridge::topicListChanged, this, &Robot::pickScanTopic);
+    connect(&m_limits, &SpeedLimits::event, this, &Robot::addEvent);
+    connect(&m_limits, &SpeedLimits::changed, this, [this] {
+        if (m_maxSpeed > qMax(0.02, m_limits.maxForward()))   // 최대 속도 슬라이더의 위끝 = 최대 전진
+            setMaxSpeed(m_maxSpeed);
+    });
     connect(&m_bridge, &RosBridge::connectedChanged, this, [this] {
         armTeleop(false);   // 연결 · 재연결 · 끊김 직후에는 잠근다
+        m_limits.onConnectedChanged(m_bridge.connected());
         if (m_bridge.connected()) {
             m_everConnected = true;
             m_lastSendDropped = false;
@@ -149,7 +155,7 @@ Robot::Robot(QObject *parent) : QObject(parent)
         else if (m_armed && m_armInput.elapsed() > m_armIdleMs)
             armTeleop(false);
         if (m_mode == "키보드 조종")
-            sendTwist(m_lin * m_maxSpeed, m_ang * kMaxAngular);
+            sendTeleop();
     });
     m_teleop.start();
     updateStatus();
@@ -784,6 +790,8 @@ void Robot::updateStatus()
                 emit rampChanged();
             }
         }, [](const QString &) {});
+    if (conn && m_statusTick % 10 == 1 && !m_bridge.noPublish())
+        m_limits.refresh();   // 속도 한계도 5 s 마다(MCP · ros2 param 이 바꿨을 수 있다)
     if (!conn && m_rampKnown) {
         m_rampKnown = false;
         emit rampChanged();
@@ -887,7 +895,7 @@ void Robot::setMode(const QString &m)
 
 void Robot::setMaxSpeed(double v)
 {
-    v = qBound(0.02, v, kMaxLinear);
+    v = qBound(0.02, v, qBound(0.02, m_limits.maxForward(), kMaxLinear));
     if (v == m_maxSpeed)
         return;
     m_maxSpeed = v;
@@ -929,7 +937,13 @@ void Robot::drive(double linear, double angular)
     if (!m_lastSendDropped)   // 누를 때마다가 아니라 끊긴 동안 한 번만 알린다
         noteDropped();
     if (m_mode == "키보드 조종")
-        sendTwist(m_lin * m_maxSpeed, m_ang * kMaxAngular);   // 누르는 즉시 반응
+        sendTeleop();   // 누르는 즉시 반응
+}
+
+void Robot::sendTeleop()
+{
+    sendTwist(SpeedLimits::linearCommand(m_lin, m_maxSpeed, m_limits.maxForward(), m_limits.maxReverse()),
+              SpeedLimits::angularCommand(m_ang, kMaxAngular, m_limits.maxAngular()));
 }
 
 // 로봇을 움직이는 명령(직진 · 목표)을 지금 보내도 되는지. 안 되면 이유(이벤트에 남긴다).
@@ -954,7 +968,14 @@ void Robot::straight(double distance)
         addEvent("직진 거부 — " + why);
         return;
     }
-    m_bridge.publish("/straight_drive/goal", {{"x", distance}, {"y", qMin(m_maxSpeed, kMaxLinear)}, {"z", 0}});
+    // 속도 0 은 straight_drive 의 기본 속도라는 뜻이라 보내지 않는다(한계가 0 이면 거부)
+    const double speed = std::abs(SpeedLimits::linearCommand(distance >= 0 ? 1 : -1, qMin(m_maxSpeed, kMaxLinear),
+                                                             m_limits.maxForward(), m_limits.maxReverse()));
+    if (speed <= 0) {
+        addEvent("직진 거부 — 속도 한계 0");
+        return;
+    }
+    m_bridge.publish("/straight_drive/goal", {{"x", distance}, {"y", speed}, {"z", 0}});
 }
 
 QString Robot::sendGoal(double x, double y, double yaw)

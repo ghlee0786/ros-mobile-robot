@@ -20,6 +20,9 @@ crashed PC teleop would leave the robot driving. Remote teleop therefore publish
                                    keyboard, MCP, straight_drive and Nav2 alike cannot drive into a wall;
                                    turning in place is not limited. Scan older than `scan_timeout` s ->
                                    at most `blind_speed` (obstacle_guard.py)
+  * speed limits                 -> 명령을 먼저 max_forward · max_reverse · max_angular 로 자른 뒤 가감속 · 장애물 정지를
+                                   거친다(speed_limits.py). 범위(0 ~ 펌웨어 한계) 밖 set_parameters 는 거부하고, 바뀐 값은
+                                   ~/robot_link/limits.yaml 에 써서 재시작 · 재부팅 뒤에도 남긴다(대시보드 '속도 한계').
 Going quiet while idle keeps it from fighting other /cmd_vel sources such as straight_drive.
 Parameters can be changed while running (ros2 param set /cmd_watchdog ramp_enabled false, or the
 dashboard's 가감속 switch through /cmd_watchdog/set_parameters).
@@ -29,11 +32,13 @@ import time
 
 import rclpy
 from geometry_msgs.msg import Twist
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Empty
 
+import speed_limits
 from obstacle_guard import guard
 
 STEP = 0.05   # s, output period while moving
@@ -70,6 +75,12 @@ class CmdWatchdog(Node):
         self.declare_parameter('guard_half_width_deg', 35.0)
         self.declare_parameter('scan_timeout', 0.5)      # s
         self.declare_parameter('blind_speed', 0.10)      # m/s cap while the scan is missing
+        self.limits_path = self.declare_parameter('limits_file', speed_limits.DEFAULT_PATH).value
+        self.limits = speed_limits.load(self.limits_path)
+        for name, val in self.limits.items():
+            self.declare_parameter(name, val)
+        self.add_on_set_parameters_callback(self.on_set_params)
+        self.limit_warn_t = 0.0
         self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.create_subscription(Twist, '/teleop/cmd_vel', self.on_cmd, 10)
         self.create_subscription(Empty, '/teleop/estop', self.on_estop, 10)
@@ -88,6 +99,30 @@ class CmdWatchdog(Node):
         if time.monotonic() < self.estop_until:
             return
         self.target, self.last_t = msg, time.monotonic()
+
+    def on_set_params(self, params):
+        changed = {}
+        for prm in params:
+            if prm.name in speed_limits.FIRMWARE:
+                why = speed_limits.check(prm.name, prm.value)
+                if why:
+                    return SetParametersResult(successful=False, reason=why)
+                changed[prm.name] = float(prm.value)
+        if changed:
+            self.limits.update(changed)
+            try:
+                speed_limits.save(self.limits, self.limits_path)
+            except OSError as e:   # 저장에 실패해도 지금 실행에는 적용한다(재시작하면 앞 값으로 돌아간다)
+                self.get_logger().error(f'cannot save {self.limits_path}: {e}')
+            self.get_logger().info('speed limits ' + ', '.join(f'{k}={v:.2f}' for k, v in self.limits.items()))
+        return SetParametersResult(successful=True)
+
+    def limit_speed(self, v, w):
+        lv, lw = speed_limits.clamp(v, w, self.limits)
+        if (lv, lw) != (v, w) and time.monotonic() - self.limit_warn_t > 2.0:
+            self.limit_warn_t = time.monotonic()
+            self.get_logger().info(f'speed limit: linear {v:.2f} -> {lv:.2f} m/s, angular {w:.2f} -> {lw:.2f} rad/s')
+        return lv, lw
 
     def on_scan(self, msg):
         self.scan, self.scan_t = (msg.ranges, msg.angle_min, msg.angle_increment), time.monotonic()
@@ -121,6 +156,7 @@ class CmdWatchdog(Node):
         mw = self.get_parameter('min_turn_w').value
         if mw > 0 and abs(tv) < 0.02 and 0.01 <= abs(tw) < mw:
             tw = mw if tw > 0 else -mw
+        tv, tw = self.limit_speed(tv, tw)   # min_turn_w 뒤에: 회전 한계가 그보다 작아도 한계를 넘지 않게
         if self.moving and not fresh and (self.out_v or self.out_w):
             if not getattr(self, '_warned', False):
                 self.get_logger().warn(f'/teleop/cmd_vel silent for {self.timeout}s: stopping robot')

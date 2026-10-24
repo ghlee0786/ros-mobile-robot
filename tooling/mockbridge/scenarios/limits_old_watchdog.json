@@ -1,0 +1,35 @@
+{
+  "id": "limits_old_watchdog",
+  "title": "1920x1080 · 옛 워치독(속도 한계 파라미터 없음): '배포 필요' 안내 · set_parameters 를 보내지 않고 대시보드 키보드 배율만 최대 전진 0.15 로 제한 · 겹침 없음",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": ["--no-speed-limits"],
+  "dashboard_args": ["--size", "1920x1080"],
+  "actions": [
+    {"wait": "bridge.connected", "timeout_s": 10},
+    {"wait": "dash.limitsSupport", "timeout_s": 8},
+    {"t": 1, "call": "robot.limits.setLimit", "args": ["max_forward", 0.15]},
+    {"t": 1.2, "set": "robot.maxSpeed", "value": 0.35},
+    {"t": 1.5, "call": "robot.armTeleop", "args": [true]},
+    {"t": 1.7, "call": "robot.drive", "args": [1, 0]},
+    {"t": 2.7, "call": "robot.drive", "args": [0, 0]},
+    {"t": 3.5, "shot": "{out}/limits_old_1920.png"}
+  ],
+  "duration_s": 5,
+  "expect": {
+    "exit_code": 0,
+    "log_forbid": ["TypeError", "ReferenceError", "Binding loop"],
+    "state": [
+      {"path": "win.width", "op": "==", "value": 1920},
+      {"path": "dash.limitsSupport", "op": "==", "value": -1},
+      {"path": "dash.limitsFit", "op": "==", "value": true},
+      {"path": "dash.limitsWarn", "op": "==", "value": "0,0,0"},
+      {"path": "robot.maxSpeed", "op": "==", "value": 0.15}
+    ],
+    "server_log": [
+      {"rule": "max_abs", "topic": "/teleop/cmd_vel", "field": "linear.x", "value": 0.15},
+      {"rule": "count_ge", "topic": "/teleop/cmd_vel", "where": {"linear.x": 0.15}, "value": 5},
+      {"rule": "count_le", "op": "call_service", "service": "/cmd_watchdog/set_parameters", "value": 0}
+    ]
+  }
+}

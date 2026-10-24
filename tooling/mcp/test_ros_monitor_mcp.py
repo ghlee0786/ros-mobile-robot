@@ -58,10 +58,11 @@ def test_tools_and_reads(mock_url):
         names = {t.name for t in (await call.session.list_tools()).tools}
         assert {"robot_status", "get_pose", "get_scan_summary", "get_map_summary", "nav_status", "list_topics",
                 "send_nav_goal", "cancel_nav", "estop", "drive", "straight", "set_ramp", "reset_map",
-                "set_initial_pose"} <= names
+                "set_initial_pose", "get_speed_limits", "set_speed_limits"} <= names
         st = await call("robot_status")
         assert st["connected"] and st["allow_motion"] is False
         assert st["watchdog"]["present"] is True
+        assert st["watchdog"]["speed_limits"] == {"max_forward": 0.25, "max_reverse": 0.15, "max_angular": 0.6}
         assert st["rates_hz"]["/odom"] > 5
         assert (st["nav"]["state"] == "idle") if isinstance(st["nav"], dict) else "없음" in st["nav"]   # 모의 /nav/status 가 아직 안 왔을 수 있다
         pose = await call("get_pose")
@@ -83,7 +84,7 @@ def test_motion_refused_without_flag(mock_url):
         before = (await call("get_pose"))["odom"]
         for name, kw in [("drive", {"linear": 0.1, "duration_s": 1}), ("send_nav_goal", {"x": 1, "y": 0}),
                          ("straight", {"distance_m": 0.5}), ("reset_map", {}), ("set_ramp", {"enabled": False}),
-                         ("set_initial_pose", {"x": 0, "y": 0})]:
+                         ("set_initial_pose", {"x": 0, "y": 0}), ("set_speed_limits", {"max_forward": 0.3})]:
             r = await call(name, **kw)
             assert r["ok"] is False and "--allow-motion" in r["refused"], (name, r)
         await asyncio.sleep(0.5)
@@ -142,6 +143,42 @@ def test_drive_nav_estop(mock_url):
         assert s["ok"] and s["reason"] == "reached", s
         assert (await call("straight", distance_m=3.0))["ok"] is False
     run(mock_url, script, "--allow-motion")
+
+
+def test_speed_limits(mock_url):
+    async def script(call):
+        lim = await call("get_speed_limits")
+        assert lim["ok"] and lim["max_forward"] == 0.25 and lim["firmware"]["max_angular"] == 0.8, lim
+        assert (await call("set_speed_limits", max_forward=0.5))["ok"] is False          # 펌웨어 0.35 밖
+        assert (await call("set_speed_limits"))["ok"] is False                          # 바꿀 값 없음
+        r = await call("set_speed_limits", max_forward=0.2, max_reverse=0.1, max_angular=0.4)
+        assert r["ok"] and r["now"] == {"max_forward": 0.2, "max_reverse": 0.1, "max_angular": 0.4}, r
+        # drive 는 워치독 한계로 자른다(후진은 max_reverse)
+        f = await call("drive", linear=5.0, angular=9.0, duration_s=0.2)
+        assert f["linear"] == 0.2 and f["angular"] == 0.4 and f["clamped"], f
+        b = await call("drive", linear=-5.0, duration_s=0.2)
+        assert b["linear"] == -0.1, b
+        assert (await call("robot_status"))["watchdog"]["speed_limits"]["max_reverse"] == 0.1
+        r = await call("set_speed_limits", max_forward=0.25, max_reverse=0.15, max_angular=0.6)   # 다른 시험을 위해 되돌린다
+        assert r["ok"], r
+    run(mock_url, script, "--allow-motion")
+
+
+def test_speed_limits_old_watchdog():
+    proc = subprocess.Popen([sys.executable, MOCK, "--port", "0", "--no-speed-limits"], stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, text=True, cwd=os.path.dirname(MOCK))
+    try:
+        line = proc.stdout.readline()
+        url = f"ws://127.0.0.1:{int(line.split('=')[1])}"
+
+        async def script(call):
+            assert (await call("get_speed_limits"))["ok"] is False
+            d = await call("drive", linear=5.0, angular=-9.0, duration_s=0.2)
+            assert d["linear"] == 0.25 and d["angular"] == -0.6, d                     # 못 읽으면 지금 값
+        run(url, script, "--allow-motion")
+    finally:
+        proc.kill()
+        proc.wait()
 
 
 def test_register_dry_run(tmp_path):

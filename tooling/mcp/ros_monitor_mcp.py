@@ -2,7 +2,7 @@
 
 라즈베리 파이 rosbridge(JSON v2)에 대시보드와 같은 규칙으로 붙는다(dashboard/src/robot.cpp · CONTRIBUTING.md):
 속도는 /teleop/cmd_vel(파이 cmd_watchdog 경유) · 비상 정지 /teleop/estop · Nav2 목표 /goal_pose · 취소 /dashboard/nav_cancel ·
-지도 초기화 /dashboard/map_reset · 초기 위치 /dashboard/initialpose · 직진 /straight_drive/goal · 가감속 /cmd_watchdog set_parameters.
+지도 초기화 /dashboard/map_reset · 초기 위치 /dashboard/initialpose · 직진 /straight_drive/goal · 가감속 · 속도 한계 /cmd_watchdog set_parameters.
 구독은 throttle 을 건다(파이 rosbridge 는 한 코어가 상한).
 
     set UV_CACHE_DIR=E:\\Temp\\uv-cache
@@ -28,7 +28,9 @@ except ImportError:   # mcp 2.x 는 FastMCP 를 MCPServer 로 바꿨다(생성�
     from mcp.server.mcpserver import MCPServer as FastMCP
 
 DEFAULT_HOST, DEFAULT_PORT = "192.168.1.201", 9090
-MAX_V, MAX_W = 0.25, 0.6          # 펌웨어 한계(대시보드 kMaxLinear · kMaxAngular)
+MAX_V, MAX_W = 0.25, 0.6          # 워치독 속도 한계를 읽지 못할 때 drive 의 상한(Nav2 최대와 같다)
+# 워치독 속도 한계(tooling/rpi/robot_link/speed_limits.py) — 이름: 펌웨어 한계. 범위는 0 ~ 펌웨어 한계
+LIMIT_FIRMWARE = {"max_forward": 0.35, "max_reverse": 0.35, "max_angular": 0.8}
 MAX_DRIVE_S = 5.0
 MAX_STRAIGHT_M = 2.0              # 대시보드 kMaxStraight
 # 토픽별 throttle 하한(ms) — 대시보드 RosBridge 표와 같다
@@ -347,6 +349,17 @@ def build(args):
         finally:
             bridge.motion = None
 
+    async def read_limits():
+        """워치독 속도 한계 {이름: 값}. 옛 워치독(파라미터 없음)이거나 응답이 없으면 None."""
+        try:
+            vals = (await bridge.call("/cmd_watchdog/get_parameters", {"names": list(LIMIT_FIRMWARE)}, timeout=3))["values"]
+        except Exception:
+            return None
+        # 3 = PARAMETER_DOUBLE, 2 = INTEGER(Foxy 는 `ros2 param set ... 0` 이면 정수로 바뀐다)
+        if len(vals) != len(LIMIT_FIRMWARE) or any(v.get("type") not in (2, 3) for v in vals):
+            return None
+        return {k: float(v["double_value"] if v["type"] == 3 else v["integer_value"]) for k, v in zip(LIMIT_FIRMWARE, vals)}
+
     # ---- 읽기 도구 ------------------------------------------------------------------------------
     @mcp.tool()
     async def robot_status() -> dict:
@@ -370,6 +383,7 @@ def build(args):
                 except Exception as e:
                     wd["ramp_enabled"] = None
                     wd["ramp_error"] = str(e)
+                wd["speed_limits"] = await read_limits() or "읽지 못함(옛 워치독이면 파이 배포 필요)"
             out["watchdog"] = wd
         except Exception as e:
             out["watchdog"] = {"present": None, "error": f"rosapi 응답 없음: {e}"}
@@ -518,6 +532,19 @@ def build(args):
 
     # ---- 쓰기 도구(로봇이 움직인다) ----------------------------------------------------------------
     @mcp.tool()
+    async def get_speed_limits() -> dict:
+        """파이 cmd_watchdog 의 속도 한계: max_forward · max_reverse(m/s, 양수) · max_angular(rad/s). 모든 속도 명령
+        (대시보드 · drive · Nav2)이 워치독에서 이 값으로 잘린다. firmware 는 설정할 수 있는 상한."""
+        try:
+            await bridge.ensure()
+        except ConnectionError as e:
+            return {"ok": False, "error": str(e)}
+        lim = await read_limits()
+        if lim is None:
+            return {"ok": False, "error": "워치독이 속도 한계를 돌려주지 않음(옛 워치독이면 파이 배포 필요)", "firmware": LIMIT_FIRMWARE}
+        return {"ok": True, **lim, "firmware": LIMIT_FIRMWARE}
+
+    @mcp.tool()
     async def estop() -> dict:
         """비상 정지: /teleop/estop(가감속 없이 즉시 0) + 0 속도 ×3 + 직진 취소 + Nav2 목표 취소.
         --allow-motion 이 없어도 된다(멈추는 것은 언제나 허용). --no-publish 면 보내지 않는다."""
@@ -534,12 +561,17 @@ def build(args):
     @mcp.tool()
     async def drive(linear: float, angular: float = 0.0, duration_s: float = 1.0) -> dict:
         """속도 조종: /teleop/cmd_vel 을 10 Hz 로 duration_s(≤ 5 s) 동안 보내고 끝나면 0 을 보낸다.
-        linear m/s(앞 +, |v| ≤ 0.25) · angular rad/s(왼쪽 +, |w| ≤ 0.6) 로 자른다. 도중에 연결이 끊기면 파이 cmd_watchdog 가
-        0.5 s 뒤 멈춘다. --allow-motion 필요."""
-        v, w = clamp(linear, MAX_V), clamp(angular, MAX_W)
+        linear m/s(앞 +) · angular rad/s(왼쪽 +) 는 워치독 속도 한계(get_speed_limits, 못 읽으면 |v| ≤ 0.25 · |w| ≤ 0.6)로
+        자른다. 도중에 연결이 끊기면 파이 cmd_watchdog 가 0.5 s 뒤 멈춘다. --allow-motion 필요."""
         dur = max(0.0, min(MAX_DRIVE_S, float(duration_s) if math.isfinite(duration_s) else 0.0))
+        v = w = 0.0
 
         async def body():
+            nonlocal v, w
+            lim = await read_limits()
+            fwd, rev, wmax = (lim["max_forward"], lim["max_reverse"], lim["max_angular"]) if lim else (MAX_V, MAX_V, MAX_W)
+            v = clamp(linear, fwd if math.isfinite(linear) and linear >= 0 else rev)
+            w = clamp(angular, wmax)
             start = bridge.odom_pose()
             t0 = time.perf_counter()
             k = 0
@@ -557,8 +589,9 @@ def build(args):
                 moved = {"distance_m": round(math.hypot(end[0] - start[0], end[1] - start[1]), 3),
                          "turn_deg": round(math.degrees(math.atan2(math.sin(end[2] - start[2]), math.cos(end[2] - start[2]))), 1)}
             return {"ok": True, "linear": v, "angular": w, "duration_s": round(dur, 2), "commands": k,
-                    "clamped": v != linear or w != angular or dur != duration_s, "moved": moved, "odom_end": pose_dict(end)}
-        return await guarded(f"drive v={v} w={w}", body)
+                    "clamped": v != linear or w != angular or dur != duration_s, "limits": lim or "기본(0.25 m/s · 0.6 rad/s)",
+                    "moved": moved, "odom_end": pose_dict(end)}
+        return await guarded(f"drive {linear} {angular}", body)
 
     async def wait_nav(goal, t_sent, timeout_s):
         """끝 상태를 기다린다. /nav/status 가 있으면 그것으로, 없으면 위치로 추정한다."""
@@ -659,6 +692,30 @@ def build(args):
                 {"name": "ramp_enabled", "value": {"type": 1, "bool_value": bool(enabled)}}]}, timeout=5)
             r = (res.get("results") or [{}])[0]
             return {"ok": bool(r.get("successful")), "ramp_enabled": bool(enabled), "reason": r.get("reason") or None}
+        return await guarded(None, body)
+
+    @mcp.tool()
+    async def set_speed_limits(max_forward: float | None = None, max_reverse: float | None = None,
+                               max_angular: float | None = None) -> dict:
+        """파이 cmd_watchdog 의 속도 한계를 바꾼다(준 값만, 0 ~ 펌웨어 한계 0.35 · 0.35 m/s · 0.8 rad/s). 모든 속도 명령에
+        적용되고 파이에 저장돼 재부팅 뒤에도 남는다. 한계를 올리는 것은 로봇을 더 빨리 달리게 하므로 반드시 사람에게
+        값을 말하고 확인을 받은 뒤 부른다. --allow-motion 필요."""
+        want = {k: v for k, v in (("max_forward", max_forward), ("max_reverse", max_reverse), ("max_angular", max_angular))
+                if v is not None}
+        if not want:
+            return {"ok": False, "error": "바꿀 값이 없음(max_forward · max_reverse · max_angular 중 하나 이상)"}
+        bad = [f"{k}={v}" for k, v in want.items() if not (math.isfinite(v) and 0.0 <= v <= LIMIT_FIRMWARE[k])]
+        if bad:
+            return {"ok": False, "error": f"범위(0 ~ 펌웨어 한계 {LIMIT_FIRMWARE}) 밖: {', '.join(bad)}"}
+
+        async def body():
+            res = await bridge.call("/cmd_watchdog/set_parameters", {"parameters": [
+                {"name": k, "value": {"type": 3, "double_value": float(v)}} for k, v in want.items()]}, timeout=5)
+            results = res.get("results") or []
+            failed = {k: r.get("reason") or "거부" for k, r in zip(want, results) if not r.get("successful")}
+            if len(results) != len(want):
+                failed = failed or {"*": "응답 없음"}
+            return {"ok": not failed, "requested": want, "failed": failed or None, "now": await read_limits()}
         return await guarded(None, body)
 
     @mcp.tool()

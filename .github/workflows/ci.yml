@@ -36,4 +36,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: python -m unittest tooling/rpi/robot_link/test_obstacle_guard.py tooling/nav/test_nav_goal_bridge.py
+      - run: python -m unittest tooling/rpi/robot_link/test_obstacle_guard.py tooling/rpi/robot_link/test_limits.py tooling/nav/test_nav_goal_bridge.py

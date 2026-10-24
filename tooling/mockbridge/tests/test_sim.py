@@ -35,6 +35,32 @@ def test_watchdog_subscribers(mock, client):
     assert c2.call("/rosapi/subscribers", {"topic": "/teleop/cmd_vel"})["values"]["subscribers"] == []
 
 
+def test_watchdog_speed_limits(mock, client):
+    c = client(mock().port)
+    names = ["max_forward", "max_reverse", "max_angular"]
+    vals = c.call("/cmd_watchdog/get_parameters", {"names": names})["values"]["values"]
+    assert [(v["type"], v["double_value"]) for v in vals] == [(3, 0.25), (3, 0.15), (3, 0.6)]
+    r = c.call("/cmd_watchdog/set_parameters", {"parameters": [
+        {"name": "max_forward", "value": {"type": 3, "double_value": 0.05}},
+        {"name": "max_reverse", "value": {"type": 3, "double_value": 0.03}},
+        {"name": "max_angular", "value": {"type": 3, "double_value": 0.9}}]})["values"]["results"]
+    assert [x["successful"] for x in r] == [True, True, False]   # 0.9 > 펌웨어 0.8
+    c.send(op="advertise", topic="/teleop/cmd_vel", type="geometry_msgs/Twist")
+    c.send(op="subscribe", topic="/odom", type="nav_msgs/Odometry")
+
+    def speeds(v):
+        for _ in range(10):
+            c.send(op="publish", topic="/teleop/cmd_vel", msg=twist(v))
+            time.sleep(0.1)
+        return [m["msg"]["twist"]["twist"]["linear"]["x"] for _, m in c.collect(0.3, lambda m: m.get("topic") == "/odom")]
+    fwd = speeds(0.1)
+    assert fwd and 0.03 < max(fwd) <= 0.055, fwd
+    rev = speeds(-0.1)
+    assert rev and -0.035 <= min(rev) < -0.01, rev
+    c2 = client(mock("--no-speed-limits").port)
+    assert c2.call("/cmd_watchdog/get_parameters", {"names": names})["values"]["values"][0]["type"] == 0
+
+
 def statuses(c, secs):
     out = []
     for _, m in c.collect(secs, lambda m: m.get("topic") == "/straight_drive/status"):
