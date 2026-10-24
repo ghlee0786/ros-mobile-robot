@@ -15,13 +15,13 @@ from ament_index_python.packages import get_package_share_directory
 SRC = os.path.join(get_package_share_directory('nav2_bringup'), 'params', 'nav2_params.yaml')
 DST = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nav2_params_robot.yaml')
 
-V_MAX, W_MAX, RADIUS = 0.2, 0.5, 0.25
+V_MAX, W_MAX, RADIUS = 0.25, 0.6, 0.25
 # The RPLIDAR sees the robot's own frame/posts at 0.14-0.19 m (nothing real within 0.25-0.45 m);
 # returns closer than this are ignored so the robot is not an obstacle to itself.
 SELF_HIT_RANGE = 0.3
 RPP = {
     'plugin': 'nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController',
-    'desired_linear_vel': 0.15,
+    'desired_linear_vel': 0.22,
     'lookahead_dist': 0.4, 'min_lookahead_dist': 0.25, 'max_lookahead_dist': 0.7,
     'lookahead_time': 2.0, 'use_velocity_scaled_lookahead_dist': False,
     'transform_tolerance': 0.5,
