@@ -66,7 +66,7 @@ class CmdWatchdog(Node):
         self.declare_parameter('min_turn_w', 0.20)  # rad/s, smallest in-place turn the wheels follow (0 = off)
         self.declare_parameter('obstacle_guard', True)
         self.declare_parameter('stop_dist', 0.35)        # m from the LiDAR (base_link) to stop at, ~0.1 m past the bumper
-        self.declare_parameter('guard_latency', 0.2)     # s, scan age + loop + Pico reaction
+        self.declare_parameter('guard_latency', 0.25)    # s, measured: scan age up to 0.15 + loop 0.05 + Pico 0.03
         self.declare_parameter('guard_half_width_deg', 35.0)
         self.declare_parameter('scan_timeout', 0.5)      # s
         self.declare_parameter('blind_speed', 0.10)      # m/s cap while the scan is missing
