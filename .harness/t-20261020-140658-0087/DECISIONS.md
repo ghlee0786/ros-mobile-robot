@@ -71,3 +71,9 @@
 - chosen: 창 제목 · 머리줄 · 팔레트는 'ROS 모니터'. --help 설명 첫 줄만 'ROS 모니터(로봇 대시보드)' 로 옛 이름을 함께 둔다(exe 이름이 robot_dashboard 라서).
 - why: 사용자 요구가 화면 제목 변경이다.
 - effect: Main.qml 두 곳 · main.cpp 한 곳.
+
+## 13. 품질 규칙(suppress)이 지적한 harness/lib/quality.js:16 을 고치지 않음
+- options: 그 줄을 고침 · 그대로 두고 이유를 적음
+- chosen: 그대로 둠
+- why: 이 작업이 더한 줄이 아니다 — main 의 "chore(harness): 자동 갱신 5.8.0 → 6.2.0"(5884147)으로 들어온 하네스 자체 파일이고, 그 줄은 억제 주석이 아니라 억제 주석을 찾는 정규식(SUPPRESS) 정의라서 자기 자신에 걸린 것이다. 하네스 코드는 이 작업 범위 밖이다. 이 작업이 바꾼 파일(dashboard · installer · tooling/release)에는 eslint-disable · noqa · type: ignore 같은 억제가 없다.
+- effect: 없음. 하네스 쪽에서 규칙 파일을 검사 대상에서 빼면 된다.
