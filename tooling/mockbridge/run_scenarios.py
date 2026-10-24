@@ -28,7 +28,7 @@
   state op 는 compare() 의 것 + exists · missing. trace 의 t 는 서버의 첫 연결 기준 초로 바꿔 판정한다(장애 시각도 첫 연결 기준).
   server_args · dashboard_args · actions 의 문자열 값(shot · value · args 안의 문자열) 안의 {here}(이 폴더) ·
   {out}(시나리오 결과 폴더, 대시보드 둘째부터는 그 dash<i> 폴더) · {pi_host} 는 바꿔 넣는다.
-  server_log 규칙: max_abs · count_ge · count_le · within_ms_after_action · zero_after_action · throttle_eq ·
+  server_log 규칙: max_abs · value_between · count_ge · count_le · within_ms_after_action · zero_after_action · throttle_eq ·
   rate_between · resubscribe_within · goal_inverse (각 함수 docstring 참고).
 """
 import argparse
@@ -246,6 +246,12 @@ def check_server_log(recs, rules, actions_done=None):
             bad = [v for v in vals if isinstance(v, (int, float)) and abs(v) > r["value"] + 1e-9]
             if bad:
                 fails.append(f"{r['topic']} {r['field']} 최대 {max(map(abs, bad))} > {r['value']}")
+        elif rule == "value_between":
+            # topic 의 rx publish 마다 min <= msg.field <= max (앞 · 뒤 한계가 다를 때: 속도 한계의 전진 · 후진)
+            vals = [_field(x.get("msg", {}), r["field"]) for x in recs if _match(x, r)]
+            bad = [v for v in vals if isinstance(v, (int, float)) and not r["min"] - 1e-9 <= v <= r["max"] + 1e-9]
+            if bad:
+                fails.append(f"{r['topic']} {r['field']} 범위 {r['min']}..{r['max']} 밖 {len(bad)} 개(예 {bad[0]})")
         elif rule in ("count_ge", "count_le"):
             # op(기본 publish) · topic · where 가 맞는 기록 수
             n = sum(1 for x in recs if _match(x, r))

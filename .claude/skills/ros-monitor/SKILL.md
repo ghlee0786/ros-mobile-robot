@@ -22,10 +22,11 @@ ros-monitor MCP 서버(`tooling/mcp/ros_monitor_mcp.py`)가 파이 rosbridge 에
 | 쓰기(로봇이 움직인다) | 하는 일 |
 |---|---|
 | `send_nav_goal(x, y, yaw_deg, wait, timeout_s)` | Nav2 목표(map 프레임). 기다리면 끝 상태 · 한국어 이유 |
-| `drive(linear, angular, duration_s)` | 10 Hz 속도 명령(≤ 0.25 m/s · 0.6 rad/s · 5 s), 끝나면 0 |
+| `drive(linear, angular, duration_s)` | 10 Hz 속도 명령(워치독 속도 한계 안 · ≤ 5 s), 끝나면 0 |
 | `straight(distance_m)` | IMU 직진(\|d\| ≤ 2 m, 음수 = 후진) |
 | `cancel_nav` · `estop` | 목표 취소 + 0 속도 / 비상 정지 — 허용 없이도 언제나 된다 |
 | `set_ramp(enabled)` · `reset_map` · `set_initial_pose(x, y, yaw_deg)` | 가감속 / 지도 초기화 / AMCL 초기 위치 |
+| `get_speed_limits` · `set_speed_limits(max_forward, max_reverse, max_angular)` | 워치독 속도 한계(모든 속도 명령에 적용, 파이에 저장) 읽기 / 바꾸기 — 바꾸기 전에 값을 사람에게 말하고 확인받는다 |
 
 움직이는 도구는 서버가 `--allow-motion` 으로 시작했을 때만 된다. 거부되면 그 이유(`refused`)를 그대로 전하고, 몰래 우회하지 않는다.
 

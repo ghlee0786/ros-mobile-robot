@@ -30,6 +30,12 @@ FocusScope {
     readonly property int userSeriesCount: userGraphPanel.objs.length
     readonly property string userLastPath: userGraphPanel.objs.length ? userGraphPanel.objs[userGraphPanel.objs.length - 1].basePath : ""
     readonly property int userLastCount: userGraphPanel.objs.length ? userGraphPanel.objs[userGraphPanel.objs.length - 1].count : 0
+    // 시험 상태용: 속도 한계 패널(겹침 없음 · 지원 여부 · 최대 전진 값 · 고정 · 줄마다 경고)
+    readonly property bool limitsFit: limitsPanel.fits && limitsPanel.width <= width - 2 * Theme.sp5 + 0.5
+    readonly property int limitsSupport: robot.limits.support
+    readonly property real limitFwd: robot.limits.maxForward
+    readonly property bool limitFwdSliderEnabled: limitsPanel.fwdSliderEnabled
+    readonly property string limitsWarn: robot.limits.rows.map(r => r.warn ? 1 : 0).join(",")
     function showLockHint() { if (!robot.teleopArmed) { lockHint = true; lockHintTimer.restart() } }
     Timer { id: lockHintTimer; interval: 3000; onTriggered: page.lockHint = false }
     // 입력칸에 포커스가 있으면 입력칸이 처리하지 않은 키(↑↓ 등)라도 조종으로 쓰지 않는다
@@ -97,6 +103,9 @@ FocusScope {
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            // 3D 뷰 도구 줄의 폭(약 960 px)이 최소 폭으로 올라가면 ColumnLayout 이 아래 조종 바까지 그만큼 넓혀
+            // 1280 창에서 비상 정지 · 속도 한계 끝이 화면 밖으로 밀렸다. 위 줄만 넘치게 두고 조종 바는 창 폭에 맞춘다.
+            Layout.minimumWidth: 0
             Layout.margins: 16
             Layout.leftMargin: 20
             Layout.rightMargin: 20
@@ -337,100 +346,117 @@ FocusScope {
         // ---- 조종 ----
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: foot.implicitHeight + 32
+            implicitHeight: footCol.implicitHeight + 2 * Theme.sp3
             color: Theme.surface1
             Rectangle { width: parent.width; height: 1; color: Theme.borderDefault }
-            RowLayout {
-                id: foot
-                // 1280 · 1440 · 1920 모두 비상 정지까지 한 줄에 들어가게: 좁으면 조이스틱 글자를 숨긴다
-                readonly property bool narrow: width < 1300
+            ColumnLayout {
+                id: footCol
                 anchors.fill: parent
                 anchors.leftMargin: Theme.sp5
                 anchors.rightMargin: Theme.sp5
-                spacing: Theme.sp4
+                anchors.topMargin: Theme.sp3
+                anchors.bottomMargin: Theme.sp3
+                spacing: Theme.sp2
 
-                Seg {
-                    options: ["키보드 조종", "자율주행", "정지"]
-                    current: robot.mode
-                    onPicked: (v) => { robot.mode = v; page.forceActiveFocus() }
-                }
-
-                Grid {
-                    columns: 3
-                    spacing: 6
-                    component Pad: Button {
-                        property real lin
-                        property real ang
-                        property string glyph
-                        width: 48; height: 48
-                        focusPolicy: Qt.NoFocus
-                        onPressed: { page.showLockHint(); robot.drive(lin, ang) }
-                        onReleased: robot.drive(0, 0)
-                        onCanceled: robot.drive(0, 0)
-                        contentItem: Text { text: glyph; color: Theme.text1; font.pixelSize: Theme.fsTitle; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        background: Rectangle { radius: Theme.rLg; color: parent.down ? Theme.surface3 : Theme.surface2; border.color: Theme.borderDefault }
-                    }
-                    Item { width: 48; height: 48 }
-                    Pad { glyph: "↑"; lin: 1 }
-                    Item { width: 48; height: 48 }
-                    Pad { glyph: "←"; ang: 1 }
-                    Pad { glyph: "K" }
-                    Pad { glyph: "→"; ang: -1 }
-                    Item { width: 48; height: 48 }
-                    Pad { glyph: "↓"; lin: -1 }
-                    Item { width: 48; height: 48 }
-                }
-
-                Joystick {
-                    objectName: "joystick"
+                // 속도 한계(파이 워치독): 조종 줄은 1280 에서도 꽉 차므로 그 위에 한 줄로 둔다
+                SpeedLimitsPanel {
+                    id: limitsPanel
+                    objectName: "limitsPanel"
+                    Layout.fillWidth: true
                     robot: page.robot
-                    showLabel: !foot.narrow
-                    onBlocked: page.showLockHint()
                 }
 
-                ArmControl { robot: page.robot }
+                RowLayout {
+                    id: foot
+                    // 1280 · 1440 · 1920 모두 비상 정지까지 한 줄에 들어가게: 좁으면 조이스틱 글자를 숨긴다
+                    readonly property bool narrow: width < 1300
+                    Layout.fillWidth: true
+                    spacing: Theme.sp4
 
-                Column {
-                    spacing: 6
-                    Text {
-                        color: Theme.text2; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
-                        text: "최대 속도 <b>" + robot.maxSpeed.toFixed(2) + " m/s</b>"
-                    }
-                    Text { text: "펌웨어 한계 0.35"; color: Theme.text3; font.pixelSize: Theme.fsSmall }
                     Seg {
-                        objectName: "rampSeg"
-                        options: ["가감속 켬", "끔"]
-                        current: robot.rampEnabled ? "가감속 켬" : "끔"
-                        enabled: robot.rampKnown
-                        opacity: enabled ? 1 : Theme.opDisabled
-                        onPicked: (v) => { robot.rampEnabled = (v === "가감속 켬"); page.forceActiveFocus() }
+                        options: ["키보드 조종", "자율주행", "정지"]
+                        current: robot.mode
+                        onPicked: (v) => { robot.mode = v; page.forceActiveFocus() }
                     }
-                    Slider {
-                        width: 170
-                        from: 0.02; to: 0.35; stepSize: 0.01
-                        value: robot.maxSpeed
-                        focusPolicy: Qt.NoFocus
-                        onMoved: robot.maxSpeed = value
+
+                    Grid {
+                        columns: 3
+                        spacing: 6
+                        component Pad: Button {
+                            property real lin
+                            property real ang
+                            property string glyph
+                            width: 48; height: 48
+                            focusPolicy: Qt.NoFocus
+                            onPressed: { page.showLockHint(); robot.drive(lin, ang) }
+                            onReleased: robot.drive(0, 0)
+                            onCanceled: robot.drive(0, 0)
+                            contentItem: Text { text: glyph; color: Theme.text1; font.pixelSize: Theme.fsTitle; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            background: Rectangle { radius: Theme.rLg; color: parent.down ? Theme.surface3 : Theme.surface2; border.color: Theme.borderDefault }
+                        }
+                        Item { width: 48; height: 48 }
+                        Pad { glyph: "↑"; lin: 1 }
+                        Item { width: 48; height: 48 }
+                        Pad { glyph: "←"; ang: 1 }
+                        Pad { glyph: "K" }
+                        Pad { glyph: "→"; ang: -1 }
+                        Item { width: 48; height: 48 }
+                        Pad { glyph: "↓"; lin: -1 }
+                        Item { width: 48; height: 48 }
                     }
-                }
 
-                ColumnLayout {   // 세 버튼을 위아래로(가로 폭을 아낀다)
-                    Layout.fillWidth: false
-                    spacing: Theme.sp1
-                    Btn { Layout.fillWidth: true; size: "sm"; text: "1 m 직진 시험"; kind: "accent"; enabled: page.canStraight; onClicked: { page.showLockHint(); robot.straight(1.0) } }
-                    Btn { Layout.fillWidth: true; size: "sm"; text: "1 m 후진"; enabled: page.canStraight; onClicked: { page.showLockHint(); robot.straight(-1.0) } }
-                    Btn { Layout.fillWidth: true; size: "sm"; text: robot.recording ? "기록 중지 " + robot.recordElapsed : "기록 시작"; enabled: page.canRecord; onClicked: robot.toggleRecording() }
-                }
+                    Joystick {
+                        objectName: "joystick"
+                        robot: page.robot
+                        showLabel: !foot.narrow
+                        onBlocked: page.showLockHint()
+                    }
 
-                Item { Layout.fillWidth: true }
+                    ArmControl { robot: page.robot }
 
-                Btn {
-                    text: "비상 정지"
-                    kind: "danger"
-                    implicitHeight: 56
-                    leftPadding: 28; rightPadding: 28
-                    font.pixelSize: Theme.fsTitle; font.bold: true
-                    onClicked: robot.estop()
+                    Column {
+                        spacing: 6
+                        Text {
+                            color: Theme.text2; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
+                            text: "최대 속도 <b>" + robot.maxSpeed.toFixed(2) + " m/s</b>"
+                        }
+                        Text { text: "위끝 = 최대 전진 " + robot.limits.maxForward.toFixed(2); color: Theme.text3; font.pixelSize: Theme.fsSmall }
+                        Seg {
+                            objectName: "rampSeg"
+                            options: ["가감속 켬", "끔"]
+                            current: robot.rampEnabled ? "가감속 켬" : "끔"
+                            enabled: robot.rampKnown
+                            opacity: enabled ? 1 : Theme.opDisabled
+                            onPicked: (v) => { robot.rampEnabled = (v === "가감속 켬"); page.forceActiveFocus() }
+                        }
+                        Slider {
+                            width: 170
+                            objectName: "maxSpeedSlider"
+                            from: 0.02; to: Math.max(0.02, robot.limits.maxForward); stepSize: 0.01
+                            value: robot.maxSpeed
+                            focusPolicy: Qt.NoFocus
+                            onMoved: robot.maxSpeed = value
+                        }
+                    }
+
+                    ColumnLayout {   // 세 버튼을 위아래로(가로 폭을 아낀다)
+                        Layout.fillWidth: false
+                        spacing: Theme.sp1
+                        Btn { Layout.fillWidth: true; size: "sm"; text: "1 m 직진 시험"; kind: "accent"; enabled: page.canStraight; onClicked: { page.showLockHint(); robot.straight(1.0) } }
+                        Btn { Layout.fillWidth: true; size: "sm"; text: "1 m 후진"; enabled: page.canStraight; onClicked: { page.showLockHint(); robot.straight(-1.0) } }
+                        Btn { Layout.fillWidth: true; size: "sm"; text: robot.recording ? "기록 중지 " + robot.recordElapsed : "기록 시작"; enabled: page.canRecord; onClicked: robot.toggleRecording() }
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Btn {
+                        text: "비상 정지"
+                        kind: "danger"
+                        implicitHeight: 56
+                        leftPadding: 28; rightPadding: 28
+                        font.pixelSize: Theme.fsTitle; font.bold: true
+                        onClicked: robot.estop()
+                    }
                 }
             }
         }
@@ -451,7 +477,7 @@ FocusScope {
         visible: page.lockHint && !robot.teleopArmed
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 140
+        anchors.bottomMargin: 184   // 조종 바(속도 한계 줄 포함) 위
         width: hintText.implicitWidth + 2 * Theme.sp4
         height: Theme.hMd
         radius: Theme.rXl

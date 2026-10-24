@@ -6,7 +6,7 @@ set -euo pipefail
 HOST="${1:-rpi}"
 SRC="$(cd "$(dirname "$0")/robot_link" && pwd)"
 UNITS="robot-rosbridge robot-pingpong robot-cmd-watchdog robot-odom-tf robot-straight-drive robot-bringup robot-nav-relay robot-scan-compact"
-FILES="ros_env.sh pingpong_node.py cmd_watchdog_node.py odom_tf_node.py speed_probe.py straight_drive_node.py 50-robot-link-relink nav_relay.sh nav_relay_topics.sh scan_compact_node.py obstacle_guard.py"
+FILES="ros_env.sh pingpong_node.py cmd_watchdog_node.py odom_tf_node.py speed_probe.py straight_drive_node.py 50-robot-link-relink nav_relay.sh nav_relay_topics.sh scan_compact_node.py obstacle_guard.py speed_limits.py"
 
 ssh "$HOST" 'mkdir -p ~/robot_link/logs'
 for f in $FILES; do tr -d '\r' < "$SRC/$f" | ssh "$HOST" "cat > ~/robot_link/$f"; done

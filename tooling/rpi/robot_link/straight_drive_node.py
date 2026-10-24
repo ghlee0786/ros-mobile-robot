@@ -13,6 +13,8 @@ Heading  = alpha * (IMU yaw change) + (1 - alpha) * (encoder odom theta change),
 Steering = w = k_heading * heading_error - k_cross * cross_track_error * sign(v), clamped.
 Inputs   : /odom (Pico encoder odometry via control_node), /imu/data_raw (orientation).
 Each run is logged to ~/robot_link/logs/straight_<time>.csv for tuning.
+속도 한계: 이 노드는 cmd_watchdog 를 거치지 않고 /cmd_vel 에 바로 쓰므로, 목표마다 워치독이 저장한 한계 파일
+(~/robot_link/limits.yaml, speed_limits.py)을 읽어 속도(전진 · 후진)와 회전을 그 안으로 자른다.
 """
 import csv
 import json
@@ -26,6 +28,8 @@ from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
 from std_msgs.msg import Empty, String
+
+import speed_limits
 
 
 def yaw_of(q):
@@ -55,6 +59,7 @@ class StraightDrive(Node):
         self.sensor_timeout = p('sensor_timeout', 1.5).value
         self.use_imu = p('use_imu', True).value
         self.log_dir = os.path.expanduser(p('log_dir', '~/robot_link/logs').value)
+        self.limits_path = p('limits_file', speed_limits.DEFAULT_PATH).value
 
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.status_pub = self.create_publisher(String, '/straight_drive/status', 10)
@@ -89,7 +94,12 @@ class StraightDrive(Node):
         if self.odom is None or time.monotonic() - self.odom_t > self.sensor_timeout:
             self.report({'state': 'rejected', 'reason': 'no /odom'})
             return
-        speed = min(abs(msg.y) or self.default_speed, self.max_speed)
+        lim = speed_limits.load(self.limits_path)   # 대시보드가 방금 바꿨을 수 있으니 목표마다 읽는다
+        speed = min(abs(msg.y) or self.default_speed, self.max_speed,
+                    lim['max_forward'] if msg.x >= 0 else lim['max_reverse'])
+        if speed <= 0:
+            self.report({'state': 'rejected', 'reason': 'speed limit 0'})
+            return
         x0, y0, th0 = self.odom
         if self.use_imu and self.imu_sub is None:
             self.imu_yaw = None
@@ -99,7 +109,7 @@ class StraightDrive(Node):
             'x0': x0, 'y0': y0, 'th0': th0, 'imu0': None,
             # Wait briefly for the first IMU sample (the subscription was just created).
             'imu_wait_until': time.monotonic() + 0.6 if self.use_imu else None,
-            't0': time.monotonic(), 'v': 0.0,
+            't0': time.monotonic(), 'v': 0.0, 'w_max': min(self.max_angular, lim['max_angular']),
             'px': x0, 'py': y0, 'along': 0.0, 'cross': 0.0,
             'timeout': abs(msg.x) / speed * 2.0 + 5.0,
         }
@@ -161,7 +171,7 @@ class StraightDrive(Node):
         g['v'] = v
 
         w =self.k_heading * e_head - self.k_cross * cross * g['dir']
-        w = max(-self.max_angular, min(self.max_angular, w))
+        w = max(-g['w_max'], min(g['w_max'], w))
 
         cmd = Twist()
         cmd.linear.x = v * g['dir']

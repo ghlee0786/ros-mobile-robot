@@ -2,6 +2,7 @@
 
 #include "msgparse.h"
 #include "rosbridge.h"
+#include "speedlimits.h"
 #include "topicmodel.h"
 
 #include <QElapsedTimer>
@@ -83,6 +84,8 @@ class Robot : public QObject
     // 파이 cmd_watchdog 의 가감속 프로파일(ramp_enabled). rampKnown 은 파이에서 값을 읽었는지.
     Q_PROPERTY(bool rampEnabled READ rampEnabled WRITE setRampEnabled NOTIFY rampChanged)
     Q_PROPERTY(bool rampKnown READ rampKnown NOTIFY rampChanged)
+    // 파이 cmd_watchdog 의 속도 한계(최대 전진 · 후진 · 회전). maxSpeed · 키보드 회전 배율은 이 안으로 묶인다.
+    Q_PROPERTY(SpeedLimits *limits READ limits CONSTANT)
     Q_PROPERTY(int armIdleMs READ armIdleMs WRITE setArmIdleMs NOTIFY teleopArmedChanged)   // 무입력 자동 잠금(ms), 시험에서 줄인다
     Q_PROPERTY(bool straightRunning READ straightRunning NOTIFY straightChanged)
     Q_PROPERTY(QVariantMap straightResult READ straightResult NOTIFY straightChanged)
@@ -102,6 +105,7 @@ public:
     ~Robot() override;
 
     RosBridge *bridge() { return &m_bridge; }
+    SpeedLimits *limits() { return &m_limits; }
     double x() const { return m_x; }
     double y() const { return m_y; }
     double theta() const { return m_theta; }
@@ -243,6 +247,7 @@ private:
     void updateStatus();
     void addEvent(const QString &text);
     void sendTwist(double v, double w);
+    void sendTeleop();   // 키보드 · 조이스틱 입력(m_lin · m_ang)을 최대 속도와 속도 한계로 잘라 보낸다
     void sendStop();
     void noteDropped();
     void cancelGoal();
@@ -252,6 +257,7 @@ private:
     void stopRecording();
 
     RosBridge m_bridge;
+    SpeedLimits m_limits{m_bridge};
     QTimer m_ui, m_status, m_teleop;
     QElapsedTimer m_clock;
     bool m_dirty = false, m_scanDirty = false;

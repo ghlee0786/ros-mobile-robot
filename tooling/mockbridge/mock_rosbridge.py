@@ -46,6 +46,8 @@ def parser():
     g = p.add_argument_group("시뮬레이션")
     g.add_argument("--room", default=os.path.join(HERE, "rooms", "default.json"), help="방 JSON")
     g.add_argument("--no-watchdog", action="store_true", help="cmd_watchdog 노드가 없는 것처럼(/teleop/cmd_vel 무시)")
+    g.add_argument("--no-speed-limits", action="store_true",
+                   help="cmd_watchdog 에 속도 한계 파라미터(max_forward · max_reverse · max_angular)가 없는 것처럼(옛 워치독)")
     g.add_argument("--left-gain", type=float, default=0.95, help="왼쪽 바퀴가 지령의 몇 배로 도는지")
     g.add_argument("--encoder-scale", type=float, default=1.01, help="오른쪽 엔코더 배율")
     g.add_argument("--imu-offset", type=float, default=1.0, help="IMU yaw 고정 오프셋(rad)")
