@@ -19,4 +19,5 @@ start local_ in  --connect "$HOST" --port $NAV_RELAY_TO_PC_PORT "${NAV_RELAY_TO_
 start local_ out --connect "$HOST" --port $NAV_RELAY_TO_ROBOT_PORT "${NAV_RELAY_TO_ROBOT[@]}"
 start bash -c 'source tooling/wsl/ros_local_env.sh >/dev/null; exec python3 tooling/nav/map_odom_pub.py'
 start bash -c 'source tooling/wsl/ros_local_env.sh >/dev/null; exec python3 tooling/nav/nav_cancel_bridge.py'
+start bash -c 'source tooling/wsl/ros_local_env.sh >/dev/null; exec python3 tooling/nav/nav_goal_bridge.py'
 wait

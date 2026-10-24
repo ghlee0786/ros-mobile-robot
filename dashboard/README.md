@@ -30,6 +30,9 @@ Qt 를 다른 곳에 깔았으면 `set QT_ROOT=<Qt 폴더>` 뒤에 실행한다.
   `/goal_pose`(geometry_msgs/PoseStamped, map→odom TF 가 있으면 map 프레임)로 보내고 모드를 `자율주행` 으로 바꾼다
   (Nav2 속도도 `/teleop/cmd_vel` 로 나와 키보드 조종의 0 속도와 겹치지 않게). `정지` · 비상 정지는
   `/navigate_to_pose/_action/cancel_goal` 로 Nav2 목표를 모두 취소한다.
+  결과는 PC 의 `tooling/nav/nav_goal_bridge.py` 가 `/nav/status`(JSON)로 알린다 — 목표를 보낸 뒤 자율주행 중에만
+  500 ms throttle 로 구독해 3D 뷰에 계획 중 · 이동 중(남은 거리 · 예상 시간) · 도착 · 실패 · 취소를 보이고 이벤트 로그에 남긴다.
+  실패하면 위쪽에 빨간 배너(이유 + 할 일)와 `지도 초기화` 버튼이 뜬다.
 - 카메라 · 표시 레이어 · 창 크기는 다음 실행에도 그대로다(QSettings, `HKCU\Software\RobotDashboard`).
 - 연결이나 `/link/heartbeat` 가 3 s 넘게 끊기면 테두리가 빨갛고 3D 가 회색으로 멈춘다. 3 s 마다 다시 연결한다.
 

@@ -49,6 +49,11 @@ constexpr char kInitialPoseTopic[] = "/dashboard/initialpose";
 // 토픽 목록에 있으면 LiDAR 센서는 /scan 대신 이것을 구독한다. throttle 하한은 /scan 과 같다(없음).
 constexpr char kScanCompact[] = "/scan_compact";
 constexpr char kScanCompactType[] = "std_msgs/UInt16MultiArray";
+// PC nav_goal_bridge 의 Nav2 목표 상태(JSON). 진행 중 2 Hz 로 오지만 파이 rosbridge 는 한 코어가 상한이라
+// 목표를 보낸 뒤 · 자율주행 중에만 500 ms throttle 로 구독한다.
+constexpr char kNavStatus[] = "/nav/status";
+constexpr int kNavStatusThrottleMs = 500;
+constexpr qint64 kNavSilentMs = 5000;   // 이만큼 상태가 오지 않으면 nav_goal_bridge 를 의심한다
 
 } // namespace
 
@@ -200,6 +205,9 @@ void Robot::resetSession()
     m_straightResult.clear();
     m_straightTrack.clear();
     m_targetLine.clear();
+    m_navStatus.clear();
+    m_navSeq = 0;
+    emit navStatusChanged();
     m_dirty = true;
     emit trailChanged();
     emit planChanged();
@@ -345,6 +353,8 @@ void Robot::onMessage(const QString &topic, const QJsonObject &msg)
         onPlan(msg);
     else if (topic == "/straight_drive/status")
         onStraight(msg);
+    else if (topic == kNavStatus)
+        onNavStatus(msg);
     if (m_recording && m_recordTopics.contains(topic))
         record(topic, msg);
 }
@@ -608,6 +618,37 @@ void Robot::onStraight(const QJsonObject &m)
     emit straightChanged();
 }
 
+void Robot::onNavStatus(const QJsonObject &m)
+{
+    QVariantMap st = parseNavStatus(m["data"].toString());
+    if (!navStatusMatches(st, m_navGoalX, m_navGoalY, m_navSeq))
+        return;   // 이전 목표(끝난 상태는 5 s 마다 다시 온다) 또는 다른 곳(MCP 등)에서 보낸 목표
+    m_navSeq = st["seq"].toInt();
+    setNavStatus(st);
+}
+
+void Robot::setNavStatus(const QVariantMap &st)
+{
+    const QString ev = navStatusEvent(m_navStatus, st);
+    if (!ev.isEmpty())
+        addEvent(ev);
+    m_navStatus = st;
+    emit navStatusChanged();
+}
+
+// 자율주행에서 벗어나면 구독을 끊는다. 진행 중이던 목표는 cancelGoal 로 취소되지만 그 결과는 더 받지 않으므로 여기서 취소로 둔다.
+void Robot::stopNavStatus()
+{
+    m_bridge.want(kNavStatus, "std_msgs/String", "nav", false);
+    const QString s = m_navStatus.value("state").toString();
+    if (s == "sent" || s == "planning" || s == "running") {
+        QVariantMap st = m_navStatus;
+        st["state"] = "canceled";
+        st["text"] = "취소됨";
+        setNavStatus(st);
+    }
+}
+
 // ---- 상태 표 (2 Hz) ---------------------------------------------------------------------
 
 void Robot::updateStatus()
@@ -733,6 +774,15 @@ void Robot::updateStatus()
     }
     if (!conn)
         m_watchdogOk = false;
+    if (m_navStatus.value("state").toString() == "sent" && m_navSent.elapsed() > kNavSilentMs
+        && !m_navStatus.value("silent").toBool()) {
+        QVariantMap st = m_navStatus;
+        st["silent"] = true;
+        st["text"] = "보냄 — Nav2 상태(/nav/status)가 오지 않습니다 (PC 의 nav_goal_bridge · run_bridge.sh 확인)";
+        m_navStatus = st;
+        emit navStatusChanged();
+        addEvent("Nav2 상태가 5 s 동안 오지 않음 — PC 의 nav_goal_bridge 확인");
+    }
 
     if (m_recording && m_flushClock.elapsed() >= 1000) {   // 기록 파일은 1 s 마다 디스크로
         m_flushClock.restart();
@@ -813,6 +863,8 @@ void Robot::setMode(const QString &m)
         m_bridge.publish("/straight_drive/cancel", {}), cancelGoal();
     else if (wasAuto)   // 자율주행에서 벗어나면 진행 중인 Nav2 목표를 취소한다(키보드 조종의 0 속도와 겹치지 않게)
         cancelGoal();
+    if (wasAuto)
+        stopNavStatus();
     addEvent("모드 " + m);
     emit modeChanged();
 }
@@ -913,6 +965,14 @@ QString Robot::sendGoal(double x, double y, double yaw)
         {"pose", QJsonObject{{"position", QJsonObject{{"x", p.x}, {"y", p.y}, {"z", 0}}},
                              {"orientation", quatFromYaw(p.yaw)}}}});
     addEvent(QString("이동 목표 %1 (%2, %3) %4°").arg(frame).arg(p.x, 0, 'f', 2).arg(p.y, 0, 'f', 2).arg(qRadiansToDegrees(p.yaw), 0, 'f', 0));
+    // 결과는 PC nav_goal_bridge 가 /nav/status 로 알린다. 이 목표의 상태만 받도록 목표와 그때까지의 seq 를 둔다.
+    m_navGoalX = p.x, m_navGoalY = p.y;
+    if (m_navStatus.contains("seq"))
+        m_navSeq = m_navStatus["seq"].toInt() + 1;
+    m_navSent.start();
+    m_navStatus = {{"state", "sent"}, {"text", "보냄 — Nav2 응답 기다리는 중"}, {"distance", -1}, {"eta", -1}};
+    emit navStatusChanged();
+    m_bridge.want(kNavStatus, "std_msgs/String", "nav", true, kNavStatusThrottleMs);
     return {};
 }
 

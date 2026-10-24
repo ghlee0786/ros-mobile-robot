@@ -23,6 +23,9 @@ ColumnLayout {
     property bool goalDragging: false
     property string goalError: ""   // 목표를 보내지 않은 이유(잠김 · 정지 모드 · 끊김), 몇 초 보이고 사라진다
     Timer { id: goalErrorTimer; interval: 6000; onTriggered: root.goalError = "" }
+    // 보낸 목표의 Nav2 진행(robot.navStatus: sent · planning · running · succeeded · failed · canceled)
+    readonly property string navState: robot.navStatus.state || ""
+    readonly property bool goalShown: goalA !== null && !goalDragging && tool === "" && !goalError
     property var initA: null      // AMCL 초기 위치 (끄는 동안, odom 프레임 m)
     property real initYaw: 0      // rad
     property bool initDragging: false
@@ -737,18 +740,57 @@ ColumnLayout {
             }
         }
 
+        // ---- Nav2 실패: 이유 + 지도 초기화 (출발점이 막힌 실패가 가장 흔하다) ----
+        // 이유는 "원인 — 할 일" 꼴이다. 한 줄이면 레이어 패널 · 뷰 큐브와 겹쳐 배너에는 원인, 아래 줄에 할 일을 둔다.
+        Column {
+            objectName: "navFailBanner"
+            readonly property var parts: (robot.navStatus.text || "").split(" — ")
+            visible: root.navState === "failed"
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            anchors.topMargin: 14
+            spacing: Theme.sp1
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Theme.sp2
+                Banner {
+                    active: parent.parent.visible
+                    icon: "qrc:/icons/octagon-alert.svg"
+                    text: "Nav2 " + parent.parent.parts.slice(0, 2).join(" — ")
+                }
+                Btn { text: "지도 초기화"; size: "sm"; kind: "danger"; onClicked: robot.resetMap() }
+            }
+            Rectangle {
+                visible: hint.text !== ""
+                anchors.horizontalCenter: parent.horizontalCenter
+                radius: Theme.rLg; color: Theme.hudFill
+                width: hint.implicitWidth + 24; height: hint.implicitHeight + 12
+                Text {
+                    id: hint
+                    anchors.centerIn: parent
+                    text: parent.parent.parts.slice(2).join(" — ")
+                    color: Theme.dangerText; font.pixelSize: Theme.fsSmall
+                }
+            }
+        }
+
         // ---- 거리 측정 · 이동 목표 · 초기 위치 안내 ----
         Rectangle {
             visible: root.tool !== "" || root.goalA !== null
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             anchors.margins: 14
-            radius: Theme.rLg; color: Theme.hudFill; border.color: Theme.warnSubtle
+            radius: Theme.rLg; color: Theme.hudFill
+            border.color: root.goalShown && root.navState === "failed" ? Theme.dangerBorder : Theme.warnSubtle
             width: mt.implicitWidth + 28; height: mt.implicitHeight + 20
             Text {
                 id: mt
+                objectName: "goalHudText"
                 anchors.centerIn: parent
-                color: root.tool === "초기 위치" ? Theme.initialPose : Theme.goalDrag
+                color: root.tool === "초기 위치" ? Theme.initialPose
+                     : !root.goalShown ? Theme.goalDrag
+                     : root.navState === "failed" ? Theme.dangerText
+                     : root.navState === "succeeded" ? Theme.okText : Theme.goalDrag
                 font.family: root.mono; font.pixelSize: Theme.fsBody; textFormat: Text.StyledText
                 text: root.tool === "초기 위치" ? (root.initDragging
                           ? "초기 위치 (" + root.initA.x.toFixed(2) + ", " + root.initA.y.toFixed(2) + ") m · " + (root.initYaw * 180 / Math.PI).toFixed(0) + "°"
@@ -758,7 +800,7 @@ ColumnLayout {
                     : root.tool === "목표" && !root.goalDragging && !robot.teleopArmed ? "① 조종이 잠겨 있습니다 — 먼저 <b>Ctrl+Enter</b>(또는 조종 바의 잠금 해제)<br>② 그다음 목표 위치를 누른 채 바라볼 방향으로 끌고 놓으세요 (Nav2)"
                     : root.tool === "목표" && !root.goalDragging ? "목표 위치를 누른 채 바라볼 방향으로 끌고 놓으세요 (Nav2) — 놓는 순간 보냅니다"
                     : !root.measuring ? (root.goalA ? "이동 목표 (" + root.goalA.x.toFixed(2) + ", " + root.goalA.y.toFixed(2) + ") m · "
-                      + (root.goalYaw * 180 / Math.PI).toFixed(0) + "°" + (root.goalDragging ? "" : " · 보냄") : "")
+                      + (root.goalYaw * 180 / Math.PI).toFixed(0) + "°" + (root.goalDragging ? "" : " · " + (robot.navStatus.text || "보냄")) : "")
                     : !root.measureA ? "바닥을 클릭해 시작점을 찍으세요"
                     : !root.measureB ? "끝점을 클릭하세요"
                     : "거리 <b>" + root.measureLen.toFixed(3) + "</b> m · Δx " + (root.measureB.x - root.measureA.x).toFixed(3)

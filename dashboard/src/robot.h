@@ -88,6 +88,9 @@ class Robot : public QObject
     Q_PROPERTY(QVariantMap straightResult READ straightResult NOTIFY straightChanged)
     Q_PROPERTY(QList<QPointF> straightTrack READ straightTrack NOTIFY straightChanged)
     Q_PROPERTY(QList<QVector3D> targetLine READ targetLine NOTIFY straightChanged)
+    // 마지막 Nav2 목표의 진행(PC nav_goal_bridge 의 /nav/status, msgparse::parseNavStatus 키). 목표가 없으면 빈 맵,
+    // 보낸 뒤 첫 상태가 오기 전에는 state "sent".
+    Q_PROPERTY(QVariantMap navStatus READ navStatus NOTIFY navStatusChanged)
     // 기록
     Q_PROPERTY(bool recording READ recording NOTIFY recordChanged)
     Q_PROPERTY(QString recordPath READ recordPath NOTIFY recordChanged)
@@ -164,6 +167,7 @@ public:
     QVariantMap straightResult() const { return m_straightResult; }
     QList<QPointF> straightTrack() const { return m_straightTrack; }
     QList<QVector3D> targetLine() const { return m_targetLine; }
+    QVariantMap navStatus() const { return m_navStatus; }
     bool recording() const { return m_recording; }
     QString recordPath() const { return m_recordPath; }
     QStringList recordTopics() const { return m_recordTopics; }
@@ -215,6 +219,7 @@ signals:
     void modeChanged();
     void teleopArmedChanged();
     void straightChanged();
+    void navStatusChanged();
     void recordChanged();
     // 그래프용 표본(30 Hz): 시간 s, 바퀴 목표/실측 L·R rad/s, gyro z rad/s, accel x m/s²
     void sampled(double t, double cmdL, double cmdR, double actL, double actR, double gyroZ, double accelX);
@@ -231,6 +236,9 @@ private:
     void renderMap(double bridgeWorkerMs);
     void onPlan(const QJsonObject &m);
     void onStraight(const QJsonObject &m);
+    void onNavStatus(const QJsonObject &m);
+    void setNavStatus(const QVariantMap &st);
+    void stopNavStatus();
     void placeMap();
     void updateStatus();
     void addEvent(const QString &text);
@@ -299,6 +307,10 @@ private:
     QElapsedTimer m_armInput;   // 마지막 조종 입력
     bool m_straightRunning = false;
     QVariantMap m_straightResult;
+    QVariantMap m_navStatus;
+    double m_navGoalX = 0, m_navGoalY = 0;   // 보낸 목표(보낸 프레임) — /nav/status 가 이 목표의 것인지 가린다
+    int m_navSeq = 0;                        // 받아들인 마지막 seq
+    QElapsedTimer m_navSent;                 // 목표를 보낸 뒤 경과(상태가 오지 않을 때 알림)
 
     bool m_recording = false;
     QString m_recordPath;

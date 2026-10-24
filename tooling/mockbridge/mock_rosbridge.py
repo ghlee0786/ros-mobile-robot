@@ -9,6 +9,7 @@ rosapi 와 가짜 노드 매개변수 서비스에 답하며, 장애(지연·유
 예)
     --port 0 --log E:/Temp/rx.jsonl          빈 포트로 띄우고 받은 op 를 기록(시작하면 'MOCKBRIDGE_PORT=<n>' 출력)
     --nav --map-odom 1,2,30                   Nav2 토픽과 map→odom 변환을 함께 낸다
+    --nav --nav-fail plan                     /goal_pose 를 받으면 /nav/status 로 계획 실패와 reason 을 낸다
     --freeze 3@10 --drop /scan:0.1            첫 연결 10 초 뒤 3 초 송신 멈춤, /scan 10% 유실
     --replay run1.jsonl --rate 2 --loop --restamp   기록을 2 배속으로 반복 재생(시각은 지금으로)
 """
@@ -73,7 +74,8 @@ def parser():
     g.add_argument("--null-heading", action="store_true", help="직진 status 의 heading_err_deg 를 null 로")
     g.add_argument("--rosout-burst", type=float, default=0.0, help="/rosout 을 N Hz 로 쏟아 낸다")
     g.add_argument("--diag-stale", type=float, default=0.0, help="/diagnostics 를 첫 연결 N 초 뒤 멈춤")
-    g.add_argument("--nav", action="store_true", help="amcl·costmap·footprint·액션 상태 토픽을 낸다")
+    g.add_argument("--nav", action="store_true", help="amcl·costmap·footprint·액션 상태·/nav/status 토픽을 낸다")
+    g.add_argument("--nav-fail", choices=["plan"], help="--nav 의 /goal_pose 를 실패시킨다(plan: 출발점 막힘으로 계획 실패)")
 
     g = p.add_argument_group("장애 주입")
     g.add_argument("--delay-ms", type=float, default=0.0, help="송신 지연")

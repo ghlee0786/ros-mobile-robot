@@ -1,0 +1,83 @@
+{
+  "id": "nav_ok",
+  "title": "sendGoal → /nav/status 구독(throttle 500) · 계획 중 → 이동 중 → 도착, 3D 뷰 navState succeeded",
+  "needs_pi": false,
+  "needs_human": false,
+  "server_args": [
+    "--map-odom",
+    "1,2,30",
+    "--nav"
+  ],
+  "dashboard_args": [],
+  "actions": [
+    {
+      "wait": "bridge.connected",
+      "timeout_s": 10
+    },
+    {
+      "t": 5.5,
+      "call": "robot.armTeleop",
+      "args": [
+        true
+      ]
+    },
+    {
+      "t": 6,
+      "call": "robot.sendGoal",
+      "args": [
+        0.5,
+        0.2,
+        0.3
+      ]
+    }
+  ],
+  "duration_s": 22,
+  "expect": {
+    "log_forbid": [
+      "TypeError",
+      "ReferenceError",
+      "Binding loop"
+    ],
+    "state": [
+      {
+        "path": "bridge.connected",
+        "op": "==",
+        "value": true
+      },
+      {
+        "path": "robot.mode",
+        "op": "==",
+        "value": "자율주행"
+      },
+      {
+        "path": "robot.navStatus.state",
+        "op": "==",
+        "value": "succeeded"
+      },
+      {
+        "path": "robot.navStatus.text",
+        "op": "==",
+        "value": "도착"
+      },
+      {
+        "path": "scene.navState",
+        "op": "==",
+        "value": "succeeded"
+      }
+    ],
+    "server_log": [
+      {
+        "rule": "throttle_eq",
+        "topic": "/nav/status",
+        "value": 500,
+        "all": true
+      },
+      {
+        "rule": "count_ge",
+        "op": "subscribe",
+        "topic": "/nav/status",
+        "value": 1
+      }
+    ]
+  }
+}

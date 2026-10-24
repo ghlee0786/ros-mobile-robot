@@ -7,6 +7,7 @@
 #include <QList>
 #include <QPointF>
 #include <QString>
+#include <QVariantMap>
 #include <QVector3D>
 
 // ROS 메시지(rosbridge JSON)를 해석하는 순수 함수 모음. 상태가 없어 어느 스레드에서도 부를 수 있다.
@@ -77,5 +78,16 @@ QString csvCell(QString s);
 
 // geometry_msgs/PoseWithCovarianceStamped 의 covariance(36개): x · y 0.25 m², yaw (π/12)²
 QJsonArray initialPoseCovariance();
+
+// PC nav_goal_bridge.py 의 /nav/status(std_msgs/String 의 JSON) → 화면용 값. 계약은 그 파일 머리말.
+// 키: state(planning · running · succeeded · failed · canceled · idle, 깨진 JSON 이면 "") · seq · reason · errorCode
+//     · distance(m) · eta(s) — 모르면 -1 · goalX · goalY · hasGoal · text(3D 뷰 한 줄)
+QVariantMap parseNavStatus(const QString &json);
+// 대시보드가 보낸 목표(x, y — 보낸 프레임 그대로)의 상태인지: 목표가 2 cm 안이고 seq 가 minSeq 이상이거나 진행 중.
+// 끝난 상태는 5 s 마다 다시 오므로 구독 직후에는 이전 목표(같은 자리일 수도)의 것이 먼저 올 수 있다. 진행 중 상태는
+// 늘 마지막 목표의 것이라 seq 와 관계없이 받는다(PC 노드가 다시 떠 seq 가 1 부터 시작해도 이어 받게).
+bool navStatusMatches(const QVariantMap &st, double goalX, double goalY, int minSeq);
+// 표시 상태가 prev → next 로 바뀌었을 때 이벤트 로그 한 줄(바뀌지 않았으면 "")
+QString navStatusEvent(const QVariantMap &prev, const QVariantMap &next);
 
 } // namespace msgparse

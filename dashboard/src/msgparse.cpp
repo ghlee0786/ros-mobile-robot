@@ -1,5 +1,6 @@
 #include "msgparse.h"
 
+#include <QJsonDocument>
 #include <QtMath>
 #include <cmath>
 
@@ -231,6 +232,61 @@ QString csvCell(QString s)
     if (s.contains(',') || s.contains('"') || s.contains('\n'))
         s = '"' + s.replace("\"", "\"\"") + '"';
     return s;
+}
+
+QVariantMap parseNavStatus(const QString &json)
+{
+    const QJsonObject o = QJsonDocument::fromJson(json.toUtf8()).object();
+    const QString state = o["state"].toString();
+    const double dist = o["distance_remaining"].isDouble() ? o["distance_remaining"].toDouble() : -1;
+    const double eta = o["eta_s"].isDouble() ? o["eta_s"].toDouble() : -1;
+    const QString reason = o["reason"].toString();
+    const QJsonObject goal = o["goal"].toObject();
+    QString text;
+    if (state == "planning") {
+        text = "경로 계획 중…";
+    } else if (state == "running") {
+        text = "이동 중";
+        if (dist >= 0)
+            text += QString(" · 남은 %1 m").arg(dist, 0, 'f', 2);
+        if (eta >= 0)
+            text += QString(" · 약 %1 s").arg(qRound(eta));
+    } else if (state == "succeeded") {
+        text = "도착";
+    } else if (state == "failed") {
+        text = "실패 — " + (reason.isEmpty() ? QString("이유 모름(error_code %1)").arg(o["error_code"].toInt()) : reason);
+    } else if (state == "canceled") {
+        text = "취소됨";
+    }
+    return {{"state", state}, {"seq", o["seq"].toInt(-1)}, {"reason", reason}, {"errorCode", o["error_code"].toInt()},
+            {"distance", dist}, {"eta", eta}, {"hasGoal", o["goal"].isObject()},
+            {"goalX", goal["x"].toDouble()}, {"goalY", goal["y"].toDouble()}, {"text", text}};
+}
+
+bool navStatusMatches(const QVariantMap &st, double goalX, double goalY, int minSeq)
+{
+    const QString s = st.value("state").toString();
+    return !s.isEmpty() && st.value("hasGoal").toBool()
+           && (st.value("seq").toInt() >= minSeq || s == "planning" || s == "running")
+           && std::hypot(st.value("goalX").toDouble() - goalX, st.value("goalY").toDouble() - goalY) < 0.02;
+}
+
+QString navStatusEvent(const QVariantMap &prev, const QVariantMap &next)
+{
+    const QString s = next.value("state").toString();
+    if (s == prev.value("state").toString() && next.value("seq") == prev.value("seq"))
+        return {};
+    if (s == "planning")
+        return "Nav2 경로 계획 중";
+    if (s == "running")
+        return "Nav2 이동 시작";
+    if (s == "succeeded")
+        return "Nav2 도착";
+    if (s == "failed")
+        return "Nav2 실패 — " + next.value("reason").toString();
+    if (s == "canceled")
+        return "Nav2 목표 취소됨";
+    return {};
 }
 
 } // namespace msgparse

@@ -18,6 +18,8 @@ MAX_V, MAX_W = 0.1, 0.25
 DT = 0.01
 LASER = (-0.12, 0.0, 0.28)  # base_link→laser (x, y, z), 실기 /tf_static
 IMU = (-0.12, 0.0, 0.18)    # base_link→imu
+# tooling/nav/nav_goal_bridge.py START_BLOCKED 와 같은 글 (--nav-fail plan 의 reason)
+NAV_START_BLOCKED = "출발점이 장애물에 막혀 있습니다 — 지도 초기화를 누르거나 로봇을 0.3 m 이상 빈 곳으로 옮기세요"
 
 BASE_TYPES = {
     "std_msgs/String", "std_msgs/Empty", "std_msgs/Int32", "std_msgs/Float32", "std_msgs/Float64", "std_msgs/Bool",
@@ -146,6 +148,9 @@ class World(Source):
         self.goal = None
         self.goal_status = []            # [(uuid, status)]
         self.goal_seq = 0
+        # PC nav_goal_bridge.py 의 /nav/status (계약은 그 파일 머리말)
+        self.nav = {"seq": 0, "state": "idle", "goal": None, "error_code": 0, "error_msg": "", "reason": "",
+                    "fail_at": None, "sent": 0.0}
         self.beat = 0
         self.rosout_n = 0
         self.map_w, self.map_h, self.map_origin = self._map_geometry()
@@ -169,7 +174,8 @@ class World(Source):
                       "/global_costmap/costmap": "nav_msgs/OccupancyGrid",
                       "/local_costmap/costmap": "nav_msgs/OccupancyGrid",
                       "/local_costmap/published_footprint": "geometry_msgs/PolygonStamped",
-                      "/navigate_to_pose/_action/status": "action_msgs/msg/GoalStatusArray"})
+                      "/navigate_to_pose/_action/status": "action_msgs/msg/GoalStatusArray",
+                      "/nav/status": "std_msgs/String"})
         if a.pi_initialpose:
             T["/initialpose"] = "geometry_msgs/PoseWithCovarianceStamped"
         if not getattr(a, "no_scan_compact", False):
@@ -198,7 +204,8 @@ class World(Source):
             s += [("/amcl_pose", 0.5, self.make_amcl), ("/global_costmap/costmap", 1.0, self.make_global_costmap),
                   ("/local_costmap/costmap", 0.5, self.make_local_costmap),
                   ("/local_costmap/published_footprint", 0.2, self.make_footprint),
-                  ("/navigate_to_pose/_action/status", 1.0, self.make_action_status)]
+                  ("/navigate_to_pose/_action/status", 1.0, self.make_action_status),
+                  ("/nav/status", 0.5, self.nav_tick)]
         self.schedule = s
         self.makers = {k: f for k, _, f in s if k.startswith("/")}
         self.makers.update({"/map": self.make_map, "/tf_static": self.make_tf_static, "/plan": lambda: self.last_plan})
@@ -256,6 +263,11 @@ class World(Source):
             self.straight_step(now)
         if self.goal:
             self.goal_step()
+        if self.nav["fail_at"] is not None and now >= self.nav["fail_at"]:
+            self.nav["fail_at"] = None
+            # nav_goal_bridge.fail_reason 이 출발점 칸이 막혔을 때 내는 것과 같은 결과(208 = NO_VALID_PATH)
+            self.nav.update(error_code=208, error_msg="mock: no valid path")
+            self.nav_set("failed", NAV_START_BLOCKED)
 
     # ---- 명령 --------------------------------------------------------------------------
     def on_command(self, topic, msg):
@@ -363,6 +375,16 @@ class World(Source):
         if frame == "map" and self.map_odom:
             g = compose(inverse(self.map_odom), g)        # odom 프레임으로
         self.goal_seq += 1
+        if self.args.nav:
+            self.nav.update(seq=self.nav["seq"] + 1, goal={"x": round(p.get("position", {}).get("x", 0.0), 3),
+                                                            "y": round(p.get("position", {}).get("y", 0.0), 3),
+                                                            "yaw": round(yaw_of(p.get("orientation", {})), 3)},
+                            error_code=0, error_msg="", fail_at=None)
+            self.nav_set("planning")
+            if getattr(self.args, "nav_fail", None) == "plan":   # 계획 실패: 경로도 움직임도 없이 0.8 s 뒤 실패
+                self.nav["fail_at"] = time.perf_counter() + 0.8
+                self.goal, self.cmd = None, (0.0, 0.0)
+                return
         uuid = [self.goal_seq % 256] + [0] * 15
         self.goal = {"pose": g, "uuid": uuid}
         self.goal_status = [(uuid, 2)]
@@ -388,11 +410,19 @@ class World(Source):
         dist = math.hypot(dx, dy)
         if dist < 0.05:
             return self.goal_end(4)
+        if self.args.nav and self.nav["state"] == "planning":
+            self.nav_set("running")
         err = wrap(math.atan2(dy, dx) - self.est[2])
         w = max(-MAX_W, min(MAX_W, 1.5 * err))
         self.cmd = (0.0 if abs(err) > 0.3 else min(MAX_V, dist), w)
 
     def goal_end(self, status):
+        if self.args.nav and self.nav["state"] in ("planning", "running"):
+            self.nav["fail_at"] = None
+            if status == 4:
+                self.nav_set("succeeded")
+            else:
+                self.nav_set("canceled", "목표가 취소되었습니다(정지 · 비상 정지 · 취소)")
         if not self.goal:
             return False
         self.goal_status = [(self.goal["uuid"], status)]
@@ -401,6 +431,30 @@ class World(Source):
         if self.args.nav:
             self.server.publish("/navigate_to_pose/_action/status", self.make_action_status())
         return True
+
+    def nav_set(self, state, reason=""):
+        self.nav.update(state=state, reason=reason)
+        self.server.publish("/nav/status", self.make_nav_status())
+
+    def nav_tick(self):
+        """진행 중 2 Hz, 끝난 뒤에는 5 s 마다 마지막 상태(늦게 붙은 대시보드도 보게)."""
+        if self.nav["state"] in ("planning", "running") or time.perf_counter() - self.nav["sent"] >= 5.0:
+            return self.make_nav_status()
+        return None
+
+    def make_nav_status(self):
+        n = self.nav
+        n["sent"] = time.perf_counter()
+        dist = eta = None
+        if n["state"] == "running" and self.goal:
+            dist = round(math.hypot(self.goal["pose"][0] - self.est[0], self.goal["pose"][1] - self.est[1]), 2)
+            eta = round(dist / MAX_V, 1)
+        elif n["state"] == "succeeded":
+            dist = 0.0
+        return {"data": json.dumps({"seq": n["seq"], "state": n["state"], "goal": n["goal"], "distance_remaining": dist,
+                                    "eta_s": eta, "recoveries": 0, "error_code": n["error_code"],
+                                    "error_msg": n["error_msg"], "reason": n["reason"], "stamp": round(time.time(), 3)},
+                                   ensure_ascii=False)}
 
     # ---- 메시지 ------------------------------------------------------------------------
     def make_odom(self):
