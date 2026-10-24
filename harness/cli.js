@@ -5,16 +5,20 @@
 //   exit 0 은 done · accepted · cancelled · restored 일 때만. 사용법 오류는 2.
 const fs = require('node:fs'), path = require('node:path');
 
-const USAGE = `usage:
+const USAGE = `Pilot — 모델이 조종하고, 하네스는 계기판(검사 기록)과 안전장치(guard · 격리 · 정리)만 맡는다. 설치 폴더 · 명령은 harness/ 그대로.
+usage:
   node harness/cli.js go (--goal-file <path> | - | "<goal>") [--check "<cmd>"]... [--runtime claude|codex] [--model M] [--effort E]
-                     [--budget-usd N] [--token-budget N] [--wall-min N] [--max-continuations N] [--base <branch>] [--root <repo>] [--init] [--doc <path>]... [--attach <file>]...
+                     [--budget-usd N] [--token-budget N] [--wall-min N] [--max-continuations N] [--base <branch>] [--root <repo>] [--init] [--doc <path>]... [--attach <file>]... [--owns <glob>]...
       --goal-file <path>: the goal verbatim from a UTF-8 file · "-": the goal from stdin (no shell quoting of the request)
       --init: create a git repository at --root if there is none (otherwise refused)
+      --mode thin|full: thin = the worker plans, tests and records by itself; the harness keeps only the guard, the worktree, cleanup and one run of the checks at the end, recorded for the reviewer (never sent back; worse than before = failed) (default: thin) · full = the old way: baseline before the task, lint and quality send-back, repeated send-backs on failure — or "mode: full" in the project yaml
+      --eager-baseline: measure the checks on the base commit before the first turn (default: only when the checks fail afterwards — or "baseline: eager" in the project yaml) · --fresh-baseline: ignore the cached baseline
       --doc <path>: a managed document (docs/prds · docs/coordinations · docs/designs) the worker reads as the specification (repeatable)
+      --owns <glob>: the only paths this task may change (repeatable, e.g. --owns "src/billing/**" --owns "tests/billing/**") — the guard blocks writes elsewhere so parallel tasks do not collide
       --attach <file>: give the worker a file with the goal — image · video (frames + transcript) · audio (transcript) · PDF · document (repeatable)
       --allow "<rule>": also let the unattended worker run this, e.g. --allow "Bash(docker build:*)" (repeatable; added to the project
                         block's worker_allow; Tool one of Bash|PowerShell|Read|Edit|Write|WebFetch; git writes · shells · Bash(*) are refused; no effect on Codex)
-  node harness/cli.js resume <id> [--allow "<rule>"]... [--budget-usd N] [--token-budget N] [--wall-min N] [--max-continuations N] [--model M] [--effort E]
+  node harness/cli.js resume <id> [--allow "<rule>"]... [--budget-usd N] [--token-budget N] [--wall-min N] [--max-continuations N] [--model M] [--effort E] [--fresh-session] [--mode thin|full]
       caps are totals for the whole task (not additions): pass the new total, e.g. --budget-usd 40 after $20 was spent
       a blocked task resumes in the same session: its BLOCKED.md is kept as BLOCKED.<n>.md and the worker is told what you allowed
       --note "<text>" | --note-file <path>: also hand the worker these additional instructions (a done task with new notes can be resumed)
@@ -24,9 +28,13 @@ const USAGE = `usage:
       --detach (go · resume): return the id at once instead of waiting · --foreground: run in this process (the old way)
   node harness/cli.js wait <id> [--timeout-min N]   (waits until the task is no longer running, then prints its report · exit 3 if still running at the limit)
   node harness/cli.js status [--json]
+  node harness/cli.js metrics [--roots "<저장소>;<저장소>…"] [--since YYYY-MM-DD] [--jsonl <out>] [--md <out>] [--json]   (작업 수치 — 비용 · 효율 · 계획 · 시험 · 찌꺼기 · 품질)
+  node harness/cli.js insights [--roots "<저장소>;<저장소>…"] [--since YYYY-MM-DD] [--json] [--post]   (사용 분석 — 하네스가 일을 방해한 패턴 · --post 는 가린 개선 이슈로)
+  node harness/cli.js profile [--build [--roots "<저장소>;<저장소>…"] [--since YYYY-MM-DD]] [--json]   (사용자 판단 패턴 — 갈림길에서 작업자가 따른다)
   node harness/cli.js accept <id> [--into <branch>] [--force] [--budget-usd N]   (only after the user accepts the result; --force for tasks not 'done')
   node harness/cli.js cancel <id> [--skip-checks]
   node harness/cli.js restore <id> [--skip-checks]
+  node harness/cli.js check <id>   (thin 작업의 미룬 검사를 지금 돌려 기록 — 합치지 않는다 · accept 가 그 결과를 쓴다)
   node harness/cli.js gc [--json]
   node harness/cli.js stop <id>                 (the way to stop a running task: ends its process tree, commits work in progress, status interrupted)
   node harness/cli.js push [<remote>] [<branch>] | push [<remote>] --tag <name> [--dry-run]   (only after the user explicitly asks; fast-forward only, never force, never harness/* branches)
@@ -40,15 +48,18 @@ const USAGE = `usage:
   node harness/cli.js doc index | doc check [--json] | doc history <path> [--json] | doc restore <path> <version>
   node harness/cli.js doc adopt <path> [--status draft|active|done] [--with <project>] [--direction outgoing|incoming]   (bring an existing doc under management)
       documents are created only when the user asks; nothing is generated automatically
+  node harness/cli.js factory "<request>" | --request-file <path> [--jobs N] [--budget-usd N] [--card-budget-usd N] [--max-cards N] [--test-agents N] [--waves N] [--verify] [--check "<cmd>"]... [--mode thin|full] [--base <branch>] [--detach|--foreground]
+      split the request into cards (planner agent) · run the cards as parallel tasks with owned paths · merge them one at a time into harness/factory/<id> · then testers (charters) test the merged result, defects reproduced by another agent become fix cards
+  node harness/cli.js factory status [<id>] | factory wait <id> | factory stop <id> | factory accept <id>   (accept merges into your branch — only after the user says so)
   node harness/cli.js help
 defaults: runtime claude · model opus · budget $20 · wall 120 min · max continuations 8 (with --runtime codex and no --model: Codex's own default model)`;
 
 const VALUE = new Set(['--check', '--runtime', '--model', '--effort', '--budget-usd', '--token-budget', '--wall-min', '--max-continuations', '--root', '--into', '--base', '--target', '--check-timeout-min', '--goal-file',
-  '--doc', '--with', '--direction', '--from-file', '--status', '--by', '--allow', '--attach', '--sent', '--repo', '--kind', '--title', '--body', '--body-file', '--tag', '--timeout-min', '--file', '--note', '--note-file']);
-const FLAGS = new Set(['--auto', '--open', '--json', '--help', '-h', '--uninstall', '--dry-run', '--force', '--init', '--skip-checks', '--fresh-baseline', '--apply', '--salvage', '--track-docs', '--detach', '--foreground']);
+  '--jobs', '--test-agents', '--waves', '--max-cards', '--card-budget-usd', '--request-file', '--owns', '--doc', '--with', '--direction', '--from-file', '--status', '--by', '--allow', '--attach', '--sent', '--repo', '--kind', '--title', '--body', '--body-file', '--roots', '--since', '--jsonl', '--md', '--tag', '--timeout-min', '--file', '--note', '--note-file', '--transcripts', '--mode']);
+const FLAGS = new Set(['--no-verify', '--auto', '--open', '--json', '--help', '-h', '--uninstall', '--dry-run', '--force', '--init', '--skip-checks', '--fresh-baseline', '--apply', '--salvage', '--track-docs', '--detach', '--foreground', '--fresh-session', '--build', '--eager-baseline', '--verify', '--post']);
 
 function parse(argv) {
-  const o = { _: [], checks: [], docs: [], allow: [], attach: [] };
+  const o = { _: [], checks: [], docs: [], allow: [], attach: [], owns: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (FLAGS.has(a)) { o[a.replace(/^-+/, '')] = true; continue; }
@@ -57,7 +68,7 @@ function parse(argv) {
     if (VALUE.has(key)) {
       let v;
       if (eq) v = eq[2]; else { if (i + 1 >= argv.length) throw new Error(`${a} needs a value`); v = argv[++i]; }
-      if (key === '--check') o.checks.push(v); else if (key === '--doc') o.docs.push(v); else if (key === '--allow') o.allow.push(v); else if (key === '--attach') o.attach.push(v); else o[key.slice(2)] = v;
+      if (key === '--check') o.checks.push(v); else if (key === '--owns') o.owns.push(v); else if (key === '--doc') o.docs.push(v); else if (key === '--allow') o.allow.push(v); else if (key === '--attach') o.attach.push(v); else o[key.slice(2)] = v;
       continue;
     }
     if (a.startsWith('--')) throw new Error(`unknown option: ${a}`);
@@ -71,10 +82,10 @@ function parse(argv) {
   };
   if (o.runtime && !['claude', 'codex'].includes(o.runtime)) throw new Error('--runtime must be claude or codex');
   return { ...o, budgetUsd: num('budget-usd', 0), tokenBudget: num('token-budget', 0, true), wallMin: num('wall-min', 0),
-    maxContinuations: num('max-continuations', -1, true), checkTimeoutMs: o['check-timeout-min'] != null ? num('check-timeout-min', 0) * 60000 : undefined, freshBaseline: !!o['fresh-baseline'] };
+    maxContinuations: num('max-continuations', -1, true), checkTimeoutMs: o['check-timeout-min'] != null ? num('check-timeout-min', 0) * 60000 : undefined, freshBaseline: !!o['fresh-baseline'], eagerBaseline: !!o['eager-baseline'] };
 }
 
-const OK = new Set(['done', 'accepted', 'cancelled', 'restored']);
+const OK = new Set(['done', 'accepted', 'cancelled', 'restored', 'checked']);
 function resultLine(r) {
   const keep = ['id', 'status', 'reason', 'refused', 'branch', 'commit', 'base_branch', 'checks', 'cost_usd', 'unknown_cost_calls', 'tokens', 'continuations', 'wall_ms', 'files_changed',
     'tests_modified', 'checks_modified', 'secrets_excluded', 'commit_skipped', 'outside_git', 'worktree', 'merge_commit', 'revert_commit', 'task_status', 'docs'];
@@ -91,7 +102,7 @@ async function main(argv, io) {
   const [cmd, ...rest] = o._;
   if (!cmd || cmd === 'help' || o.help || o.h) { out(USAGE); return cmd || o.help || o.h ? 0 : 2; }
   const root = o.root ? path.resolve(o.root) : process.cwd();
-  const common = { root, log: err, run: io && io.run, checkTimeoutMs: o.checkTimeoutMs };
+  const common = { root, log: err, run: io && io.run, checkTimeoutMs: o.checkTimeoutMs, freshBaseline: o.freshBaseline, eagerBaseline: o.eagerBaseline, mode: o.mode };
   // 자동 갱신 확인(설치된 사본 · 하루 한 번 · 별도 프로세스) — 갱신 · 설치 명령 자신은 빼고. 실패는 조용히.
   if (!['install', 'uninstall', 'update', 'version'].includes(cmd)) { try { require('./lib/autoupdate').maybe(root); } catch { /* 하네스를 멈추지 않는다 */ } }
 
@@ -105,6 +116,7 @@ async function main(argv, io) {
     if (r && typeof r === 'object' && r.report) out(r.report);
     return r && r.ok === false ? 1 : 0;
   }
+  if (cmd === 'factory') return factoryCommand(rest, o, root, out, err, io, argv);
   if (cmd === 'doc') return docCommand(rest, o, root, out, err);
   if (cmd === 'push') {
     const Pu = require('./lib/push');
@@ -112,7 +124,7 @@ async function main(argv, io) {
       const r = Pu.push({ root, remote: rest[0], branch: rest[1], tag: o.tag, dryRun: !!o['dry-run'] });
       out(o.json ? JSON.stringify(r, null, 2) : Pu.format(r));
       return r.ok ? 0 : 1;
-    } catch (e) { err(`harness push: ${e.message}`); return e.code === 'USAGE' ? 2 : 1; }
+    } catch (e) { err(`pilot push: ${e.message}`); return e.code === 'USAGE' ? 2 : 1; }
   }
   if (cmd === 'report' || cmd === 'report-bug') {
     // 하네스 보고 — 동작 이상(bug) · 의도와 다른 행동(intent) · 더 나은 방향(improve). 내용은 하네스 동작만 · 가려서.
@@ -140,14 +152,19 @@ async function main(argv, io) {
       }
       out(`보낸 뒤: node harness/cli.js report-bug --sent <서명>  (다시 묻지 않는다 · 재발하면 다시 보인다)`);
       return 0;
-    } catch (e) { err(`harness report-bug: ${e.message}`); return 1; }
+    } catch (e) { err(`pilot report-bug: ${e.message}`); return 1; }
   }
   if (cmd === 'update' || cmd === 'version') {
     // 배포된 최신 릴리스로 갈아 끼운다(--dry-run 은 비교만) · version 은 지금 판만.
     const U = require('./lib/update');
-    if (cmd === 'version') { out(`harness ${U.currentVersion()}`); return 0; }
-    try { const r = await U.update({ root, check: !!o['dry-run'], repo: o.repo, auto: !!o.auto }); out(r.report); return r.ok ? 0 : 1; }
-    catch (e) { err(`harness update: ${e.message}`); return 1; }
+    if (cmd === 'version') { out(`pilot ${U.currentVersion()}`); return 0; }
+    try {
+      const r = await U.update({ root, check: !!o['dry-run'], repo: o.repo, auto: !!o.auto }); out(r.report);
+      // 자동 갱신(하루 한 번 · 백그라운드) 뒤 사용 분석 — 7일에 한 번 · 갱신이 막 깐 새 판의 모듈로(이 프로세스는 옛 판일 수 있다) · 실패는 조용히
+      if (o.auto) { try { const I = require(path.join(root, 'harness', 'lib', 'insights.js')); const a = await I.auto(root); if (a && a.noted && a.noted.length) out(`사용 분석: 발견 ${a.noted.join(', ')} · 올림 ${(a.posted || []).length}건`); } catch { /* 옛 판 · 분석 실패는 갱신과 무관 */ } }
+      return r.ok ? 0 : 1;
+    }
+    catch (e) { err(`pilot update: ${e.message}`); return 1; }
   }
   if (cmd === 'stop') {
     const St = require('./lib/stop');
@@ -156,7 +173,7 @@ async function main(argv, io) {
       const r = await St.stop({ root, id: rest[0] });
       out(o.json ? JSON.stringify(r, null, 2) : St.format(r));
       return r.ok ? 0 : 1;
-    } catch (e) { err(`harness stop: ${e.message}`); return e.code === 'USAGE' ? 2 : 1; }
+    } catch (e) { err(`pilot stop: ${e.message}`); return e.code === 'USAGE' ? 2 : 1; }
   }
   if (cmd === 'cleanup-legacy') {
     const Lg = require('./lib/legacy');
@@ -164,7 +181,52 @@ async function main(argv, io) {
       const r = Lg.cleanup({ root, apply: !!o.apply, salvage: !!o.salvage });
       out(o.json ? JSON.stringify(r, null, 2) : Lg.format(r));
       return r.ok ? 0 : 1;
-    } catch (e) { err(`harness cleanup-legacy: ${e.message}`); return 1; }
+    } catch (e) { err(`pilot cleanup-legacy: ${e.message}`); return 1; }
+  }
+  // metrics — 작업 기록(지난 작업 포함)에서 수치를 계산해 프로젝트별로 비교한다. --roots 로 여러 저장소를 한 번에(이 PC 안에서만 읽는다).
+  if (cmd === 'metrics') {
+    const Mt = require('./lib/metrics');
+    try {
+      const roots = o.roots ? String(o.roots).split(';').map(x => x.trim()).filter(Boolean) : [root];
+      const cols = roots.map(r => Mt.collect(path.resolve(r), { since: o.since }));
+      if (o.jsonl) fs.writeFileSync(path.resolve(o.jsonl), cols.flatMap(c => [...c.tasks.map(t => JSON.stringify({ kind: 'task', ...t })), ...c.factories.map(x => JSON.stringify({ kind: 'factory', ...x }))]).join('\n') + '\n');
+      const md = Mt.toMarkdown(cols);
+      if (o.md) fs.writeFileSync(path.resolve(o.md), md);
+      out(o.json ? JSON.stringify(cols.map(Mt.summarize), null, 2) : md);
+      return 0;
+    } catch (e) { err(`pilot metrics: ${e.message}`); return 1; }
+  }
+  // profile — 사용자 판단 패턴. --build 는 이 PC 의 대화 기록 · 하네스 작업에서 다시 만들어 ~/.harness/profile.json 에 둔다(밖으로 보내지 않는다).
+  //   저장된 패턴은 작업 지시의 "갈림길" 규칙에 붙는다 — 작업자가 묻지 않고 이 사용자처럼 고른다.
+  if (cmd === 'profile') {
+    const Pf = require('./lib/profile');
+    try {
+      let p;
+      if (o.build) {
+        const roots = o.roots ? String(o.roots).split(';').map(x => x.trim()).filter(Boolean).map(r => path.resolve(r)) : [root];
+        p = Pf.build({ roots, since: o.since, transcripts: o.transcripts });
+        const file = Pf.save(p);
+        if (!o.json) out(`저장: ${file}`);
+      } else {
+        p = Pf.load();
+        if (!p) { out('판단 패턴이 아직 없습니다 — node harness/cli.js profile --build [--roots "<저장소>;<저장소>…"]'); return 0; }
+      }
+      out(o.json ? JSON.stringify({ sources: p.sources, tasks: p.tasks, rules: p.rules }, null, 2) : Pf.format(p));
+      return 0;
+    } catch (e) { err(`pilot profile: ${e.message}`); return 1; }
+  }
+  // insights — 작업 기록(task.json · log.jsonl)에서 하네스가 일을 방해한 패턴을 찾는다(수치와 분류만). --post 면 가린 개선 이슈로 올린다(bug_report 설정을 따른다).
+  if (cmd === 'insights') {
+    const I = require('./lib/insights');
+    try {
+      const roots = o.roots ? String(o.roots).split(';').map(x => x.trim()).filter(Boolean).map(r => path.resolve(r)) : [root];
+      const all = roots.map(r => ({ r, a: I.analyze(r, { since: o.since }) }));
+      if (o.json) out(JSON.stringify(all.map(x => ({ root: path.basename(x.r), ...x.a, root_path: undefined })), null, 2));
+      else for (const x of all) out(`## ${path.basename(x.r)}
+${I.format(x.a)}`);
+      if (o.post) for (const x of all) { const noted = I.noteFindings(x.r, x.a); const p = await require('./lib/bugreport').autoReport(x.r).catch(() => ({ posted: [] })); out(`${path.basename(x.r)}: 적음 ${noted.length} · 올림 ${(p.posted || []).length}${p.skipped ? ` (${p.skipped})` : ''}`); }
+      return 0;
+    } catch (e) { err(`pilot insights: ${e.message}`); return 1; }
   }
   if (cmd === 'status' || cmd === 'gc') {
     const St = require('./lib/status');
@@ -172,7 +234,7 @@ async function main(argv, io) {
       const r = cmd === 'status' ? St.status(common) : St.gc(common);
       out(o.json ? JSON.stringify(r, null, 2) : (cmd === 'status' ? St.formatStatus(r) : St.formatGc(r)));
       return 0;
-    } catch (e) { err(`harness ${cmd}: ${e.message}`); return 1; }
+    } catch (e) { err(`pilot ${cmd}: ${e.message}`); return 1; }
   }
 
   if (cmd === 'wait') return waitFor(rest[0], o, root, out, err);
@@ -187,10 +249,10 @@ async function main(argv, io) {
       if (t && ['accepted', 'cancelled', 'restored'].includes(t.status)) throw Object.assign(new Error(`task ${id} is ${t.status} — send the new instructions as a new task (go)`), { code: 'USAGE' });
       L.addNote(main, id, text);
       const live = t && t.status === 'running' && t.owner && S.ownerAlive(t.owner);
-      out(live ? `harness ${id} — 추가 지시를 쌓았다 · 다음 턴에 작업자에게 전달된다(끝나려던 참이면 그것을 반영하는 턴을 한 번 더 돈다)`
-        : `harness ${id} — 추가 지시를 쌓았다 · 작업이 ${t ? t.status : '?'} 이라 이어 갈 때 전달된다: node harness/cli.js resume ${id}`);
+      out(live ? `pilot ${id} — 추가 지시를 쌓았다 · 다음 턴에 작업자에게 전달된다(끝나려던 참이면 그것을 반영하는 턴을 한 번 더 돈다)`
+        : `pilot ${id} — 추가 지시를 쌓았다 · 작업이 ${t ? t.status : '?'} 이라 이어 갈 때 전달된다: node harness/cli.js resume ${id}`);
       return 0;
-    } catch (e) { err(`harness note: ${e.message}${e.code === 'USAGE' ? `\n${USAGE}` : ''}`); return e.code === 'USAGE' ? 2 : 1; }
+    } catch (e) { err(`pilot note: ${e.message}${e.code === 'USAGE' ? `\n${USAGE}` : ''}`); return e.code === 'USAGE' ? 2 : 1; }
   }
   // [2026-10-16 실측] 갱신 전에 시작한 세션은 옛 안내대로 go 를 셸 안에서 돌려 셸의 시간 상한에 작업이 함께 죽었다 — 안내에 기대지 않는다:
   //   go · resume 은 늘 분리된 프로세스에서 돌고(detach), 부른 쪽은 끝날 때까지 기다려 보고를 낸다. 그 프로세스 자신은 이 표시로 안다(손자에게 물려주지 않는다).
@@ -238,7 +300,7 @@ async function main(argv, io) {
       // --detach 가 띄운 프로세스는 부모가 정한 id 를 쓴다(부모가 그 id 로 시작을 확인한다). 손자 프로세스에 물려주지 않는다.
       const S = require('./lib/state'), presetId = S.validId(process.env.HARNESS_TASK_ID) ? process.env.HARNESS_TASK_ID : undefined;
       delete process.env.HARNESS_TASK_ID;
-      r = await require('./lib/loop').go({ ...common, ...caps, id: presetId, goal, checks: o.checks, runtime: o.runtime, base: o.base, init: !!o.init, docs: o.docs.map(p => path.resolve(p)), allow: o.allow, attach: o.attach.map(p => path.resolve(p)) });
+      r = await require('./lib/loop').go({ ...common, ...caps, id: presetId, goal, checks: o.checks, runtime: o.runtime, base: o.base, init: !!o.init, docs: o.docs.map(p => path.resolve(p)), allow: o.allow, attach: o.attach.map(p => path.resolve(p)), owns: o.owns });
     } else if (cmd === 'resume') {
       const id = needId();
       // resume --note "<지시>" | --note-file <파일> — 이어 가며 전달할 추가 지시(분리된 프로세스를 띄우기 전에 쌓는다).
@@ -247,21 +309,22 @@ async function main(argv, io) {
         require('./lib/loop').addNote(S.mainRoot(root), id, o['note-file'] != null ? fs.readFileSync(path.resolve(o['note-file']), 'utf8') : o.note);
       }
       if (canDetach()) return detach(cmd, argv, id, null, root, out, err, !o.detach);
-      r = await require('./lib/loop').resume({ ...common, ...caps, id, allow: o.allow });
+      r = await require('./lib/loop').resume({ ...common, ...caps, id, allow: o.allow, freshSession: !!o['fresh-session'] });
     }
     else if (cmd === 'accept') r = await require('./lib/integrate').accept({ ...common, id: needId(), into: o.into, budgetUsd: o.budgetUsd, force: !!o.force });
     else if (cmd === 'cancel') r = await require('./lib/integrate').cancel({ ...common, id: needId(), skipChecks: !!o['skip-checks'] });
     else if (cmd === 'restore') r = await require('./lib/integrate').restore({ ...common, id: needId(), skipChecks: !!o['skip-checks'] });
+    else if (cmd === 'check') r = await require('./lib/integrate').check({ ...common, id: needId() });
     else { err(`unknown command: ${cmd}\n${USAGE}`); return 2; }
   } catch (e) {
     if (e.code === 'USAGE') { err(`${e.message}\n${USAGE}`); return 2; }
     // 예기치 못한 예외 = 하네스 결함일 수 있다 — 가려서 기록하고 보고 방법을 알린다(없는 작업 · 잠금 같은 운영 오류는 빼고).
     const bug = !['UNKNOWN_TASK', 'LOCK_HELD'].includes(e.code) && require('./lib/bugreport').record(root, 'cli', e);
-    r = { id: rest[0] || null, status: 'error', reason: `${e.code ? e.code + ': ' : ''}${e.message}`, report: `harness error: ${e.stack || e.message}${bug ? `\n하네스 결함으로 보입니다(서명 ${bug.sig}) — 내용을 확인하고 보고하려면: node harness/cli.js report-bug` : ''}` };
+    r = { id: rest[0] || null, status: 'error', reason: `${e.code ? e.code + ': ' : ''}${e.message}`, report: `pilot error: ${e.stack || e.message}${bug ? `\n하네스 결함으로 보입니다(서명 ${bug.sig}) — 내용을 확인하고 보고하려면: node harness/cli.js report-bug` : ''}` };
   }
   // 쌓인 하네스 보고를 자동으로 올린다(설치된 사본 · 로그인이 있을 때만 · 실패는 조용히).
-  try { const a = await require('./lib/bugreport').autoReport(root); for (const p of a.posted) err(`[harness] 하네스 보고를 올렸다: ${p.url}`); } catch { /* 보고가 작업을 멈추지 않는다 */ }
-  out(r.report || `harness ${r.id} — ${r.status}${r.reason ? ': ' + r.reason : ''}`);
+  try { const a = await require('./lib/bugreport').autoReport(root); for (const p of a.posted) err(`[pilot] 하네스 보고를 올렸다: ${p.url}`); } catch { /* 보고가 작업을 멈추지 않는다 */ }
+  out(r.report || `pilot ${r.id} — ${r.status}${r.reason ? ': ' + r.reason : ''}`);
   out(resultLine(r));
   return !r.refused && OK.has(r.status) ? 0 : 1;
 }
@@ -299,21 +362,21 @@ async function detach(cmd, argv, id, goal, root, out, err, waitAfter) {
     const t = S.readTask(main, id);
     if (t && t.status === 'running' && t.owner && t.owner.pid === c.pid) {
       if (waitAfter) {
-        err(`[harness] ${id} — 분리된 프로세스(pid ${c.pid})에서 실행 중 — 이 셸이 끝나도 작업은 계속된다(다시 받기: node harness/cli.js wait ${id} · 로그 ${logFile})`);
+        err(`[pilot] ${id} — 분리된 프로세스(pid ${c.pid})에서 실행 중 — 이 셸이 끝나도 작업은 계속된다(다시 받기: node harness/cli.js wait ${id} · 로그 ${logFile})`);
         return waitFor(id, {}, root, out, err, logFile);
       }
-      out(`harness ${id} — 분리된 프로세스(pid ${c.pid})에서 실행 중 · 로그 ${logFile}\n  끝날 때까지 기다려 보고 받기: node harness/cli.js wait ${id} · 멈추기: node harness/cli.js stop ${id}`);
+      out(`pilot ${id} — 분리된 프로세스(pid ${c.pid})에서 실행 중 · 로그 ${logFile}\n  끝날 때까지 기다려 보고 받기: node harness/cli.js wait ${id} · 멈추기: node harness/cli.js stop ${id}`);
       out(resultLine({ id, status: 'running' }));
       return 0;
     }
     if (exited !== null) {
       let log = ''; try { log = fs.readFileSync(logFile, 'utf8'); } catch { /* 없음 */ }
-      (exited === 0 ? out : err)(log.trim() || `harness ${id} — the detached process exited (${exited}) before starting the task`);   // 사용법 오류 · 거부는 stderr 로(그 자리에서 돌 때처럼)
+      (exited === 0 ? out : err)(log.trim() || `pilot ${id} — the detached process exited (${exited}) before starting the task`);   // 사용법 오류 · 거부는 stderr 로(그 자리에서 돌 때처럼)
       return exited === 0 ? 0 : (exited || 1);
     }
     await sleep(200);
   }
-  err(`harness ${id} — the detached process (pid ${c.pid}) has not started the task after 2 minutes; see ${logFile}`);
+  err(`pilot ${id} — the detached process (pid ${c.pid}) has not started the task after 2 minutes; see ${logFile}`);
   return 1;
 }
 
@@ -324,14 +387,15 @@ async function waitFor(id, o, root, out, err, logFile) {
   const main = S.mainRoot(root);
   const limitMin = o['timeout-min'] != null ? Number(o['timeout-min']) : Infinity;
   const until = Date.now() + (Number.isFinite(limitMin) && limitMin >= 0 ? limitMin * 60000 : Infinity);
-  // 분리된 프로세스의 진행 줄([harness] …)을 그대로 흘려 보낸다 — 셸 안에서 돌던 때처럼 진행이 보이게. 끝난 줄까지만 읽는다.
+  // 분리된 프로세스의 진행 줄([pilot] …)을 그대로 흘려 보낸다 — 셸 안에서 돌던 때처럼 진행이 보이게. 끝난 줄까지만 읽는다.
   let pos = 0;
   const pump = () => {
     if (!logFile) return;
     try {
       const b = fs.readFileSync(logFile), nl = b.lastIndexOf(0x0a);
       if (nl < pos) return;
-      for (const l of b.slice(pos, nl + 1).toString('utf8').split(/\r?\n/)) if (l.startsWith('[harness]')) err(l);
+      // 진행 줄 머리: [pilot](v6.1~) · [harness](그 전 판이 띄운 작업)
+      for (const l of b.slice(pos, nl + 1).toString('utf8').split(/\r?\n/)) if (l.startsWith('[pilot]') || l.startsWith('[harness]')) err(l);
       pos = nl + 1;
     } catch { /* 로그가 아직 없다 */ }
   };
@@ -341,7 +405,7 @@ async function waitFor(id, o, root, out, err, logFile) {
     if (!t) { err(`unknown task: ${id}`); return 1; }
     if (!(t.status === 'running' && t.owner && S.ownerAlive(t.owner))) {
       if (t.status === 'running') {
-        out(`harness ${id} — running · OWNER DEAD: the process running it is gone. Continue it: node harness/cli.js resume ${id} --detach`);
+        out(`pilot ${id} — running · OWNER DEAD: the process running it is gone. Continue it: node harness/cli.js resume ${id} --detach`);
         out(resultLine({ ...L.result(t), status: 'running', reason: 'owner dead' }));
         return 1;
       }
@@ -351,7 +415,7 @@ async function waitFor(id, o, root, out, err, logFile) {
       return OK.has(t.status) ? 0 : 1;
     }
     if (Date.now() >= until) {
-      out(`harness ${id} — still running · wait again: node harness/cli.js wait ${id}`);
+      out(`pilot ${id} — still running · wait again: node harness/cli.js wait ${id}`);
       out(resultLine({ id, status: 'running' }));
       return 3;
     }
@@ -423,7 +487,7 @@ function docCommand(rest, o, root, out, err) {
     return 2;
   } catch (e) {
     if (e.code === 'USAGE') { err(`${e.message}\n${USAGE}`); return 2; }
-    err(`harness doc ${sub}: ${e.message}`);
+    err(`pilot doc ${sub}: ${e.message}`);
     return 1;
   }
 }
@@ -431,5 +495,83 @@ function docCommand(rest, o, root, out, err) {
 module.exports = { main, parse, USAGE };
 
 if (require.main === module) {
-  main(process.argv.slice(2)).then(code => { process.exitCode = code; }, e => { process.stderr.write((e && e.stack || String(e)) + '\n'); process.exitCode = 1; });
+  // 할 일을 마쳤는데 남은 핸들(작업자가 띄운 하위 프로세스의 파이프 · 타이머)이 프로세스를 붙들면 끝나지 않는다 — 출력이 다 나갈 시간을 두고 끝낸다.
+  //   [2026-10-20 실측 · 평가] 분리된 go 가 작업이 done 으로 끝나고 24분 넘게 살아 worktree 파일을 붙들었다(작업공간 삭제 실패).
+  const exitSoon = () => setTimeout(() => process.exit(process.exitCode), 3000).unref();
+  main(process.argv.slice(2)).then(code => { process.exitCode = code; exitSoon(); }, e => { process.stderr.write((e && e.stack || String(e)) + '\n'); process.exitCode = 1; exitSoon(); });
+}
+
+// factory — 공장 총괄(PRD R4). 시작은 go 처럼 분리된 프로세스에서(셸의 시간 상한에 함께 죽지 않게) · 부른 쪽은 끝날 때까지 기다린다(--detach 면 바로).
+async function factoryCommand(rest, o, root, out, err, io, argv) {
+  const F = require('./lib/factory'), S = require('./lib/state');
+  let main; try { main = S.mainRoot(root); } catch (e) { err(e.message); return 1; }
+  const sub = rest[0];
+  const needFid = id => { if (!F.FID_RE.test(String(id || ''))) throw Object.assign(new Error(`expected a factory run id f-yyyymmdd-HHMMss-xxxx, got ${JSON.stringify(id)}`), { code: 'USAGE' }); return id; };
+  try {
+    if (sub === 'status') { const r = rest[1] ? F.readRun(main, needFid(rest[1])) : null; out(rest[1] ? (r ? F.report(main, r) : `unknown factory run: ${rest[1]}`) : F.status(main)); return 0; }
+    if (sub === 'stop') { const r = F.requestStop(main, needFid(rest[1])); out(`pilot factory ${r.id} — ${r.status}: ${r.reason}`); return 0; }
+    if (sub === 'accept') { const r = F.accept({ root: main, fid: needFid(rest[1]) }); out(r.report); return r.refused ? 1 : 0; }
+    if (sub === 'wait') return factoryWait(main, needFid(rest[1]), o, out, err, null);
+  } catch (e) { if (e.code === 'USAGE') { err(`${e.message}\n${USAGE}`); return 2; } err(e.message); return 1; }
+  const child = process.env.HARNESS_DETACHED_CHILD === '1' && F.FID_RE.test(process.env.HARNESS_FACTORY_ID || '');
+  let request;
+  try {
+    if (child) request = fs.readFileSync(process.env.HARNESS_FACTORY_REQUEST, 'utf8');
+    else if (o['request-file'] != null) request = fs.readFileSync(path.resolve(o['request-file']), 'utf8');
+    else request = rest.join(' ');
+  } catch (e) { err(`cannot read the request: ${e.message}`); return 2; }
+  request = String(request || '').replace(/^\uFEFF/, '').trim();
+  if (!request) { err(`factory needs a request\n${USAGE}`); return 2; }
+  const opts = { root: main, request, jobs: o.jobs != null ? Number(o.jobs) : undefined, budgetUsd: o['budget-usd'] != null ? Number(o['budget-usd']) : undefined,
+    cardBudgetUsd: o['card-budget-usd'] != null ? Number(o['card-budget-usd']) : undefined, maxCards: o['max-cards'] != null ? Number(o['max-cards']) : undefined,
+    base: o.base, model: o.model, runtime: o.runtime, mode: o.mode, checks: o.checks.length ? o.checks : undefined, run: io && io.run, log: m => err(m),
+    verify: !!o.verify && !o['no-verify'], testAgents: o['test-agents'] != null ? Number(o['test-agents']) : undefined, waves: o.waves != null ? Number(o.waves) : undefined };
+  for (const k of ['jobs', 'budgetUsd', 'cardBudgetUsd', 'maxCards']) if (opts[k] != null && !(opts[k] > 0)) { err(`--${k} must be a number > 0`); return 2; }
+  if (child || (io && io.run) || o.foreground) {
+    const fid = child ? process.env.HARNESS_FACTORY_ID : undefined;
+    delete process.env.HARNESS_DETACHED_CHILD; delete process.env.HARNESS_FACTORY_ID; delete process.env.HARNESS_FACTORY_REQUEST;
+    let r; try { r = await F.start({ ...opts, fid }); } catch (e) { err(e.message); return e.code === 'USAGE' ? 2 : 1; }
+    out(r.report); out(resultLine(r));
+    return ['done', 'partial'].includes(r.status) ? 0 : 1;
+  }
+  // 분리 실행
+  const fid = require('./lib/state').newId().replace(/^t-/, 'f-'), dir = path.join(S.paths(main).harnessDir, 'factory');
+  fs.mkdirSync(dir, { recursive: true });
+  const reqFile = path.join(dir, `${fid}.request.txt`), logFile = path.join(dir, `${fid}.log`);
+  fs.writeFileSync(reqFile, request);
+  const fd = fs.openSync(logFile, 'a');
+  const { spawn } = require('node:child_process');
+  const c = spawn(process.execPath, [__filename, ...argv.filter(a => a !== '--detach')], { cwd: process.cwd(), env: { ...process.env, HARNESS_DETACHED_CHILD: '1', HARNESS_FACTORY_ID: fid, HARNESS_FACTORY_REQUEST: reqFile }, detached: true, stdio: ['ignore', fd, fd], windowsHide: true });
+  fs.closeSync(fd);
+  let exited = null; c.on('exit', code => { exited = code; }); c.unref();
+  for (const until = Date.now() + 120000; Date.now() < until;) {
+    const r = F.readRun(main, fid);
+    if (r && r.owner && r.owner.pid === c.pid) {
+      if (o.detach) { out(`pilot factory ${fid} — 분리된 프로세스(pid ${c.pid})에서 실행 중 · 로그 ${logFile}\n  기다려 보고 받기: node harness/cli.js factory wait ${fid} · 멈추기: node harness/cli.js factory stop ${fid}`); return 0; }
+      err(`[pilot] factory ${fid} — 분리된 프로세스(pid ${c.pid})에서 실행 중 — 이 셸이 끝나도 계속된다(다시 받기: node harness/cli.js factory wait ${fid})`);
+      return factoryWait(main, fid, o, out, err, logFile);
+    }
+    if (exited !== null) { let log = ''; try { log = fs.readFileSync(logFile, 'utf8'); } catch { /* 없음 */ } (exited === 0 ? out : err)(log.trim() || `pilot factory ${fid} — exited (${exited}) before starting`); return exited || 1; }
+    await sleep(200);
+  }
+  err(`pilot factory ${fid} — the detached process (pid ${c.pid}) has not started after 2 minutes; see ${logFile}`);
+  return 1;
+}
+async function factoryWait(main, fid, o, out, err, logFile) {
+  const F = require('./lib/factory'), S = require('./lib/state');
+  logFile = logFile || path.join(S.paths(main).harnessDir, 'factory', `${fid}.log`);
+  const limitMin = o['timeout-min'] != null ? Number(o['timeout-min']) : Infinity, until = Date.now() + (Number.isFinite(limitMin) ? limitMin * 60000 : Infinity);
+  let pos = 0;
+  for (;;) {
+    try { const b = fs.readFileSync(logFile), nl = b.lastIndexOf(0x0a); if (nl >= pos) { for (const l of b.slice(pos, nl + 1).toString('utf8').split(/\r?\n/)) if (l.startsWith('[pilot]') || l.startsWith('[harness]')) err(l); pos = nl + 1; } } catch { /* 아직 없음 */ }
+    const r = F.readRun(main, fid);
+    if (!r) { err(`unknown factory run: ${fid}`); return 1; }
+    if (r.status !== 'running' || !S.ownerAlive(r.owner)) {
+      if (r.status === 'running') { out(`pilot factory ${fid} — running · OWNER DEAD`); return 1; }
+      out(F.report(main, r)); out(resultLine({ id: fid, status: r.status, reason: r.reason }));
+      return ['done', 'partial', 'accepted'].includes(r.status) ? 0 : 1;
+    }
+    if (Date.now() >= until) { out(`pilot factory ${fid} — still running · wait again: node harness/cli.js factory wait ${fid}`); return 3; }
+    await sleep(2000);
+  }
 }

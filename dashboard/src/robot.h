@@ -80,6 +80,9 @@ class Robot : public QObject
     Q_PROPERTY(double maxSpeed READ maxSpeed WRITE setMaxSpeed NOTIFY modeChanged)
     // 조종 잠금: 잠긴 동안 drive() 입력을 버린다(0 은 10 Hz 로 계속). 연결 · 재연결 · linkLost · estop · 무입력이면 잠긴다.
     Q_PROPERTY(bool teleopArmed READ teleopArmed NOTIFY teleopArmedChanged)
+    // 파이 cmd_watchdog 의 가감속 프로파일(ramp_enabled). rampKnown 은 파이에서 값을 읽었는지.
+    Q_PROPERTY(bool rampEnabled READ rampEnabled WRITE setRampEnabled NOTIFY rampChanged)
+    Q_PROPERTY(bool rampKnown READ rampKnown NOTIFY rampChanged)
     Q_PROPERTY(int armIdleMs READ armIdleMs WRITE setArmIdleMs NOTIFY teleopArmedChanged)   // 무입력 자동 잠금(ms), 시험에서 줄인다
     Q_PROPERTY(bool straightRunning READ straightRunning NOTIFY straightChanged)
     Q_PROPERTY(QVariantMap straightResult READ straightResult NOTIFY straightChanged)
@@ -181,9 +184,12 @@ public:
     Q_INVOKABLE void drive(double linear, double angular);   // -1..1 (최대 속도 비율)
     Q_INVOKABLE void armTeleop(bool on);
     Q_INVOKABLE void straight(double distance);
-    Q_INVOKABLE void sendGoal(double x, double y, double yaw);   // Nav2 이동 목표 (odom 프레임 m · rad)
+    Q_INVOKABLE QString sendGoal(double x, double y, double yaw);   // Nav2 이동 목표 (odom 프레임 m · rad). 보내지 않았으면 그 이유
     Q_INVOKABLE void setInitialPose(double x, double y, double yaw);   // AMCL 초기 위치 (odom 프레임 m · rad) → /dashboard/initialpose
     Q_INVOKABLE void estop();
+    bool rampEnabled() const { return m_ramp; }
+    bool rampKnown() const { return m_rampKnown; }
+    void setRampEnabled(bool on);
     Q_INVOKABLE void setRecordTopic(const QString &topic, bool on);
     Q_INVOKABLE void toggleRecording();
     Q_INVOKABLE void openRecords();
@@ -192,6 +198,7 @@ public:
     Q_INVOKABLE QVariantMap modelParts() const;   // model/parts.json (LiDAR 헤드 위치 등)
 
 signals:
+    void rampChanged();
     void telemetryChanged();
     void scanChanged();
     void trailChanged();
@@ -284,6 +291,8 @@ private:
     QString m_mode = QStringLiteral("키보드 조종");
     double m_maxSpeed = 0.08, m_lin = 0, m_ang = 0;
     bool m_armed = false;
+    bool m_ramp = true;
+    bool m_rampKnown = false;
     int m_armIdleMs = 30000;
     QElapsedTimer m_armInput;   // 마지막 조종 입력
     bool m_straightRunning = false;

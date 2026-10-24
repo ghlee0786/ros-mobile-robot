@@ -24,7 +24,8 @@ const { spawnCapture, noPushEnv } = require('./proc');
 const policy = require('./policy');
 const exe = require('./exe');
 
-const QUOTA = /usage limit|usageLimitExceeded|rate.?limit|quota|purchase more credits|insufficient[_ ]credits|credit balance is too low|hit your limit|too many requests|\b429\b/i;
+// [2026-10-20 평가 실측] 구독의 세션 · 주간 한도 문구("You've hit your session limit · resets 3:20am (Asia/Seoul)")를 몰라 충돌로 분류했다
+const QUOTA = /usage limit|usageLimitExceeded|rate.?limit|quota|purchase more credits|insufficient[_ ]credits|credit balance is too low|hit your (?:\w+ )?limit|(?:session|weekly|daily|opus) limit|limit reached|too many requests|\b429\b/i;
 const AUTH = /not logged in|please run \/login|run \/login|invalid api key|invalid x-api-key|authentication[_ ](?:error|failed)|oauth token (?:has )?expired|token (?:has )?expired|unauthori[sz]ed|\b401\b|login required/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -148,7 +149,7 @@ async function run(o) {
     const ver = exe.version(bin, o.exePrefixArgs, o.env);
     const promptsNone = o.promptsNone != null ? o.promptsNone : !!(ver && cmpVer(ver, [2, 1, 283]) >= 0);
     const args = [...(o.exePrefixArgs || []), ...buildArgs({ ...o, promptsNone }, settingsFile, sid)];
-    const p = await spawnCapture({ exe: bin, args, cwd: o.cwd, input: o.prompt, env: noPushEnv(o.env, o.cwd), timeoutMs: o.timeoutMs, signal: o.signal });
+    const p = await spawnCapture({ exe: bin, args, cwd: o.cwd, input: o.prompt, env: noPushEnv(o.env, o.cwd), timeoutMs: o.timeoutMs, signal: o.signal, reapTree: true });
     return toResult(p, parseResult(p.stdout), o, sid, mode);
   } finally {
     try { fs.rmSync(settingsFile, { force: true }); } catch { /* 임시 파일 — 남아도 결과와 무관 */ }

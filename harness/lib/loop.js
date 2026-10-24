@@ -36,6 +36,88 @@ function capsFrom(o, base) {
 }
 
 // ── go ─────────────────────────────────────────────────────────────────
+
+// 기준선 — 작업 전 상태에서 검사를 잰다(캐시 · 멈춘 테스트 떼어 내기 · 시간 초과된 자동 검사 빼기 · 의존성 경고). dir: 작업 시작 시점의 코드가 있는 폴더.
+//   [2026-10-21 평가 2단계 · D2] 기본은 늦게(lazy): 검사가 실패해 "원래부터 실패하던 것인가" 를 가려야 할 때만 별도 worktree 에서 잰다 —
+//   빠른 모델(GPT-6.1 Sol)은 맨 실행 2~8분인데 하네스가 작업 전 전체 테스트에 17~44분을 써서 상한에 걸리고 정확도까지 잃었다.
+async function measureBaseline(root, task, found, dir, o, log, baseCommit) {
+      // 기준선 캐시: 같은 기준 커밋 · 같은 검사 · 같은 .worktreeinclude 내용이면 앞선 작업의 기준선을 다시 쓴다(느린 저장소에서 작업마다 수십 분).
+      const cacheKey = crypto.createHash('sha1').update(JSON.stringify([baseCommit, found.commands, (task.worktree_include || []).map(x => `${x.path}:${x.sha1}`)])).digest('hex');
+      const cacheFile = path.join(S.paths(root).harnessDir, 'baseline-cache', `${cacheKey}.json`);
+      let b = null;
+      if (!o.freshBaseline) { try { b = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch { b = null; } }
+      if (b) {
+        log(`[pilot] ${task.id} — baseline reused from an earlier task on the same base commit (--fresh-baseline to rerun)`); task.checks.baseline_cached = true;
+        if (b.commands) { found.commands = b.commands; task.checks.commands = b.commands; task.checks.hung = b.hung; }
+      } else {
+        b = (await K.runJudged(dir, found.commands, { timeoutMs: o.checkTimeoutMs, rerun: task.checks.rerun, serialRoot: task.checks.serial ? root : null })).judged;
+        // 멈춘 테스트 떼어 내기(K.isolateHangs) — 시간 초과된 검사 가운데 언어 팩이 멈춘 테스트를 짚을 수 있는 것은 그 테스트를 빼고 다시 잰다. 사용자가 준 검사도.
+        const hung = [];
+        for (let i = 0; i < b.results.length; i++) {
+          if (!b.results[i].timed_out) continue;
+          const iso = await K.isolateHangs(dir, found.commands[i], { timeoutMs: o.checkTimeoutMs });
+          if (!iso) continue;
+          hung.push(...iso.excluded.map(t => ({ command: K.display(found.commands[i]), test: t })));
+          found.commands = found.commands.map((c, k) => (k === i ? iso.argv : c));
+          b.results[i] = iso.result;
+        }
+        if (hung.length) {
+          b = { ...K.summarize(b.results), commands: found.commands, hung };
+          task.checks.commands = found.commands; task.checks.hung = hung;
+          log(`[pilot] ${task.id} — excluded tests that hung before the task (no output for ${Math.round(K.STALL_MS / 60000)} min): ${hung.map(h => h.test).join(' ; ')}`);
+        }
+        const slim = { ...b, results: (b.results || []).map(r => ({ ...r, output: undefined })) };
+        try { fs.mkdirSync(path.dirname(cacheFile), { recursive: true }); fs.writeFileSync(cacheFile, JSON.stringify(slim)); } catch { /* 캐시 실패는 작업을 멈추지 않는다 */ }
+      }
+      // [2026-10-16 자동 이슈 #13] 저장소에서 찾은 검사가 새 worktree 에서 작업 전부터 시간 초과 — 작업과 무관하게 정체됐다.
+      //   자동으로 찾은 검사(사용자가 준 것이 아닌)는 기준선에서 시간 초과면 판정에서 빼고 알린다(남은 검사가 없으면 모델의 보고로 끝난다).
+      if (found.source !== 'user' && b.results.some(x => x.timed_out)) {
+        const keep = b.results.map(x => !x.timed_out);
+        task.checks.dropped = found.commands.filter((_, i) => !keep[i]).map(cmd => ({ command: K.display(cmd), why: 'timed out before the task (baseline)' }));
+        task.checks.commands = found.commands.filter((_, i) => keep[i]);
+        b = K.summarize(b.results.filter((_, i) => keep[i]));
+        log(`[pilot] ${task.id} — dropped auto-detected checks that timed out before the task: ${task.checks.dropped.map(d => d.command).join(' ; ')}`);
+      }
+      task.checks.baseline = K.brief(b);
+      // 요약 없이 종료 코드만 빨간 기준선(M7) — 새 worktree 에 의존성(node_modules 등 무시된 파일)이 없어서일 수 있다.
+      const blind = b.results.filter(x => !x.ok && !x.found);
+      if (blind.length) {
+        task.checks.baseline_warning = `the checks failed before the task without a readable test summary (${blind.map(x => `${x.command}: ${x.timed_out ? 'timed out' : `exit ${x.exit_code}`}`).join('; ')}) — this may be an environment problem in the new worktree (e.g. dependencies are not installed there; list them in .worktreeinclude), and such checks cannot show "not worse"`;
+        log(`[pilot] ${task.id} — warning: ${task.checks.baseline_warning}`);
+      }
+      S.log(root, task.id, { event: 'baseline', ok: b.ok, pass: b.pass, fail: b.fail, warning: task.checks.baseline_warning || null });
+      S.writeTask(root, task);
+}
+
+function baselineCacheFile(root, task, commands, baseCommit) {
+  const key = crypto.createHash('sha1').update(JSON.stringify([baseCommit, commands, (task.worktree_include || []).map(x => `${x.path}:${x.sha1}`)])).digest('hex');
+  return path.join(S.paths(root).harnessDir, 'baseline-cache', `${key}.json`);
+}
+function readBaselineCache(root, task, commands, baseCommit) { try { return !!JSON.parse(fs.readFileSync(baselineCacheFile(root, task, commands, baseCommit), 'utf8')); } catch { return false; } }
+
+// 늦은 기준선: 작업 시작 커밋의 코드를 별도 worktree 에 꺼내(무시된 의존성 복사 포함) 잰 뒤 지운다. 이미 있거나 검사가 없으면 아무것도 안 한다.
+//   루프(검사 실패 때) · accept · cancel · restore(판정에 기준선이 필요할 때)가 쓴다.
+async function ensureBaseline(root, task, opts) {
+  if (task.checks.baseline || !(task.checks.commands || []).length) return false;
+  const o = (opts && opts.o) || {}, log = (opts && opts.log) || (() => {});
+  const P = S.taskPathsFor(root, task);
+  const dir = path.join(path.dirname(P.wt), `${task.id}-base`);
+  log(`[pilot] ${task.id} — checks failed; measuring the baseline at ${String(task.base_commit).slice(0, 10)} to tell old failures from new ones`);
+  try {
+    G.git(root, ['worktree', 'remove', '--force', dir], { allowFail: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    G.git(root, ['worktree', 'add', '--detach', dir, task.base_commit], { retryLock: true });
+    try { G.copyWorktreeInclude(root, dir); } catch { /* 복사 실패는 기준선 경고로 드러난다 */ }
+    await measureBaseline(root, task, { source: task.checks.source, commands: task.checks.commands.slice() }, dir, o, log, task.base_commit);
+  } catch (e) { task.checks.baseline_error = String(e.message).slice(0, 300); S.log(root, task.id, { event: 'baseline_error', error: task.checks.baseline_error }); }
+  finally {
+    G.git(root, ['worktree', 'remove', '--force', dir], { allowFail: true });
+    try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 }); } catch { /* 다음 gc */ }
+    G.git(root, ['worktree', 'prune'], { allowFail: true });
+  }
+}
+const lazyBaseline = c => ensureBaseline(c.root, c.task, { o: c.o, log: c.log });
+
 async function go(o) {
   const t0 = Date.now(), log = logger(o);
   const goal = String(o.goal || '').trim();
@@ -66,18 +148,31 @@ async function go(o) {
   //   [2026-10-08] 언어 지시가 어디에도 없어 작업자의 기록 · 보고가 영어로 나왔다.
   const yamlLang = K.yamlString(here, 'reply_language') || K.yamlString(root, 'reply_language');
   const language = yamlLang || (/[가-힣]/.test(goal) ? 'Korean' : null);
+  // 모드 — thin(가벼운 하네스): 작업자는 맨 모델처럼 스스로 계획 · 테스트 · 기록하고, 하네스는 안전(guard · worktree · 정리 · accept)과 끝난 뒤 검사 한 번만.
+  //   [평가 2단계 중간 · 2026-10-21] 짝 28쌍에서 "맨 모델 + NOTES.md + git" 이 하네스보다 통과 24 대 17 · 4배 빨랐다 — 시간은 작업 전 기준선 · 되돌려 보내기 루프에 들었다.
+  //   --mode > 프로젝트 블록 mode: > thin(기본). full(예전 방식: 작업 전 기준선 · 린트 · 품질 되돌려 보내기 · 실패 반복)은 지정할 때만 — [2026-10-21 사용자 지시]
+  const mode = String(o.mode || K.yamlString(here, 'mode') || K.yamlString(root, 'mode') || 'thin').toLowerCase();
+  if (!['thin', 'full'].includes(mode)) throw Object.assign(new Error(`unknown mode: ${mode} (thin or full)`), { code: 'USAGE' });
   const id = o.id || S.newId(), P = S.taskPaths(root, id);
   const lock = S.acquire(root, `task-${id}`);
   const task = S.newTask({ id, goal, runtime, model: o.model || (runtime === 'claude' ? DEFAULTS.model : null), effort: o.effort || null,
     base_branch: o.base ? o.base.replace(/^refs\/heads\//, '') : G.currentBranch(here), base_commit: baseCommit, branch: P.branch, worktree: P.wt,
-    owner: S.ownerRecord(), caps: capsFrom(o), docs, allow, language });
+    owner: S.ownerRecord(), caps: capsFrom(o), docs, allow, language, mode });
+  // [PRD R3] 쓰기 소유 경로 — worktree 기준 상대 glob 만(절대 경로 · .. 은 받지 않는다)
+  const owns = (o.owns || []).map(g => String(g).trim().replace(/\\/g, '/')).filter(Boolean);
+  for (const g of owns) if (/^([a-zA-Z]:|\/)|(^|\/)\.\.(\/|$)/.test(g)) { lock.release(); throw Object.assign(new Error(`--owns must be a path inside the repository (relative, no ..): ${g}`), { code: 'USAGE' }); }
+  if (owns.length) task.owns = owns;
+  if (o.factory) task.factory = o.factory;   // 공장 카드(실행 id · 카드 id) — 작업 장부가 같은 실행의 형제 카드를 "이전 작업" 으로 보지 않게
+  // [PRD R2] 작업 장부 — 이 저장소의 이전 작업 중 같은 · 비슷한 목표(지시문에 맥락으로 · 보고에 주의로)
+  try { task.related = require('./worklog').related(root, task); } catch { task.related = []; }
   S.writeTask(root, task);
-  S.log(root, id, { event: 'created', goal, base_branch: task.base_branch, base_commit: baseCommit, docs, allow });
-  if (allow.length && runtime === 'codex') log(`[harness] ${id} — note: allow rules (${allow.join(', ')}) have no effect on the Codex runtime; its sandbox governs what runs`);
+  S.log(root, id, { event: 'created', goal, base_branch: task.base_branch, base_commit: baseCommit, docs, allow, related: task.related.length ? task.related : undefined });
+  if (allow.length && runtime === 'codex') log(`[pilot] ${id} — note: allow rules (${allow.join(', ')}) have no effect on the Codex runtime; its sandbox governs what runs`);
   const c = { root, P, task, run, lock, log, t0, spentBefore: 0, o };
   try {
     G.addWorktree(root, P.wt, { branch: P.branch, base: baseCommit });
     task.worktree_include = G.copyWorktreeInclude(root, P.wt);
+    require('./resources').snapshotImages(task);   // [#34] 끝날 때 원래 있던 이미지가 사라졌는지 본다
     if (attach.length) {
       const prep = M.prepare(attach, path.join(P.dir, 'attachments'), { transcribe: K.yamlString(here, 'transcribe_command') || K.yamlString(root, 'transcribe_command') });
       task.attachments = prep.items;
@@ -101,40 +196,16 @@ async function go(o) {
     task.worker_permissions = /^strict$/i.test(K.yamlString(here, 'worker_permissions') || K.yamlString(P.wt, 'worker_permissions') || '') ? 'strict' : 'open';
     if (lintCmd) task.checks.lint = { command: lintCmd, files: /{files}/.test(lintCmd), baseline_ok: null, last: null };
     S.writeTask(root, task);
-    log(`[harness] ${id} — worktree ${P.wt} · checks: ${found.source}${found.commands.length ? ' — ' + found.commands.map(K.display).join(' ; ') : ''}`);
+    log(`[pilot] ${id} — worktree ${P.wt} · checks: ${found.source}${found.commands.length ? ' — ' + found.commands.map(K.display).join(' ; ') : ''}`);
+    // 기준선: 프로젝트 블록 baseline: eager 면 지금(예전 방식), 아니면 늦게 — 캐시에 있으면 지금 쓴다(공짜)
+    task.checks.baseline_mode = mode !== 'thin' && (/^eager$/i.test(K.yamlString(here, 'baseline') || K.yamlString(P.wt, 'baseline') || '') || o.eagerBaseline) ? 'eager' : 'lazy';
     if (found.commands.length) {
-      // 기준선 캐시: 같은 기준 커밋 · 같은 검사 · 같은 .worktreeinclude 내용이면 앞선 작업의 기준선을 다시 쓴다(느린 저장소에서 작업마다 수십 분).
-      const cacheKey = crypto.createHash('sha1').update(JSON.stringify([baseCommit, found.commands, (task.worktree_include || []).map(x => `${x.path}:${x.sha1}`)])).digest('hex');
-      const cacheFile = path.join(S.paths(root).harnessDir, 'baseline-cache', `${cacheKey}.json`);
-      let b = null;
-      if (!o.freshBaseline) { try { b = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch { b = null; } }
-      if (b) { log(`[harness] ${id} — baseline reused from an earlier task on the same base commit (--fresh-baseline to rerun)`); task.checks.baseline_cached = true; }
-      else {
-        b = (await K.runJudged(P.wt, found.commands, { timeoutMs: o.checkTimeoutMs, rerun: task.checks.rerun, serialRoot: task.checks.serial ? root : null })).judged;
-        const slim = { ...b, results: (b.results || []).map(r => ({ ...r, output: undefined })) };
-        try { fs.mkdirSync(path.dirname(cacheFile), { recursive: true }); fs.writeFileSync(cacheFile, JSON.stringify(slim)); } catch { /* 캐시 실패는 작업을 멈추지 않는다 */ }
-      }
-      // [2026-10-16 자동 이슈 #13] 저장소에서 찾은 검사가 새 worktree 에서 작업 전부터 시간 초과 — 작업과 무관하게 정체됐다.
-      //   자동으로 찾은 검사(사용자가 준 것이 아닌)는 기준선에서 시간 초과면 판정에서 빼고 알린다(남은 검사가 없으면 모델의 보고로 끝난다).
-      if (found.source !== 'user' && b.results.some(x => x.timed_out)) {
-        const keep = b.results.map(x => !x.timed_out);
-        task.checks.dropped = found.commands.filter((_, i) => !keep[i]).map(cmd => ({ command: K.display(cmd), why: 'timed out before the task (baseline)' }));
-        task.checks.commands = found.commands.filter((_, i) => keep[i]);
-        b = K.summarize(b.results.filter((_, i) => keep[i]));
-        log(`[harness] ${id} — dropped auto-detected checks that timed out before the task: ${task.checks.dropped.map(d => d.command).join(' ; ')}`);
-      }
-      task.checks.baseline = K.brief(b);
-      // 요약 없이 종료 코드만 빨간 기준선(M7) — 새 worktree 에 의존성(node_modules 등 무시된 파일)이 없어서일 수 있다.
-      const blind = b.results.filter(x => !x.ok && !x.found);
-      if (blind.length) {
-        task.checks.baseline_warning = `the checks failed before the task without a readable test summary (${blind.map(x => `${x.command}: ${x.timed_out ? 'timed out' : `exit ${x.exit_code}`}`).join('; ')}) — this may be an environment problem in the new worktree (e.g. dependencies are not installed there; list them in .worktreeinclude), and such checks cannot show "not worse"`;
-        log(`[harness] ${id} — warning: ${task.checks.baseline_warning}`);
-      }
-      S.log(root, id, { event: 'baseline', ok: b.ok, pass: b.pass, fail: b.fail, warning: task.checks.baseline_warning || null });
-      S.writeTask(root, task);
+      const cached = !o.freshBaseline && readBaselineCache(root, task, found.commands, baseCommit);
+      if (task.checks.baseline_mode === 'eager' || cached) await measureBaseline(root, task, found, P.wt, o, log, baseCommit);
+      else { log(`[pilot] ${id} — baseline: measured only if the checks fail (lazy) — the first turn starts now`); S.writeTask(root, task); }
     }
     // 저장소 전체 린트는 작업 전 상태를 재 둔다 — 원래 빨갛다면 막지 않고 보고만 한다(바꾼 파일만 보는 {files} 가 낫다).
-    if (task.checks.lint && !task.checks.lint.files) {
+    if (task.checks.lint && !task.checks.lint.files && mode !== 'thin') {
       const lb = await K.runCheck(P.wt, K.lintArgv(lintCmd, []), { timeoutMs: o.checkTimeoutMs });
       task.checks.lint.baseline_ok = lb.ok;
       S.log(root, id, { event: 'lint_baseline', ok: lb.ok, exit_code: lb.exit_code });
@@ -159,7 +230,7 @@ async function resume(o) {
   const task = S.readTask(root, o.id);
   if (!task) throw Object.assign(new Error(`unknown task: ${o.id}`), { code: 'UNKNOWN_TASK' });
   const added = Po.checkAllowRules(o.allow, '--allow').filter(r => !(task.allow || []).includes(r));
-  const refuse = reason => ({ ...result(task), refused: true, reason, report: `harness ${task.id} — not resumed: ${reason}` });
+  const refuse = reason => ({ ...result(task), refused: true, reason, report: `pilot ${task.id} — not resumed: ${reason}` });
   // done 이라도 전달하지 않은 추가 지시(note)가 있으면 이어 간다 — 그 지시를 반영하는 턴(자동 이슈 #9).
   const wasDoneWithNotes = task.status === 'done' && pendingNotes(root, task.id).length > 0;
   if (!RESUMABLE.has(task.status) && !wasDoneWithNotes) return refuse(`status is ${task.status}; only ${[...RESUMABLE].join('/')} tasks can be resumed`);
@@ -171,13 +242,19 @@ async function resume(o) {
   task.caps = capsFrom(o, task.caps);
   if (o.model) task.model = o.model;
   if (o.effort) task.effort = o.effort;
+  // [2026-10-21 자동 이슈 #30] resume --mode thin|full — 갱신 전 full 로 만든 작업을 thin 으로(또는 반대로) 이어 간다. 세션 · 브랜치 · 기록은 그대로.
+  if (o.mode) {
+    const m = String(o.mode).toLowerCase();
+    if (!['thin', 'full'].includes(m)) { lock.release(); throw Object.assign(new Error(`unknown mode: ${o.mode} (thin or full)`), { code: 'USAGE' }); }
+    if (m !== (task.mode || 'full')) { S.log(root, task.id, { event: 'mode_changed', from: task.mode || 'full', to: m }); task.mode = m; if (m === 'full') delete task.checks.deferred; }
+  }
   const wasBlocked = task.status === 'blocked';
   task.allow = [...(task.allow || []), ...added];
   task.status = 'running'; task.reason = ''; task.owner = S.ownerRecord(); task.last_signature = null;
   delete task.worktree_kept; delete task.commit_error;
   S.writeTask(root, task);
   S.log(root, task.id, { event: 'resume', caps: task.caps, from: wasBlocked ? 'blocked' : undefined, allow_added: added.length ? added : undefined });
-  if (added.length && task.runtime === 'codex') log(`[harness] ${task.id} — note: allow rules have no effect on the Codex runtime; its sandbox governs what runs`);
+  if (added.length && task.runtime === 'codex') log(`[pilot] ${task.id} — note: allow rules have no effect on the Codex runtime; its sandbox governs what runs`);
   const c = { root, P, task, run, lock, log, t0, spentBefore: task.spent.wall_ms || 0, o, added };
   try {
     if (!fs.existsSync(P.wt) || !G.worktreeRegistered(root, P.wt) || !G.isWorktreeRoot(P.wt, task.branch)) {
@@ -195,6 +272,14 @@ async function resume(o) {
       if (task.session_id) c.firstMessage = deadline => Pr.unblockMessage(task, added, movedTo, deadline);
     }
     if (wasDoneWithNotes && task.session_id) c.firstMessage = deadline => Pr.notesTurnMessage(task, deadline);
+    // --fresh-session: 이전 대화 없이 기록(PLAN.md · DECISIONS.md · git)만으로 이어 간다 — 대화 맥락이 사라진 경우 · 남긴 기록이 이어 가기에 충분한지 재는 평가
+    if (o.freshSession && task.session_id) {
+      task.previous_sessions = [...(task.previous_sessions || []), task.session_id];
+      task.session_id = null;
+      S.writeTask(root, task);
+      S.log(root, task.id, { event: 'fresh_session', previous: task.previous_sessions.slice(-1)[0] });
+      c.firstMessage = deadline => Pr.freshResumeMessage(task, { root }, deadline);
+    }
     return await loop(c, task.session_id ? 'resume' : 'initial');
   } catch (e) {
     // 작업 중 예기치 못한 예외 — 하네스 결함일 수 있다(가려서 기록 · 보고에 안내).
@@ -292,6 +377,14 @@ function account(task, r, continuing, newSessionId) {
   task.session_id = r.session_id;
 }
 
+// 턴 커밋 메시지 — 제목: 턴 번호 + 작업자 보고의 첫 줄, 본문: 그 보고(무엇을 했고 어떻게 확인했는지 · 남은 일).
+//   [2026-10-20 사용자 요구] 기록을 줄이지 말고 다음 사람 · 세션이 이어 갈 수 있게 — 예전에는 "checkpoint 1" 뿐이라 git log 로 무엇을 왜 했는지 알 수 없었다.
+function turnMessage(task, r) {
+  const text = String((r && r.final_text) || '').replace(/\r\n/g, '\n').trim();
+  const first = (text.split('\n').find(l => l.trim()) || '').replace(/^[#>*\-\s]+/, '').trim().slice(0, 72);
+  const body = text.length > 4000 ? `${text.slice(0, 4000)}\n…(잘림 — 전체는 .harness/${task.id}/ 의 기록)` : text;
+  return `turn ${task.turns}${first ? `: ${first}` : ''}${body && body !== first ? `\n\n${body}` : ''}`;
+}
 // 턴 끝 커밋. 비밀 경로는 빼고(H5), add 가 못 넣는 경로는 빼고 다시(L1). 그래도 실패하면 기록하고 계속한다 —
 //   o.throwOnError(끝의 최종 커밋)면 던져서 호출자가 worktree 를 남기게 한다.
 function checkpoint(c, label, o) {
@@ -344,13 +437,13 @@ function takeNotes(c) {
   c.task.notes_delivered = all.length;
   S.writeTask(c.root, c.task);
   S.log(c.root, c.task.id, { event: 'notes_delivered', count: fresh.length });
-  c.log(`[harness] ${c.task.id} — 사용자 추가 지시 ${fresh.length}건을 전달한다`);
+  c.log(`[pilot] ${c.task.id} — 사용자 추가 지시 ${fresh.length}건을 전달한다`);
   return fresh;
 }
 
 async function loop(c, kind) {
   const { root, P, task, log } = c;
-  const deadline = c.t0 + task.caps.wall_min * 60000 - c.spentBefore;
+  let deadline = c.t0 + task.caps.wall_min * 60000 - c.spentBefore;   // 사용량 한도를 기다린 시간만큼 늦춘다
   const saveWall = () => { task.spent.wall_ms = c.spentBefore + (Date.now() - c.t0); };
   c.allow = K.allowCommands(P.wt, task.checks);
   const hb = S.startHeartbeat(root, task.id, c.lock, c.o.heartbeatMs || 30000, task);
@@ -364,7 +457,7 @@ async function loop(c, kind) {
     const notes = takeNotes(c);
     if (notes) message = `${Pr.notesBlock(notes)}\n\n${message}`;
     task.turns = (task.turns || 0) + 1;
-    log(`[harness] ${task.id} — turn ${task.turns} (${kind})`);
+    log(`[pilot] ${task.id} — turn ${task.turns} (${kind})`);
     const { r, newSessionId } = await callRunner(c, message, deadline);
     account(task, r, continuing, newSessionId);
     recordDenials(task, r.permission_denials);
@@ -377,11 +470,25 @@ async function loop(c, kind) {
       S.writeTask(root, task);
       return finish(c, 'error', `the worktree is no longer on ${task.branch} (the session moved HEAD to ${head}) — nothing was committed or judged; inspect ${P.wt}`);
     }
-    checkpoint(c, `checkpoint ${task.turns}`);
+    checkpoint(c, turnMessage(task, r));
     S.writeTask(root, task);
 
     const ek = r.is_error ? (r.error_kind || 'crash') : null;
-    if (ek === 'quota') return finish(c, 'interrupted', `usage limit: ${String(r.error_message || r.final_text || '').slice(0, 300)}`);
+    if (ek === 'quota') {
+      // [2026-10-20] 한도에 걸리면 리셋 시각까지 기다렸다 같은 메시지로 이어 간다(무인 작업 · 공장) — 기다린 시간은 벽시계 상한에서 뺀다
+      const text = `${r.error_message || ''} ${r.final_text || ''}`;
+      const here = c.o.root || root, qOff = /^(off|false|no|0)$/i.test(String(K.yamlString(here, 'quota_wait') || ''));
+      const q = c.o.quotaWait === false ? null : require('./quota').plan(task, text, { off: qOff, maxMin: c.o.quotaWaitMaxMin != null ? c.o.quotaWaitMaxMin : K.yamlNumber(here, 'quota_wait_max_min') });
+      if (!q) return finish(c, 'interrupted', `usage limit: ${text.trim().slice(0, 300)}`);
+      task.quota_waits = (task.quota_waits || 0) + 1; task.quota_waited_ms = (task.quota_waited_ms || 0) + q.waitMs;
+      if (!q.parsed) task.quota_unparsed = (task.quota_unparsed || 0) + 1;
+      S.writeTask(root, task);
+      S.log(root, task.id, { event: 'quota_wait', until: new Date(q.until).toISOString(), wait_ms: q.waitMs, parsed: q.parsed, message: text.trim().slice(0, 200) });
+      log(`[pilot] ${task.id} — usage limit reached; waiting ${Math.round(q.waitMs / 60000)} min (until ${new Date(q.until).toLocaleTimeString()}) then continuing the same session`);
+      await (c.o.sleep || (ms => new Promise(res => setTimeout(res, ms))))(q.waitMs);
+      deadline += q.waitMs;
+      continue;
+    }
     if (ek === 'auth') return finish(c, 'interrupted', `authentication failed: ${String(r.error_message || '').slice(0, 300)}`);
     if (ek === 'sandbox') return finish(c, 'error', String(r.error_message || 'sandbox refused tool execution').slice(0, 500));
     if (ek === 'timeout' || ek === 'aborted') return finish(c, 'capped', `wall clock ${task.caps.wall_min} min reached (the session was stopped)`);
@@ -406,7 +513,7 @@ async function loop(c, kind) {
         return finish(c, 'error', task.session_id ? `the session ended with an error twice in a row (${ek}) — the work was not judged: ${why}`
           : `the session did not start (${ek}) — tried twice: ${why}`);
       }
-      log(`[harness] ${task.id} — turn ended with an error (${ek}); not judged — retrying once`);
+      log(`[pilot] ${task.id} — turn ended with an error (${ek}); not judged — retrying once`);
       if (task.session_id) { message = Pr.errorMessage(task, ek, why, deadline); kind = 'continue'; }
       else { message = Pr.taskPrompt(task, { root }); kind = 'initial'; }
       continue;
@@ -414,16 +521,35 @@ async function loop(c, kind) {
     c.errorStreak = 0;
 
     let verdict = null;
-    if (task.checks.commands.length) {
-      const rj = await K.runJudged(P.wt, K.commandsForJudge(P.wt, task.checks), { timeoutMs: Math.min(c.o.checkTimeoutMs || task.checks.timeout_ms || K.CHECK_TIMEOUT_MS, Math.max(1000, deadline - Date.now() + 60000)), rerun: task.checks.rerun, serialRoot: task.checks.serial ? root : null });
+    // thin: 끝 검사를 작업 시간에서 뺀다 — 검사는 accept 가 합치기 전에 돌리고(나빠졌으면 막는다), 미리 보려면 check <id>.
+    //   [평가 2단계 변경 11 · 2026-10-21] 작업자 턴은 맨 모델과 비슷했고(2~12분), 남은 차이는 모두 하네스의 끝 검사(+실패면 기준선)였다
+    //   (.NET 작은 수정 11.9분 · Python 막연한 요청 40분+). 취소할 작업은 검사 비용을 아예 쓰지 않는다.
+    if (task.checks.commands.length && task.mode === 'thin') {
+      task.checks.deferred = true;
+      S.writeTask(root, task);
+    } else if (task.checks.commands.length) {
+      const checkNow =() => K.runJudged(P.wt, K.commandsForJudge(P.wt, task.checks), { timeoutMs: Math.min(c.o.checkTimeoutMs || task.checks.timeout_ms || K.CHECK_TIMEOUT_MS, Math.max(1000, deadline - Date.now() + 60000)), rerun: task.checks.rerun, serialRoot: task.checks.serial ? root : null });
+      let rj = await checkNow();
+      // 늦은 기준선(D2): 실패했는데 아직 기준선이 없으면 지금 작업 시작 시점에서 잰다 — "원래부터 실패" 를 가리려고. 사용자가 준 검사는 기준선을 판정에 쓰지 않는다.
+      //   기준선에서 멈춘 테스트를 떼어 내거나 시간 초과된 자동 검사를 빼 검사 명령이 바뀌었으면, 지금 상태도 같은 명령으로 다시 잰다.
+      const thin = task.mode === 'thin';
+      if (!rj.judged.ok && !task.checks.baseline && task.checks.baseline_mode === 'lazy' && task.checks.source !== 'user') {
+        const before = JSON.stringify(task.checks.commands);
+        await lazyBaseline(c);
+        S.writeTask(root, task);
+        if (JSON.stringify(task.checks.commands) !== before) rj = task.checks.commands.length ? await checkNow() : { judged: K.summarize([]), flaky: [] };
+      }
       const judged = rj.judged;
-      if (rj.flaky.length) { task.checks.flaky = [...new Set([...(task.checks.flaky || []), ...rj.flaky])]; S.log(root, task.id, { event: 'flaky', commands: rj.flaky }); log(`[harness] ${task.id} — flaky: ${rj.flaky.join(' ; ')} failed, then passed on rerun`); }
+      if (rj.flaky.length) { task.checks.flaky = [...new Set([...(task.checks.flaky || []), ...rj.flaky])]; S.log(root, task.id, { event: 'flaky', commands: rj.flaky }); log(`[pilot] ${task.id} — flaky: ${rj.flaky.join(' ; ')} failed, then passed on rerun`); }
       task.checks.last = K.brief(judged);
       const v = K.judge(judged, task.checks.baseline, { notWorse: task.checks.source !== 'user' });
       task.checks.verdict = v.verdict;
       saveWall();
       S.log(root, task.id, { event: 'checks', verdict: v.verdict, pass: judged.pass, fail: judged.fail, ok: judged.ok });
-      log(`[harness] ${task.id} — checks: ${v.verdict} (${judged.pass} pass / ${judged.fail} fail)`);
+      log(`[pilot] ${task.id} — checks: ${v.verdict} (${judged.pass} pass / ${judged.fail} fail)`);
+      // thin: 검사는 기록용 — 작업자에게 돌려보내지 않는다. 기준선보다 나빠졌으면 failed 로 끝내고(accept 가 막는다) 사람이 판단한다.
+      //   [평가 2단계 · 2026-10-21] 돌려보내기 한 번이 원래부터 깨진 무관한 테스트를 고치게 해 시간만 썼다(.NET 큰 기능 35.5분 대 L 6.3분 · 정확도 같음).
+      if (v.verdict === 'fail' && thin) return finish(c, 'failed', `the checks fail and are worse than before the task (${judged.fail} failing): ${K.firstAssertion(judged.results.find(x => !x.ok)).slice(0, 200)}`);
       if (v.verdict === 'fail') {
         const sig = K.signature(judged);
         if (sig === task.last_signature) return finish(c, 'stalled', `the same check failure twice in a row: ${K.firstAssertion(judged.results.find(x => !x.ok)).slice(0, 200)}`);
@@ -437,7 +563,8 @@ async function loop(c, kind) {
     }
     // 린트 — 테스트가 통과(또는 나빠지지 않음 · 검사 없음)일 때만. 실패하면 린트 출력을 작업자에게 돌려보낸다.
     //   [2026-10-13 영상 "쓰레기 코드 없애는 법"] 지시문은 무시될 수 있지만 실패하는 린트 명령은 무시할 수 없다.
-    if (task.checks.lint) {
+    if (task.checks.lint && task.mode === 'thin') task.checks.lint.last = { skipped: true, ok: true, why: 'thin' };
+    else if (task.checks.lint) {
       const lt = task.checks.lint;
       const argv = K.lintArgv(lt.command, lt.files ? changedOutsideHarness(c).filter(f => fs.existsSync(path.join(P.wt, f))) : []);
       if (!argv) lt.last = { skipped: true, ok: true };
@@ -446,7 +573,7 @@ async function loop(c, kind) {
         lt.last = { ok: lr.ok, exit_code: lr.exit_code, timed_out: lr.timed_out };
         saveWall();
         S.log(root, task.id, { event: 'lint', ok: lr.ok, exit_code: lr.exit_code });
-        log(`[harness] ${task.id} — lint: ${lr.ok ? 'pass' : 'fail'}`);
+        log(`[pilot] ${task.id} — lint: ${lr.ok ? 'pass' : 'fail'}`);
         if (!lr.ok && (lt.files || lt.baseline_ok !== false)) {
           const sig = `lint:${K.firstAssertion(lr)}`;
           if (sig === task.last_signature) return finish(c, 'stalled', `the same lint failure twice in a row: ${K.firstAssertion(lr).slice(0, 200)}`);
@@ -473,10 +600,10 @@ async function loop(c, kind) {
         task.checks.quality = { ...(task.checks.quality || { on: true, off: [] }), last: qF, sent };
         const byRule = {}; for (const x of qF) byRule[x.rule] = (byRule[x.rule] || 0) + 1;
         S.log(root, task.id, { event: 'quality', dup: dupF.length, rules: byRule });
-        if ((dupF.length || qF.length) && !sent) {
+        if ((dupF.length || qF.length) && !sent && task.mode !== 'thin') {   // thin: 보고만 — 되돌려 보내지 않는다
           task.checks.dup.sent = true; task.checks.quality.sent = true;
           S.writeTask(root, task);
-          log(`[harness] ${task.id} — quality: ${dupF.length} duplicate block(s) · ${qF.length} finding(s) — sending back once`);
+          log(`[pilot] ${task.id} — quality: ${dupF.length} duplicate block(s) · ${qF.length} finding(s) — sending back once`);
           message = Pr.qualityMessage(task, dupF, qF, deadline); kind = 'continue';
           continue;
         }
@@ -487,23 +614,25 @@ async function loop(c, kind) {
     if (pendingNotes(root, task.id).length) { message = Pr.notesTurnMessage(task, deadline); kind = 'continue'; continue; }
     // done 은 무언가를 했을 때만(H2): 기준 대비 .harness/ 밖 변경이 0 이거나 마지막 말이 질문이면 — 검사가 초록이어도 — 1회 넛지.
     const changed = changedOutsideHarness(c);
-    const asked = Pr.isQuestion(r.final_text);
-    if ((!changed.length || asked) && !task.nudged) {
+    const asked = Pr.isQuestion(r.final_text), pending = Pr.isPending(r.final_text);
+    if ((!changed.length || asked || pending) && !task.nudged) {
       task.nudged = true; S.writeTask(root, task);
-      S.log(root, task.id, { event: 'nudge', why: !changed.length ? 'no_changes' : 'question' });
-      message = !changed.length ? Pr.noChangeMessage(task) : Pr.nudgeMessage(task); kind = 'continue';
+      S.log(root, task.id, { event: 'nudge', why: !changed.length ? 'no_changes' : asked ? 'question' : 'pending' });
+      message = !changed.length ? Pr.noChangeMessage(task) : asked ? Pr.nudgeMessage(task) : Pr.pendingMessage(task); kind = 'continue';
       continue;
     }
     if (!changed.length) {
       return finish(c, 'failed', `no files changed outside .harness/ — ${!verdict ? 'there are no checks' : verdict.verdict === 'pass' ? 'the checks pass' : 'the checks are not worse'}, but nothing was done (the model was nudged once)`);
     }
+    if (!verdict && task.checks.deferred) return finish(c, 'done', 'the work is done; the checks run when it is accepted (thin)');
     if (!verdict) return finish(c, 'done', 'no trusted checks — finished on the model\'s own report (verify the evidence yourself)');
     return finish(c, 'done', verdict.why);
   }
 }
 
 // ── 끝 ─────────────────────────────────────────────────────────────────
-const isTestFile = f => TEST_FILE_RE.test(f);
+// 하네스 자신의 기록(.harness/<id>/logs/…Tests.txt)은 시험 파일이 아니다 — [2026-10-20 실측] 추가한 테스트로 잘못 세어 보고 · 수치가 부풀었다
+const isTestFile = f => !/^\.harness\//.test(f) && TEST_FILE_RE.test(f);
 function outsideGit(task, wt) {
   const untracked = G.statusEntries(wt).filter(e => e.code === '??').map(e => e.path);
   return { ignored_changed: G.ignoredChanges(wt, task.worktree_include || []), untracked_left: untracked };
@@ -550,11 +679,16 @@ function finish(c, status, reason) {
       if (!rm.ok) task.worktree_kept = rm.error; else delete task.worktree_alt;
     }
   }
+  // [PRD R1] 이 작업이 띄운 컨테이너 · 네트워크를 내리고 임시 폴더를 지운다(볼륨 · 이미지 · 프로젝트 정리 명령은 accept · cancel · gc 때)
+  try {
+    const r = require('./resources').onTaskEnd(root, task);
+    if (Object.keys(r.docker.removed).length || r.residue.length || (r.tmp && r.tmp.removed) || r.procs.killed.length) S.log(root, task.id, { event: 'resources_end', processes: r.procs.killed, docker: r.docker.removed, tmp_removed: !!(r.tmp && r.tmp.removed), residue: r.residue });
+  } catch (e) { task.resources = { ...(task.resources || {}), error: String(e.message).slice(0, 200) }; }
   if (task.owner) task.owner.heartbeat_at = S.nowIso();
   S.writeTask(root, task);
   S.log(root, task.id, { event: 'end', status, reason, cost_usd: task.spent.cost_usd, wall_ms: task.spent.wall_ms, worktree_kept: task.worktree_kept || null });
   if (c.lock) c.lock.release();
-  log(`[harness] ${task.id} — ${status}`);
+  log(`[pilot] ${task.id} — ${status}`);
   const res = result(task);
   res.report = report(task, P);
   return res;
@@ -591,17 +725,26 @@ function decisionLines(task, ko) {
   return out;
 }
 
+// 기계가 읽는 검사 판정 — [2026-10-21 자동 이슈 #27] 판정에 쓴 검사가 0개(작업 전부터 시간 초과로 모두 빠짐)인데 ok · pass 로 나가
+//   완료 알림 · 자동 판단이 검증된 작업으로 읽었다. 미룬 검사(thin)는 deferred, 재지 못한 검사는 unverified.
+function checksVerdict(ch) {
+  if (!ch) return null;
+  const dropped = (ch.dropped || []).length, none = !(ch.commands || []).length;
+  if (none && dropped) return 'unverified';
+  if (ch.deferred && !ch.last) return 'deferred';
+  return ch.verdict || null;
+}
 function result(task) {
   const ch = task.checks || null, last = ch && (ch.last || null);
   return { id: task.id, status: task.status, reason: task.reason, branch: task.branch, commit: task.head || (task.commits || []).slice(-1)[0] || null,
     base_branch: task.base_branch, base_commit: task.base_commit, session_id: task.session_id,
-    checks: { source: ch ? ch.source : 'none', ok: last ? last.ok : null, pass: last ? last.pass : null, fail: last ? last.fail : null, baseline_fail: ch && ch.baseline ? ch.baseline.fail : null,
-      verdict: ch && ch.verdict || null, baseline_warning: ch && ch.baseline_warning || null },
+    checks: { source: ch ? ch.source : 'none', ok: last && checksVerdict(ch) !== 'unverified' ? last.ok : null, pass: last ? last.pass : null, fail: last ? last.fail : null, baseline_fail: ch && ch.baseline ? ch.baseline.fail : null,
+      verdict: checksVerdict(ch), baseline_warning: ch && ch.baseline_warning || null },
     cost_usd: task.spent.cost_usd, tokens: task.spent.tokens, continuations: task.spent.continuations, wall_ms: task.spent.wall_ms, unknown_cost_calls: task.spent.unknown_cost_calls || 0,
     files_changed: task.files_changed == null ? null : task.files_changed, tests_modified: task.tests_modified || [], checks_modified: task.checks_modified || [],
     secrets_excluded: task.secrets_excluded || [], commit_skipped: task.commit_skipped || [], outside_git: task.outside_git,
     worktree: task.worktree_kept ? task.worktree : null, worktree_kept: task.worktree_kept || null, merge_commit: task.merge_commit || null, revert_commit: task.revert_commit || null,
-    docs: task.docs || [], decisions: task.decisions || null };
+    docs: task.docs || [], decisions: task.decisions || null, images_removed: task.images_removed || [] };
 }
 
 const listOf = (a, n) => `${a.slice(0, n).join(', ')}${a.length > n ? ` … (+${a.length - n})` : ''}`;
@@ -645,6 +788,8 @@ function summaryKo(task) {
   if ((task.attachments || []).length) out.push(`첨부: ${task.attachments.length}개 — ${task.attachments.map(a => `${a.name}(${KIND_KO[a.kind] || a.kind}${a.frames.length && a.kind === 'video' ? ` · 장면 ${a.frames.length}장` : ''}${a.transcript ? ' · 전사' : ''})`).join(', ')}`);
   out.push(`다음: ${next}`);
   const warn = [];
+  const relWarn = require('./worklog').reportWarning(task, true);
+  if (relWarn) warn.push(relWarn);
   if ((task.checks_modified || []).length) warn.push(`작업이 검사 정의를 고쳤다(${task.checks_modified.join(', ')}) — 통과를 그대로 믿지 마세요`);
   // [2026-10-17 자동 이슈 #17] 새 시험을 더했는데 검사 명령이 그 프로젝트를 돌리지 않아 판정에서 빠졌다 — 시험 수가 그대로면 알린다.
   const runCount = x => x ? Number(x.pass || 0) + Number(x.fail || 0) : null;
@@ -656,6 +801,7 @@ function summaryKo(task) {
   const qLeft = ch.quality && ch.quality.on !== false ? (ch.quality.last || []) : [];
   if (qLeft.length) warn.push(`품질 규칙에 남은 것(한 번 돌려보냈다): ${qualitySummary(qLeft, 'ko')}`);
   if (dupLeft.length) warn.push(`새 코드에 중복 ${dupLeft.length}곳이 남았다(한 번 돌려보냈다) — ${dupLeft.slice(0, 3).map(b => `${b.file}:${b.start}-${b.end} ↔ ${b.other}`).join(' · ')}`);
+  if ((ch.hung || []).length) warn.push(`작업 전부터 멈추는 테스트 ${ch.hung.length}개를 검사에서 뺐다(${ch.hung.map(h => h.test).join(' ; ')}) — 이 테스트는 이 작업을 판정하지 않았다`);
   if ((ch.dropped || []).length) warn.push(`작업 전부터 시간 초과라 판정에서 뺐다(${ch.dropped.map(d => d.command).join(' ; ')}) — 이 검사는 이 작업을 판정하지 않았다`);
   if ((ch.flaky || []).length) warn.push(`불안정한 검사가 있다(${ch.flaky.length}개) — 다시 돌리면 통과한다`);
   if (ch.lint && ch.lint.last && !ch.lint.last.ok) warn.push('린트가 실패한 채 끝났다(작업 전부터 빨간 저장소 전체 린트)');
@@ -679,6 +825,7 @@ function deniedLines(task) {
 //   명령 · 경로 · 브랜치 · 숫자는 원문 그대로. 이유(task.reason)는 하네스가 쓰는 문장만 옮기고, 모델 · 도구가 쓴 원문은 그대로 붙인다.
 const REASON_KO = [
   [/^all checks pass$/, () => '모든 검사 통과'],
+  [/^the work is done; the checks run when it is accepted \(thin\)$/, () => '작업 끝 — 검사는 accept 때 돈다(thin · 작업 전보다 나빠졌으면 accept 가 막는다)'],
   [/^no trusted checks — finished on the model's own report \(verify the evidence yourself\)$/, () => '신뢰할 검사 없음 — 모델의 보고로 끝났다(증거를 직접 확인하세요)'],
   [/^baseline was red — (.*)$/s, (m) => `작업 전부터 검사가 빨갰다 — ${m[1]}`],
   [/^the model reported the task cannot be done: (.*)$/s, (m) => `모델이 할 수 없다고 보고했다: ${m[1]}`],
@@ -696,7 +843,7 @@ const REASON_KO = [
 ];
 function lintState(lt, lang) {
   const ko = lang === 'ko', last = lt.last || {};
-  const st = !lt.last ? (ko ? '돌리지 않음' : 'not run') : last.skipped ? (ko ? '건너뜀 — 바뀐 파일이 없다' : 'skipped — no changed files') : last.ok ? (ko ? '통과' : 'PASS') : (ko ? '실패' : 'FAIL');
+  const st = !lt.last ? (ko ? '돌리지 않음' : 'not run') : last.skipped ? (last.why === 'thin' ? (ko ? '건너뜀 — thin 모드' : 'skipped — thin mode') : (ko ? '건너뜀 — 바뀐 파일이 없다' : 'skipped — no changed files')) : last.ok ? (ko ? '통과' : 'PASS') : (ko ? '실패' : 'FAIL');
   const base = !lt.files && lt.baseline_ok === false ? (ko ? ' · 저장소 전체 린트가 작업 전부터 실패했다(기준선) — 막지 않고 보고만 한다. lint_command 에 {files} 를 쓰면 바꾼 파일만 본다' : ' · the whole-repo lint already failed before the task (baseline) — reported, not blocking; put {files} in lint_command to lint only changed files') : '';
   return `${st} — \`${lt.command}\`${base}`;
 }
@@ -708,17 +855,20 @@ function reasonKo(r) {
 function reportKo(task, P) {
   const s = task.spent, c = task.caps, ch = task.checks || { source: 'none', commands: [] };
   const cli = 'node harness/cli.js';
-  const L = [`harness ${task.id} — ${task.status.toUpperCase()}`, ...summaryKo(task), `이유: ${reasonKo(task.reason)}`, ...decisionLines(task, true)];
+  const L = [`pilot ${task.id} — ${task.status.toUpperCase()}`, ...summaryKo(task), `이유: ${reasonKo(task.reason)}`, ...decisionLines(task, true)];
+  if ((task.images_removed || []).length) L.push(`주의: 작업 전부터 있던 Docker 이미지가 작업 중에 사라졌다(이 작업이 만들지 않은 것) — ${task.images_removed.slice(0, 6).join(' · ')} · 그 이미지를 쓰는 서비스는 다시 빌드해야 할 수 있다`);
+  if (task.mode === 'thin') L.push('모드: thin — 작업자가 스스로 계획 · 테스트 · 기록하고, 하네스는 끝난 뒤 검사 한 번을 기록만 한다(돌려보내지 않음 · 작업 전보다 나빠졌으면 failed)');
   L.push(`브랜치: ${task.branch}${task.head ? ` @ ${task.head.slice(0, 10)}` : ''} (${task.base_branch || 'detached HEAD'} @ ${String(task.base_commit || '').slice(0, 10)} 에서) — 사용자 브랜치는 그대로다.`);
   if (!ch.commands.length) L.push('검사: 없음 — 신뢰할 검사가 이 작업을 판정하지 않았다. 결과는 모델의 보고에만 기대고 있다.');
   else {
     const last = ch.last, base = ch.baseline, pf = x => `${x.ok ? '통과' : '실패'} — ${x.pass} 통과 / ${x.fail} 실패`;
     L.push(`검사(${ch.source === 'user' ? '사용자가 준 것' : '저장소에서 찾은 것'}): ${ch.commands.map(K.display).join(' ; ')}`);
-    L.push(`  마지막: ${last ? pf(last) : '돌리지 않음'}${base ? ` · 작업 전 기준선: ${pf(base)}` : ''}`);
+    L.push(`  마지막: ${last ? pf(last) : ch.deferred ? '아직 안 돌림 — accept 때 돈다(미리 보기: node harness/cli.js check ' + task.id + ')' : '돌리지 않음'}${base ? ` · 작업 전 기준선: ${pf(base)}` : ''}`);
     if (ch.baseline_warning) L.push('  경고: 작업 전 검사가 읽을 수 있는 요약 없이 실패했다 — 새 worktree 의 환경 문제(의존성 미설치 등)일 수 있다. .worktreeinclude 에 필요한 파일을 적으세요');
     const cm = task.checks_modified || [];
     L.push(`작업이 고친 검사 정의: ${cm.length ? `${cm.join(', ')} — 확인하세요. 검사가 바뀌면 일을 하지 않고도 통과할 수 있다` : '없음'}`);
   }
+  if ((ch.hung || []).length) L.push(`검사에서 뺀 테스트(작업 전부터 출력 없이 멈춤): ${ch.hung.map(h => h.test).join(' ; ')}`);
   if ((ch.dropped || []).length) L.push(`판정에서 뺀 검사(저장소에서 찾은 것 · 작업 전부터 시간 초과 — 새 worktree 의 환경 문제일 수 있다): ${ch.dropped.map(d => d.command).join(' ; ')}`);
   if (ch.lint) L.push(`린트: ${lintState(ch.lint, 'ko')}`);
   if (ch.quality && ch.quality.on !== false) L.push(`품질 검사(하네스 내장 린트): ${(ch.quality.last || []).length ? qualitySummary(ch.quality.last, 'ko') + ' — ' + ch.quality.last.slice(0, 8).map(x => `${x.file}${x.line ? ':' + x.line : ''} ${x.text}`).join(' · ') : '걸린 것 없음'}${ch.quality.sent ? ' (작업자에게 한 번 돌려보냈다)' : ''}`);
@@ -770,23 +920,29 @@ function reportKo(task, P) {
 function report(task, P) {
   if (task.language === 'Korean') return reportKo(task, P);
   const s = task.spent, c = task.caps, ch = task.checks || { source: 'none', commands: [] };
-  const lines = [`harness ${task.id} — ${task.status.toUpperCase()}`, ...summaryKo(task), `why: ${task.reason}`, ...decisionLines(task, false)];
+  const lines = [`pilot ${task.id} — ${task.status.toUpperCase()}`, ...summaryKo(task), `why: ${task.reason}`, ...decisionLines(task, false)];
+  if ((task.images_removed || []).length) lines.push(`warning: Docker images that existed before the task disappeared during it (the task did not create them) — ${task.images_removed.slice(0, 6).join(' · ')} · services using them may need a rebuild`);
+  if (task.mode === 'thin') lines.push('mode: thin — the worker plans, tests and records by itself; the harness runs the checks once at the end and only records them (no send-back; worse than before = failed)');
   lines.push(`branch: ${task.branch}${task.head ? ` @ ${task.head.slice(0, 10)}` : ''} (from ${task.base_branch || 'detached HEAD'} @ ${String(task.base_commit || '').slice(0, 10)}) — your branch is untouched.`);
   if (!ch.commands.length) lines.push('checks: none found — no trusted check judged this work; the result rests on the model\'s own report.');
   else {
     const last = ch.last, base = ch.baseline;
     lines.push(`checks (${ch.source}): ${ch.commands.map(K.display).join(' ; ')}`);
-    lines.push(`  last: ${last ? `${last.ok ? 'PASS' : 'FAIL'} — ${last.pass} pass / ${last.fail} fail` : 'not run'}${base ? ` · baseline before the task: ${base.ok ? 'PASS' : 'FAIL'} — ${base.pass} pass / ${base.fail} fail` : ''}`);
+    lines.push(`  last: ${last ? `${last.ok ? 'PASS' : 'FAIL'} — ${last.pass} pass / ${last.fail} fail` : ch.deferred ? 'not run yet — they run at accept (preview: node harness/cli.js check ' + task.id + ')' : 'not run'}${base ? ` · baseline before the task: ${base.ok ? 'PASS' : 'FAIL'} — ${base.pass} pass / ${base.fail} fail` : ''}`);
     if (ch.baseline_warning) lines.push(`  warning: ${ch.baseline_warning}`);
     const cm = task.checks_modified || [];
     lines.push(`check definitions modified by the task: ${cm.length ? `${cm.join(', ')} — review these; a changed check can pass without the work being done` : 'none'}`);
   }
+  if ((ch.hung || []).length) lines.push(`tests excluded from the checks (hung with no output before the task): ${ch.hung.map(h => h.test).join(' ; ')}`);
   if ((ch.dropped || []).length) lines.push(`checks dropped (auto-detected, timed out before the task — likely the new worktree's environment): ${ch.dropped.map(d => d.command).join(' ; ')}`);
   if (ch.lint) lines.push(`lint: ${lintState(ch.lint, 'en')}`);
   if (ch.quality && ch.quality.on !== false) lines.push(`quality checks (built-in lint): ${(ch.quality.last || []).length ? qualitySummary(ch.quality.last, 'en') + ' — ' + ch.quality.last.slice(0, 8).map(x => `${x.file}${x.line ? ':' + x.line : ''} ${x.text}`).join(' · ') : 'nothing found'}${ch.quality.sent ? ' (sent back to the worker once)' : ''}`);
   if (ch.dup && ch.dup.on !== false) lines.push(`duplicate code: ${(ch.dup.last || []).length ? (ch.dup.last || []).map(b => `${b.file}:${b.start}-${b.end} (${b.lines} lines) duplicates ${b.other}`).join(' · ') : 'none'}${ch.dup.sent ? ' (sent back to the worker once)' : ''}`);
   lines.push(`changed files: ${task.files_changed == null ? '?' : task.files_changed}`);
   if (task.diff) lines.push(`diff: +${task.diff.insertions} -${task.diff.deletions} lines · ${task.diff.added_files} new files`);
+  if ((task.related || []).length) lines.push(`related earlier work (given to the worker as context): ${task.related.map(r => `${r.id} ${r.status} ${Math.round(r.score * 100)}%${r.kind === 'same' ? ' SAME GOAL' : ''}`).join(' · ')}`);
+  const relWarn = require('./worklog').reportWarning(task, false);
+  if (relWarn) lines.push(`WARNING: ${relWarn}`);
   if ((ch.flaky || []).length) lines.push(`flaky checks (failed, then passed on rerun — not sent back to the worker): ${ch.flaky.join(' ; ')}`);
   lines.push(`existing test files modified: ${(task.tests_modified || []).length ? task.tests_modified.join(', ') : 'none'}`);
   if ((task.secrets_excluded || []).length) lines.push(`secret files NOT committed (left in the worktree; never merged): ${listOf(task.secrets_excluded, 20)}`);
@@ -821,4 +977,4 @@ function report(task, P) {
   return lines.join('\n');
 }
 
-module.exports = { addNote, pendingNotes, go, resume, finish, result, report, capsFrom, isTestFile, getRun, DEFAULTS, RESUMABLE };
+module.exports = { ensureBaseline, addNote, pendingNotes, allNotes, go, resume, finish, result, report, capsFrom, isTestFile, getRun, DEFAULTS, RESUMABLE };

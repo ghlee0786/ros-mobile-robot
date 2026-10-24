@@ -397,6 +397,14 @@ FocusScope {
                         text: "최대 속도 <b>" + robot.maxSpeed.toFixed(2) + " m/s</b>"
                     }
                     Text { text: "펌웨어 한계 0.10"; color: Theme.text3; font.pixelSize: Theme.fsSmall }
+                    Seg {
+                        objectName: "rampSeg"
+                        options: ["가감속 켬", "끔"]
+                        current: robot.rampEnabled ? "가감속 켬" : "끔"
+                        enabled: robot.rampKnown
+                        opacity: enabled ? 1 : Theme.opDisabled
+                        onPicked: (v) => { robot.rampEnabled = (v === "가감속 켬"); page.forceActiveFocus() }
+                    }
                     Slider {
                         width: 170
                         from: 0.02; to: 0.10; stepSize: 0.01

@@ -8,8 +8,10 @@ const AUTONOMY = [
   // [2026-10-16 자동 보고 00b4667cbf35] "이번 작업에서 만들지 않은 파일은 지우지 말라" 가 앞 작업 파일의 이름 바꾸기를 막아 어색한 결과를 남겼다.
   //   worktree 안의 삭제 · 이름 바꾸기는 하네스가 턴마다 커밋하므로 되돌릴 수 있다 — 되돌릴 수 없는 것은 worktree 밖(guard 가 막는다).
   // [2026-10-17 자동 보고 caed67b9a2f1] 작업자가 worktree 의 compose 로 사용자의 실행 중 컨테이너를 다시 만들어 서비스가 멈췄다.
-  'Do not stop, restart or recreate the running services, containers or processes of the main checkout — they are in use. If you need to run services, start your own (the harness gives this worktree its own COMPOSE_PROJECT_NAME) and stop them when you are done.',
+  'Do not stop, restart or recreate the running services, containers or processes of the main checkout — they are in use. If you need to run services, start your own (the harness gives this worktree its own COMPOSE_PROJECT_NAME; name containers you start with `docker run` with that prefix, e.g. `--name $COMPOSE_PROJECT_NAME-pg`) and remove them when you are done — the harness also removes anything left with that name when the task ends. Never remove Docker images, containers or volumes this task did not create — not with docker commands and not through scripts or tools that clean up by name (the harness reports any pre-existing image that disappears).',
   'Irreversible actions are forbidden: no git push, no merging or resetting branches, and no deleting anything outside this worktree. Deleting or renaming files inside this worktree is fine when the goal needs it (including files earlier tasks created) — the harness commits after every turn, so it can be undone.',
+  // [2026-10-20 PRD R1] 시험 뒤 쓰레기 — 하네스가 회수할 수 있는 곳에만 만든다
+  'Leave no garbage: put scratch files in $TEMP (TEMP · TMP · TMPDIR — this task\'s own folder, deleted by the harness), and name or prefix any test data you create outside the worktree (databases, schemas, queues, caches, buckets) with $HARNESS_DATA_NS so it can be cleaned up.',
 ].join(' ');
 
 // 작업 언어(task.language) — 사람이 읽는 것(PLAN.md · BLOCKED.md · 마지막 말)은 그 언어로. [2026-10-08] 지시가 없어 영어로 나왔다.
@@ -32,12 +34,12 @@ function attachmentLines(t) {
   return [...L, ''];
 }
 
-function checksLines(checks) {
+function checksLines(checks, mode) {
   if (!checks || checks.source === 'none' || !(checks.commands || []).length) {
     return ['No automated checks were found for this repository. Verify your work yourself by running what is appropriate, and end with a short report of the evidence (commands you ran and their results).'];
   }
   const { display } = require('./checks');
-  return ['When you end your turn, the harness runs these checks from the worktree root and decides whether you are done:',
+  return [mode === 'thin' ? 'These are the repository checks — they run from the worktree root when your work is accepted (not when you finish), so run the relevant ones yourself:' :'When you end your turn, the harness runs these checks from the worktree root and decides whether you are done:',
     ...checks.commands.map(a => `- \`${display(a)}\``),
     'You can run them yourself. Make them pass by fixing the implementation; do not weaken, skip, or rewrite existing tests.',
     // [2026-09-30 실측 · Python 서비스 저장소] 원래 빨갛던 테스트(환경 의존) 때문에 모델이 BLOCKED 로 멈췄다 — 기준선을 알려 준다.
@@ -81,9 +83,11 @@ function permissionLines(t) {
 }
 
 // 린트(lint_command) — 테스트 다음에 하네스가 돌린다. 실패하면 돌려보낸다.
-function lintLines(checks) {
+function lintLines(checks, mode) {
   const lt = checks && checks.lint;
   if (!lt) return [];
+  // thin: 하네스는 린트를 돌리지 않는다 — 작업자가 직접
+  if (mode === 'thin') return [`The project's lint command is \`${lt.command}\`${lt.files ? ' ({files} = the files you changed)' : ''} — run it yourself on your changes before you finish; the harness does not run it.`];
   return [`After the checks pass, the harness also runs the project's lint command${lt.files ? ' on the files you changed' : ''}: \`${lt.command}\`. A lint failure is sent back to you like a failing test — fix the code; do not disable rules or add ignore comments to make it pass.`,
     ...(!lt.files && lt.baseline_ok === false ? ['The whole-repository lint already failed before your change, so it is reported but does not block you; do not fix unrelated lint findings.'] : [])];
 }
@@ -94,24 +98,51 @@ function lintFailMessage(t, r, excerpt, deadlineMs) {
     `Fix the code so the lint passes (do not disable rules or add ignore comments), keep .harness/${t.id}/PLAN.md current, and end your turn. If it cannot be done, write .harness/${t.id}/BLOCKED.md with the reason.`].join('\n\n');
 }
 
+// 저장소가 설정한 린터를 미리 알린다(repolint.js) — 품질 검사가 돌려보내기 전에 지키게. quality: off · quality_off: [repo-lint] 면 없다.
+function repoLintLines(t) {
+  const q = (t.checks && t.checks.quality) || {};
+  if (!t.worktree || q.on === false || (q.off || []).includes('repo-lint')) return [];
+  let line = null; try { line = require('./repolint').promptLine(t.worktree); } catch { /* 린터 감지 실패는 안내를 빼고 간다 */ }
+  return line ? [`- ${line}`] : [];
+}
+// thin 모드 — 하네스가 중간에 판정하지 않으니 작업자가 스스로 테스트하고 근거를 댄다(평가 arm L 의 작업 방식).
+//   "근거 없이 완료라고 말하지 않는다" 는 Superpowers 의 verification-before-completion 에서 가져왔다(프롬프트 한 줄 · 비용 없음).
+function thinLines(t) {
+  if (!t || t.mode !== 'thin') return [];
+  return ['- Test as you go: run the tests that cover your change yourself (the relevant files first, then the wider suite if it is quick), read their output, and fix failures before you finish. Do not claim anything works unless you ran the command that shows it in this session — put the commands and their results in PLAN.md and your final report.',
+    '- The harness does not check your work when you finish: the repository checks run when the work is accepted, and the work is refused if they are worse than before your change. So finish only when you have seen the relevant tests pass; if some failures were already there before your change, say which in your report and do not try to fix unrelated ones.'];
+}
+function profileLines() {
+  try { return require('./profile').promptLines().slice(1).map((l, i) => i === 0 ? `- ${l.replace(/^# /, '')}:` : `  ${l}`); } catch { return []; /* 판단 패턴 파일이 깨졌으면 없이 간다 */ }
+}
 function taskPrompt(t, o) {
   const rel = `.harness/${t.id}`;
   const docs = docsLines(t, o && o.root);
-  return ['# Goal', t.goal, '', ...docs, ...attachmentLines(t),
+  return ['# Goal', t.goal, '', ...docs, ...attachmentLines(t), ...require('./worklog').promptLines(o && o.root, t),
     `${docs.length ? 'The goal and these documents are' : 'This is'} the complete specification. Do not expand scope beyond it.`, '',
     '# Working rules',
-    `- Keep a living plan at \`${rel}/PLAN.md\`: goal, progress (checked items), decisions, discoveries, remaining work. A fresh session must be able to continue from that file and the git log alone.`,
+    // [2026-10-21 사용자 요구] 로그 · 주석 · 계획을 생략하거나 줄이지 말고, 다음 세션 · 사람이 이어 갈 수 있을 만큼 남긴다(평가 2단계 맥락 점수 H 로 잰다).
+    `- Keep a living plan at \`${rel}/PLAN.md\`: goal, progress (checked items), decisions, discoveries, remaining work, plus the context a newcomer needs — where the relevant code lives, how you verified each part (commands and results), and what is left and why. Do not shorten it at the end: a fresh session or a person must be able to continue from that file and the git log alone. Your end-of-turn report becomes the commit message, so say what you changed and why.`,
+    '- In code, comment the non-obvious why (a constraint, a workaround, the reason for a choice), in the style the file already uses; do not narrate what the code plainly does.',
     `- ${AUTONOMY}`,
     // [2026-10-16 사용자 지시] 시작 때 묻지 않고 지시를 바탕으로 끝까지 스스로 판단한다 — 결과를 바꾼 갈림길만 완성 뒤 보고에 정리한다(하네스가 DECISIONS.md 를 읽는다).
     `- Decision points: when you reach a fork that the goal and the repository do not settle — two or more reasonable options that change the result (behaviour, data or API shape, scope, dependencies, what the user sees) — never ask and never stop; pick the option that best fits the user's instructions and is easiest to change later, and keep going. Record each fork in \`${rel}/DECISIONS.md\` as a section: \`## <n>. <the fork in one line>\` followed by the lines \`- options: …\`, \`- chosen: …\`, \`- why: …\`, \`- effect: … (and how to change it later)\`. Only real forks — not routine implementation details. The harness shows them to the user when the work is done.`,
     ...(languageLine(t) ? [`- ${languageLine(t)}`] : []),
+    ...thinLines(t),
+    // [2026-10-21 사용자 요청] 갈림길은 이 사용자의 판단 패턴(harness profile --build 로 만든 ~/.harness/profile.json)으로 고른다 — 없으면 줄이 없다.
+    ...profileLines(),
+    // [PRD R3] 쓰기 소유 경로 — 다른 작업자와 동시에 같은 저장소를 고친다
+    ...((t.owns || []).length ? [`- You may change only these paths: ${t.owns.map(g => `\`${g}\``).join(', ')} (plus \`${rel}/\` and $TEMP). Other tasks are changing the rest of this repository in parallel, so everything else is read-only for you — the harness blocks writes outside these paths. If the goal needs a change elsewhere (an interface, a shared registration, a config), do not work around it: write in \`${rel}/DECISIONS.md\` what must change, where and why.`] : []),
     `- If the task is impossible or the specification contradicts itself, write \`${rel}/BLOCKED.md\` explaining why and stop.`,
     '- Do not run git commands that write (commit, checkout, reset, merge, stash, branch). The harness commits after every turn.',
     // [2026-10-13 영상 "쓰레기 코드 없애는 법"] AI 는 더하기 기계다 — 덜 쓰게 한다(효과는 평가로 잰다: 숨은 검사 통과율 · 추가 줄 수).
-    '- Write the least code that meets the goal: no features, options or abstractions the goal did not ask for; prefer the standard library and the project\'s existing helpers to hand-written ones; change only the lines the goal needs (match the existing style, do not reformat or refactor unrelated code); remove only what your own change made unused.',
+    // [2026-10-21 평가 1단계 블라인드 심사] "최소한만" 지시가 저장소 관례까지 줄였다(관례 일관성 3.62 대 4.36 · 중복 3.76 대 4.56) — 관례를 먼저 찾고, 그 안에서 최소한.
+    '- Follow the repository\'s conventions first: before writing, look at how similar changes were made here (git log, neighbouring files) — put new code where code of that kind already lives, reuse the existing helpers instead of writing near-copies, and update what this repository updates together with such a change (for example CHANGELOG, docs, registration lists, doc comments in the same style).',
+    '- Within those conventions, write the least code that meets the goal: no features, options or abstractions the goal did not ask for; prefer the standard library and the project\'s existing helpers to hand-written ones; change only the lines the goal needs (match the existing style, do not reformat or refactor unrelated code); remove only what your own change made unused.',
+    ...repoLintLines(t),
     '- End with a short report: the result first, then the commands you ran to verify it and their results.',
     ...permissionLines(t), '',
-    '# Checks', ...checksLines(t.checks), ...lintLines(t.checks)].join('\n');
+    '# Checks', ...checksLines(t.checks, t.mode), ...lintLines(t.checks, t.mode)].join('\n');
 }
 
 function remainingLine(t, deadlineMs) {
@@ -140,6 +171,7 @@ const QUALITY_HOW = {
   'test-weaken': 'do not skip, focus (.only) or neuter tests — make them pass',
   hardcoded: 'use configuration, environment variables or paths relative to the repository; never commit secrets',
   'format-only': 'revert whitespace/indentation-only changes in files the goal does not need',
+  'repo-lint': 'fix these new violations of the repository\'s own lint rules in the lines you added (wrap long lines and comments; do not disable rules or touch lines you did not change)',
 };
 function qualityMessage(t, dups, findings, deadlineMs) {
   const L = ['The checks pass, but the harness quality rules found problems in the lines you added. Fix them (one pass — the harness will not send these back again):'];
@@ -186,6 +218,12 @@ function noChangeMessage(t) {
 }
 
 // added: 이번 resume 에서 사용자가 새로 허용한 규칙.
+// 새 세션 이어 가기(resume --fresh-session) — 이전 대화 없이: 목표 전체 + 남긴 기록부터 읽고 끝난 일은 다시 하지 않는다
+function freshResumeMessage(t, o, deadlineMs) {
+  return [taskPrompt(t, o), '', '# Continuing earlier work',
+    `A previous session worked on this task and stopped (${t.reason || t.status}); you do not have its conversation. Before changing anything, read .harness/${t.id}/PLAN.md, .harness/${t.id}/DECISIONS.md if it exists, \`git log\` and \`git diff ${t.base_commit || 'HEAD~1'}\` in this worktree to learn what is already done and why. Then continue from there — do not redo finished work, keep the earlier decisions unless they are wrong (if so, say why in DECISIONS.md), and keep PLAN.md current.`,
+    remainingLine(t, deadlineMs)].join('\n');
+}
 function resumeMessage(t, deadlineMs, added) {
   return [`The run was interrupted (${t.reason || t.status}). Continue the same task from where you stopped: read .harness/${t.id}/PLAN.md and \`git log\` in this worktree, then keep going until the goal is complete.`,
     ...((added || []).length ? [`The user also pre-approved these commands: ${added.join(', ')}.`] : []),
@@ -207,6 +245,15 @@ function conflictMessage(t, target, files) {
 }
 
 // 마지막 말이 질문·허락 요청인가.
+// [2026-10-21 자동 이슈 #28] 작업자가 자기 시험 · 빌드 결과를 기다리는 중이라며 턴을 끝냈는데 done 이 됐다 — 마지막 말이 "기다리는 중" 이면 한 번 더 준다
+function isPending(text) {
+  const s = String(text || '').trim().slice(-500);
+  if (!s) return false;
+  return /(기다리는 중|기다리고 있|결과를 기다|끝나면 (알려|보고|확인)|완료되면 (알려|보고|확인)|아직 (실행|진행|돌고) 중|백그라운드(에서|로) (실행|돌)|\bstill running\b|\bwaiting for\b|\bonce (it|they|the (tests?|build|run)) (finish|complete)|\bwill (report|update|check) (back|once|when)|\brunning in the background\b)/i.test(s);
+}
+function pendingMessage(t) {
+  return `Your last message says something is still running or that you are waiting for a result. Nothing keeps running after your turn ends — run it now in the foreground, wait for it to finish, read the result, then finish with that result (update .harness/${t.id}/PLAN.md).`;
+}
 function isQuestion(text) {
   const s = String(text || '').trim();
   if (!s) return false;
@@ -214,4 +261,4 @@ function isQuestion(text) {
   return /할까요|하시겠|원하시면|괜찮을까요|진행할까|\bshould I\b|\bwould you like\b|\bshall I\b|\bdo you want\b|\blet me know if\b/i.test(s.slice(-400));
 }
 
-module.exports = { qualityMessage, dupMessage, notesBlock, notesTurnMessage, lintLines, lintFailMessage, AUTONOMY, systemAppend, languageLine, attachmentLines, taskPrompt, failMessage, nudgeMessage, noChangeMessage, errorMessage, resumeMessage, unblockMessage, conflictMessage, isQuestion, remainingLine, money };
+module.exports = { isPending, pendingMessage, qualityMessage, dupMessage, notesBlock, notesTurnMessage, lintLines, lintFailMessage, AUTONOMY, systemAppend, languageLine, attachmentLines, taskPrompt, freshResumeMessage, failMessage, nudgeMessage, noChangeMessage, errorMessage, resumeMessage, unblockMessage, conflictMessage, isQuestion, remainingLine, money };

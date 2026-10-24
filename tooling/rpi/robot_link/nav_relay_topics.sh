@@ -10,7 +10,9 @@ _to_pc=(/scan:sensor_msgs/msg/LaserScan:best_effort
         /odom:nav_msgs/msg/Odometry
         /tf:tf2_msgs/msg/TFMessage
         /tf_static:tf2_msgs/msg/TFMessage:transient_local
-        /goal_pose:geometry_msgs/msg/PoseStamped)
+        /goal_pose:geometry_msgs/msg/PoseStamped
+        /dashboard/nav_cancel:std_msgs/msg/Empty
+        /teleop/estop:std_msgs/msg/Empty)
 NAV_RELAY_TO_PC_ROBOT_SIDE=("${_to_pc[@]}" /dashboard/initialpose:geometry_msgs/msg/PoseWithCovarianceStamped)
 NAV_RELAY_TO_PC_PC_SIDE=("${_to_pc[@]}" /initialpose:geometry_msgs/msg/PoseWithCovarianceStamped)
 # PC -> robot: Nav2 velocity (the Pi's cmd_watchdog relays it); map, plan, localization, the local

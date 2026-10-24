@@ -6,7 +6,6 @@ const { spawn, spawnSync } = require('node:child_process');
 const CHECK_TIMEOUT_MS = 15 * 60 * 1000, CAP = 256 * 1024;
 const IS_WIN = process.platform === 'win32';
 const DEFAULT_ALLOW = ['node', 'npm', 'npx', 'pnpm', 'yarn', 'python', 'py', 'pytest', 'pip', 'dotnet', 'go', 'cargo', 'make', 'tsc', 'jest', 'vitest'];
-const NPM_DEFAULT_TEST = /no test specified/i;
 
 // ── 명령 문자열 → argv ────────────────────────────────────────────────
 // 셸 연산자(&& || | ; > <)가 있으면 셸 문자열 하나로 둔다(argv 길이 1 · 실행은 셸로).
@@ -103,19 +102,10 @@ function yamlList(root, name) {
   }
   return null;
 }
-const exists = (root, rel) => fs.existsSync(path.join(root, rel));
 const readText = (root, rel) => { try { return fs.readFileSync(path.join(root, rel), 'utf8'); } catch { return ''; } };
-const listRoot = root => { try { return fs.readdirSync(root); } catch { return []; } };
 
-function repoKinds(root) {
-  const kinds = new Set(), names = listRoot(root);
-  if (exists(root, 'package.json')) kinds.add('node');
-  if (exists(root, 'pyproject.toml') || exists(root, 'pytest.ini') || exists(root, 'setup.py') || exists(root, 'requirements.txt') || exists(root, 'tox.ini')) kinds.add('python');
-  if (names.some(n => /\.(sln|csproj|fsproj|vbproj)$/i.test(n))) kinds.add('dotnet');
-  if (exists(root, 'go.mod')) kinds.add('go');
-  if (exists(root, 'Cargo.toml')) kinds.add('rust');
-  return [...kinds];
-}
+// 저장소 종류 — 언어 팩(langs.js)이 정한다(PRD R5 · 언어 중립)
+function repoKinds(root) { return require('./langs').detect(root); }
 
 // 사용자 검사가 있으면 그것, 없으면 저장소에서 발견, 없으면 none.
 // projectRoot: 프로젝트 블록(test_command)을 먼저 읽을 곳 — 부른 체크아웃. 지시 파일이 커밋 전이거나 git 밖(CLAUDE.md)이면 worktree 에는 옛 판이 있다
@@ -129,24 +119,14 @@ function discover(root, userChecks, projectRoot) {
       if (v) return { source: 'detected', commands: [splitCommand(v)], from: f };
     }
   }
-  if (exists(root, 'package.json')) {
-    let pkg = null; try { pkg = JSON.parse(readText(root, 'package.json')); } catch { /* 깨진 package.json */ }
-    const t = pkg && pkg.scripts && pkg.scripts.test;
-    if (typeof t === 'string' && t.trim() && !NPM_DEFAULT_TEST.test(t)) return { source: 'detected', commands: [['npm', 'test']], from: 'package.json' };
-  }
-  if (exists(root, 'pytest.ini') || /^\s*\[tool\.pytest/m.test(readText(root, 'pyproject.toml')) || /^\s*\[(tool:)?pytest\]/m.test(readText(root, 'setup.cfg') + '\n' + readText(root, 'tox.ini'))) {
-    return { source: 'detected', commands: [['python', '-m', 'pytest']], from: 'pytest' };
-  }
-  const names = listRoot(root);
-  const sln = names.find(n => /\.sln$/i.test(n)), proj = names.find(n => /\.(csproj|fsproj|vbproj)$/i.test(n));
-  if (sln || proj) return { source: 'detected', commands: [['dotnet', 'test']], from: sln || proj };
-  if (exists(root, 'go.mod')) return { source: 'detected', commands: [['go', 'test', './...']], from: 'go.mod' };
-  if (exists(root, 'Cargo.toml')) return { source: 'detected', commands: [['cargo', 'test']], from: 'Cargo.toml' };
+  // 언어 팩 순서대로 처음 찾은 테스트 명령(node · python · dotnet · go · rust · java · c/c++)
+  const t = require('./langs').testCommand(root);
+  if (t) return { source: 'detected', commands: t.commands, from: t.from };
   return { source: 'none', commands: [] };
 }
 
 // 워커가 실행해도 되는 프로그램: 검사 명령의 argv[0] + 저장소 종류.
-const KIND_ALLOW = { node: ['node', 'npm', 'npx'], python: ['python', 'py', 'pytest'], dotnet: ['dotnet'], go: ['go'], rust: ['cargo'] };
+const KIND_ALLOW = new Proxy({}, { get: (_, k) => require('./langs').allowFor([String(k)]) });   // 언어 팩의 허용 프로그램
 function programName(argv) {
   const first = isShellString(argv) ? splitCommand(argv[0].split(SHELL_OPS)[0])[0] : argv[0];
   if (!first) return null;
@@ -257,6 +237,8 @@ function parseSummary(text) {
   if (mtp) return { found: true, pass: Number(mtp[2]), fail: Number(mtp[1]) };
   const js = [...s.matchAll(/^\s*Tests:\s+(.*)$/gm)].pop();
   if (js && /\b(passed|failed)\b/.test(js[1])) { const n = w => { const m = new RegExp(`(\\d+) ${w}`).exec(js[1]); return m ? Number(m[1]) : 0; }; return { found: true, pass: n('passed'), fail: n('failed') }; }
+  const lg = require('./langs').parseSummary(s);   // cargo · go · ctest · maven(언어 팩)
+  if (lg) return lg;
   return { found: false, pass: 0, fail: 0 };
 }
 
@@ -288,23 +270,29 @@ function spawnSpec(argv, forceShell) {
   return { cmd: argv[0], args: argv.slice(1), shell: false };
 }
 
+// 출력이 이만큼 멈추면 멈춘 것으로 본다 — 멈춘 테스트를 떼어 낼 줄 아는 러너(언어 팩 hang)에만. o.stallMs: 0 이면 끔.
+const STALL_MS = Number(process.env.HARNESS_CHECK_STALL_MS) || 5 * 60 * 1000;   // 환경 값은 테스트용
 function runCheck(cwd, argv, o) {
   const timeoutMs = Math.max(1000, (o && o.timeoutMs) || CHECK_TIMEOUT_MS);
   const opt = o || {};
+  const stallMs = opt.stallMs != null ? opt.stallMs : (require('./langs').hangFor(argv) ? STALL_MS : 0);
   return new Promise(resolve => {
     const t0 = Date.now(), spec = spawnSpec(argv, opt.shell);
-    let out = '', total = 0, tail = '', timedOut = false, done = false, child, timer;
-    const push = b => { total += b.length; const s = b.toString('utf8'); if (out.length < CAP) out += s; else tail = (tail + s).slice(-CAP); };
+    let out = '', total = 0, tail = '', timedOut = false, stalled = false, done = false, child, timer, stallTimer;
+    const stop = why => { if (done || timedOut) return; timedOut = true; stalled = why === 'stall'; killTree(child.pid); setTimeout(() => finish(null), 5000).unref(); };
+    const arm = () => { if (!stallMs) return; clearTimeout(stallTimer); stallTimer = setTimeout(() => stop('stall'), stallMs); };
+    const push = b => { arm(); total += b.length; const s = b.toString('utf8'); if (out.length < CAP) out += s; else tail = (tail + s).slice(-CAP); };
     const finish = (code, err) => {
-      if (done) return; done = true; clearTimeout(timer);
+      if (done) return; done = true; clearTimeout(timer); clearTimeout(stallTimer);
       const output = out + (tail ? `\n…[${total - out.length - tail.length} bytes omitted]…\n` + tail : '') + (err ? `\n[spawn error] ${err}` : '');
       const s = parseSummary(output);
       const ok = code === 0 && !timedOut && !(s.found && s.fail > 0);
-      resolve({ command: opt.label || display(argv), argv, exit_code: code, timed_out: timedOut, found: s.found, pass: s.found ? s.pass : (ok ? 1 : 0), fail: s.found ? s.fail : (ok ? 0 : 1), ok, output, ms: Date.now() - t0 });
+      resolve({ command: opt.label || display(argv), argv, exit_code: code, timed_out: timedOut, ...(stalled ? { stalled: true } : {}), found: s.found, pass: s.found ? s.pass : (ok ? 1 : 0), fail: s.found ? s.fail : (ok ? 0 : 1), ok, output, ms: Date.now() - t0 });
     };
     try { child = spawn(spec.cmd, spec.args, { cwd, env: { ...childEnv(opt.bin), ...require('./proc').isolationEnv(cwd) }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: spec.shell, detached: !IS_WIN }); }
     catch (e) { return finish(null, e.message); }
-    timer = setTimeout(() => { timedOut = true; killTree(child.pid); setTimeout(() => finish(null), 5000).unref(); }, timeoutMs);
+    timer = setTimeout(() => stop('timeout'), timeoutMs);
+    arm();
     child.stdout.on('data', push); child.stderr.on('data', push);
     child.on('error', e => finish(null, e.message));
     child.on('close', code => finish(code));
@@ -341,6 +329,25 @@ async function runJudged(cwd, commands, o) {
   const results = first.results.slice(), flaky = [];
   idx.forEach((i, k) => { results[i] = again.results[k]; if (again.results[k].ok) flaky.push(first.results[i].command); });
   return { judged: summarize(results), flaky };
+}
+// 멈춘 테스트 떼어 내기 — 기준선에서 시간 초과된 검사의 멈춘 테스트를 언어 팩이 짚어 빼고 다시 돌린다(최대 4번).
+//   [2026-10-20 실측 · 음성 비서 Python 저장소] 오디오 장치를 기다리는 테스트 하나가 2% 지점에서 영원히 멈춰, 전체 pytest 가 매번 15분 상한에 걸렸다 —
+//   찾은 검사는 버려져 검사 없이 돌았고, 사용자가 준 검사였다면 작업이 끝날 수 없었다. 뺀 테스트는 보고서에 남긴다(조용히 빼지 않는다).
+//   → { argv, excluded: [테스트], result } · 떼어 낼 수 없으면 null
+async function isolateHangs(cwd, argv, o) {
+  const hang = (o && o.hang) || require('./langs').hangFor(argv);   // o.hang: 테스트가 끼우는 가짜 러너
+  if (!hang) return null;
+  let cur = argv.slice();
+  const excluded = [];
+  for (let i = 0; i < 4; i++) {
+    const r = await runCheck(cwd, cur, { ...o, stallMs: o && o.stallMs != null ? o.stallMs : STALL_MS });
+    if (!r.timed_out) return excluded.length ? { argv: cur, excluded, result: r } : null;
+    const step = hang.next(cur, r.output);
+    if (!step) return null;
+    if (step.exclude) excluded.push(step.exclude);
+    cur = step.argv;
+  }
+  return null;
 }
 function summarize(results) {
   return { ok: results.every(r => r.ok), pass: results.reduce((a, r) => a + r.pass, 0), fail: results.reduce((a, r) => a + r.fail, 0), results };
@@ -408,6 +415,6 @@ function failureExcerpt(judged) {
     `### \`${r.command}\` — exit ${r.exit_code == null ? 'none' : r.exit_code}${r.timed_out ? ' (timed out)' : ''}${r.found ? ` · ${r.pass} pass / ${r.fail} fail` : ''}\n\`\`\`\n${clip(r.output, 1500, 2500).trim()}\n\`\`\``).join('\n\n');
 }
 
-module.exports = { lintArgv, yamlNumber, yamlString, yamlList, yamlListOf,DEFAULT_ALLOW, NEVER_ALLOW, CHECK_TIMEOUT_MS, splitCommand, display, isShellString, discover, repoKinds, allowCommands, programName, parseSummary,
-  runCheck, runAll, runJudged, summarize, brief, judge, worseThan, signature, firstAssertion, failureExcerpt, clip, killTree, childEnv,
+module.exports = { lintArgv, yamlNumber, yamlString, yamlList, yamlListOf, spawnSpec, DEFAULT_ALLOW, NEVER_ALLOW, CHECK_TIMEOUT_MS, splitCommand, display, isShellString, discover, repoKinds, allowCommands, programName, parseSummary,
+  runCheck, runAll, runJudged, isolateHangs, STALL_MS, summarize, brief, judge, worseThan, signature, firstAssertion, failureExcerpt, clip, killTree, childEnv,
   definitions, commandsForJudge, checksModified, isNpmTest, npmTestScript, yamlTestCommandOf };
