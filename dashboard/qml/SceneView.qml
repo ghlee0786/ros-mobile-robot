@@ -304,6 +304,7 @@ ColumnLayout {
             }
         }
         Btn { text: "기본 시점"; size: "sm"; onClicked: root.setView("홈") }
+        Btn { text: "지도 초기화"; size: "sm"; onClicked: robot.resetMap() }
         Item { implicitWidth: Theme.sp2 }
         Text { text: "도구"; color: Theme.text2; font.pixelSize: Theme.fsSmall }
         Seg {

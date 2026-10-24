@@ -46,6 +46,7 @@ Popup {
             out.push({ label: "1 m 후진", hint: "주행", keys: "", run: () => r.straight(-1.0) })
         }
         out.push({ label: "비상 정지", hint: "주행", keys: "", run: () => r.estop() })
+        out.push({ label: "지도 초기화", hint: "지도", keys: "", run: () => r.resetMap() })
         out.push({ label: Theme.largeText ? "큰 글자 끄기" : "큰 글자 켜기", hint: "보기", keys: "", run: () => Theme.largeText = !Theme.largeText })
         out.push({ label: Theme.reduceMotion ? "움직임 줄이기 끄기" : "움직임 줄이기", hint: "보기", keys: "", run: () => Theme.reduceMotion = !Theme.reduceMotion })
         out.push({ label: Theme.dark ? "라이트 테마로 전환" : "다크 테마로 전환", hint: "보기", keys: "", run: () => Theme.toggleDark() })

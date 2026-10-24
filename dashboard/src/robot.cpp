@@ -110,6 +110,7 @@ Robot::Robot(QObject *parent) : QObject(parent)
     m_bridge.advertise("/straight_drive/cancel", "std_msgs/Empty");
     m_bridge.advertise("/teleop/estop", "std_msgs/Empty");   // 파이 cmd_watchdog: 가감속 없이 즉시 정지
     m_bridge.advertise("/dashboard/nav_cancel", "std_msgs/Empty");   // PC nav_cancel_bridge: Nav2 목표 모두 취소
+    m_bridge.advertise("/dashboard/map_reset", "std_msgs/Empty");    // PC nav_cancel_bridge: /slam_toolbox/reset
     m_bridge.advertise("/goal_pose", "geometry_msgs/PoseStamped");
     m_bridge.advertise(kInitialPoseTopic, "geometry_msgs/PoseWithCovarianceStamped");
     m_recordTopics = {"/odom", "/scan", "/imu/data_raw", "/wheel_states"};
@@ -949,6 +950,15 @@ void Robot::cancelGoal()
                   {{"goal_info", QJsonObject{{"goal_id", QJsonObject{{"uuid", uuid}}},
                                              {"stamp", QJsonObject{{"sec", 0}, {"nanosec", 0}}}}}},
                   [](const QJsonObject &) {});
+}
+
+// SLAM 지도를 비우고 지금 자리에서 새로 그린다 — slam_toolbox 는 PC 도메인 8 에 있어 토픽을 split_relay 로 넘긴다
+void Robot::resetMap()
+{
+    if (m_bridge.noPublish())
+        return;
+    m_bridge.publish("/dashboard/map_reset", {});
+    addEvent("지도 초기화 요청");
 }
 
 void Robot::estop()
