@@ -139,6 +139,22 @@ tooling/rpi/deploy_robot_link.sh rpi          # 서비스 7개 설치 · 부팅 
 | 터미널 키보드 조종 | `tooling\pc\teleop.cmd` |
 | 실기 점검(명령을 보내지 않음) | `uv run … python tooling\mockbridge\pi_suite.py --host 192.168.1.201` |
 
+## 🧠 AI 에이전트로 조종하기(MCP)
+
+`tooling/mcp/ros_monitor_mcp.py` 는 대시보드와 같은 규칙(워치독 경유 `/teleop/cmd_vel` · throttle 구독 · `/scan_compact`)으로 rosbridge 에 붙는
+MCP 서버입니다. Claude Code · Claude Desktop · Codex CLI(ChatGPT)에서 "앞으로 30 cm 가 줘", "주변에 뭐가 막고 있어?" 처럼 물으면
+`robot_status` · `get_pose` · `get_scan_summary` · `get_map_summary` · `nav_status` · `send_nav_goal` · `drive` · `straight` · `estop` … 도구로 수행합니다.
+
+```bat
+python tooling\mcp\register.py --dry-run         :: 무엇을 바꿀지 보기
+python tooling\mcp\register.py                   :: 셋 다 등록(읽기 · 정지만)
+python tooling\mcp\register.py --allow-motion    :: 움직이는 도구까지 — 사람이 로봇 곁에 있을 때만
+checks\mcp.cmd                                   :: 모의 서버로 시험
+```
+
+주소는 대시보드에 마지막으로 연결한 곳(없으면 `ws://192.168.1.201:9090`, `ROS_MONITOR_URL` 이 우선)입니다. 사용 절차 · 실패 대응은
+스킬 `.agents/skills/ros-monitor/SKILL.md`(Codex, Claude Code 는 같은 파일을 `.claude/skills/ros-monitor/SKILL.md` 로)에 있습니다.
+
 ## 🧪 시험 — 로봇 없이도 검증한다
 
 | 층 | 무엇 | 실행 |
