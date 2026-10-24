@@ -11,6 +11,9 @@ firmware/**/build-*/
 dashboard/build/
 dashboard/records/
 
+# installer build output (installer\build_installer.cmd)
+dist/
+
 # harness source clone (installed copy lives in harness/)
 dev.harness/
 

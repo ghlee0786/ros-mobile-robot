@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(robot_dashboard LANGUAGES CXX)
+project(robot_dashboard VERSION 0.1.0 LANGUAGES CXX)
 
 find_package(Qt6 6.8 REQUIRED COMPONENTS Quick Quick3D WebSockets Graphs Network)
 qt_standard_project_setup(REQUIRES 6.8)

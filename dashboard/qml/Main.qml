@@ -10,7 +10,7 @@ ApplicationWindow {
     width: 1440
     height: 980
     visible: true
-    title: "로봇 대시보드"
+    title: "ROS 모니터"
     color: Theme.canvas
     font.family: Theme.fontFamily
 
@@ -51,7 +51,7 @@ ApplicationWindow {
             spacing: Theme.sp5
             Row {
                 spacing: Theme.sp2
-                Text { id: appTitle; text: "로봇 대시보드"; color: Theme.text1; font.pixelSize: Theme.fsTitle; font.weight: Theme.wStrong }
+                Text { id: appTitle; text: "ROS 모니터"; color: Theme.text1; font.pixelSize: Theme.fsTitle; font.weight: Theme.wStrong }
                 Text {
                     anchors.baseline: appTitle.baseline
                     text: "robot1 · ROS 2 Foxy"; color: Theme.text3; font.family: Theme.monoFamily; font.pixelSize: Theme.fsSmall
@@ -120,8 +120,24 @@ ApplicationWindow {
         text: "연결 끊김"
     }
 
+    // 새 버전 알림(GitHub Releases). 조종 중(잠금 해제 · 자율주행 · 직진)에는 설치를 막는다.
+    Updater {
+        id: updater
+        objectName: "updater"
+        driving: robot.teleopArmed || robot.straightRunning || robot.mode === "자율주행"
+    }
+    UpdateBanner {
+        parent: win.contentItem
+        z: 1001
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: robot.linkLost ? 2 * Theme.sp3 + Theme.hSm : Theme.sp3
+        updater: updater
+    }
+
     CommandPalette {
         robot: robot
+        updater: updater
         onPageRequested: (i) => win.page = i
     }
 

@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QtConcurrent>
 #include <QtMath>
 
@@ -244,15 +245,29 @@ QString Robot::dataDir()
     const QString env = qEnvironmentVariable("ROBOT_DASHBOARD_DIR");
     if (!env.isEmpty())
         return QDir(env).absolutePath();
+    if (installed())
+        return QCoreApplication::applicationDirPath();
     const QDir up(QCoreApplication::applicationDirPath() + "/..");
     if (up.exists("model"))
         return up.absolutePath();
     return QDir::current().absolutePath();
 }
 
+bool Robot::installed()
+{
+    return qEnvironmentVariableIsEmpty("ROBOT_DASHBOARD_DIR") && QDir(QCoreApplication::applicationDirPath()).exists("model");
+}
+
+QString Robot::recordsPath()
+{
+    // 설치본은 설치 폴더(Program Files 일 수 있음)가 아니라 문서/RobotDashboard/records 에 쓴다
+    const QString base = installed() ? QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/RobotDashboard" : dataDir();
+    return QDir(base).absoluteFilePath("records");
+}
+
 QString Robot::recordsDir() const
 {
-    const QString d = QDir(dataDir()).absoluteFilePath("records");
+    const QString d = recordsPath();
     QDir().mkpath(d);
     return d;
 }
@@ -698,7 +713,8 @@ void Robot::updateStatus()
             for (const QJsonValue &s : v["subscribers"].toArray())
                 m_watchdogOk |= s.toString().contains("cmd_watchdog");
         }, [this](const QString &) { m_watchdogOk = false; });
-    if (conn && m_statusTick % 10 == 1)   // 가감속 프로파일 상태(다른 곳에서 바꿨을 수도 있다)
+    // 가감속 프로파일 상태(다른 곳에서 바꿨을 수도 있다). --no-publish 는 rosapi 밖의 서비스를 부르지 않는다(B10).
+    if (conn && m_statusTick % 10 == 1 && !m_bridge.noPublish())
         m_bridge.call("/cmd_watchdog/get_parameters", {{"names", QJsonArray{"ramp_enabled"}}}, [this](const QJsonObject &v) {
             const QJsonArray vals = v["values"].toArray();
             if (vals.isEmpty() || vals[0].toObject()["type"].toInt() != 1)
@@ -994,7 +1010,7 @@ void Robot::toggleRecording()
         return;
     }
     const QDateTime now = QDateTime::currentDateTime();
-    m_recordPath = QDir(dataDir()).absoluteFilePath("records/" + now.toString("yyyyMMdd_HHmmss"));
+    m_recordPath = QDir(recordsDir()).absoluteFilePath(now.toString("yyyyMMdd_HHmmss"));
     QDir().mkpath(m_recordPath);
     // 원문 기록: 첫 줄 meta, 이후 한 줄에 메시지 하나 (P1 --replay 입력과 같은 형식)
     m_raw = new QFile(m_recordPath + "/raw.jsonl");
@@ -1043,7 +1059,7 @@ QString Robot::recordElapsed() const
 
 void Robot::openRecords()
 {
-    const QString dir = m_recordPath.isEmpty() ? QDir(dataDir()).absoluteFilePath("records") : m_recordPath;
+    const QString dir = m_recordPath.isEmpty() ? recordsDir() : m_recordPath;
     QDir().mkpath(dir);
     QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
 }

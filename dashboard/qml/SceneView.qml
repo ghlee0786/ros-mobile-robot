@@ -43,6 +43,7 @@ ColumnLayout {
     readonly property real viewPitch: cam === "추적" ? -Math.atan2(0.9, 1.3) * 180 / Math.PI : cam === "3인칭" ? tpPitch
                                     : cam === "위에서" ? -90 : camPitch
     readonly property string mono: Theme.monoFamily
+    readonly property string modelLoad: model.bodyLoad   // 로봇 모델(glb) 읽기 결과 — state 의 scene.modelLoad
 
     // ---- 표시 레이어 (레이어 패널 · 시험 동작이 바꾸고 Settings 에 저장) ----
     property bool layerPanelOpen: false     // 기본 접힘(3D 를 덜 가리게), 마지막 상태는 Settings 가 기억

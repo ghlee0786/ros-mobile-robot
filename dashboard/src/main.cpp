@@ -15,11 +15,12 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     QCoreApplication::setOrganizationName("RobotDashboard");
     QCoreApplication::setApplicationName("RobotDashboard");
+    QCoreApplication::setApplicationVersion(ROBOT_DASHBOARD_VERSION);   // cmake/update.cmake 가 project(VERSION) 으로 정한다
     QGuiApplication::setWindowIcon(QIcon(":/icons/app.png"));
 
     QCommandLineParser p;
     p.setApplicationDescription(QStringLiteral(
-        "로봇 대시보드. 인자 없이 켜면 마지막 주소로 자동 연결한다.\n"
+        "ROS 모니터(로봇 대시보드). 인자 없이 켜면 마지막 주소로 자동 연결한다.\n"
         "시험 모드(--url 이나 --quit-after 를 줌)에서는 로그를 stderr 로도 낸다.\n"
         "actions 형식: [{\"t\":초,\"call\":\"robot.drive\",\"args\":[1,0]}, {\"t\":초,\"set\":\"scene.cam\",\"value\":\"위에서\"},\n"
         "  {\"t\":초,\"shot\":\"a.png\"}, {\"t\":초,\"key\":\"W\",\"hold_ms\":2000}, {\"wait\":\"bridge.connected\",\"timeout_s\":10}]\n"
